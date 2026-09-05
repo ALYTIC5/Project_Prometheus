@@ -15,6 +15,7 @@ from prometheus.core.db import Base
 
 class RawIngest(Base):
     __tablename__ = "raw_ingest"
+    __table_args__ = (sa.Index("ix_raw_ingest_symbol_timeframe", "symbol", "timeframe"),)
 
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     source: Mapped[str] = mapped_column(sa.String(32))
@@ -34,6 +35,10 @@ class OhlcvBar(Base):
         sa.UniqueConstraint(
             "symbol", "timeframe", "event_time", "revision", name="uq_ohlcv_bar_revision"
         ),
+        sa.Index(
+            "ix_ohlcv_bars_symbol_timeframe_event_time", "symbol", "timeframe", "event_time"
+        ),
+        sa.Index("ix_ohlcv_bars_available_at", "available_at"),
     )
 
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
@@ -55,6 +60,7 @@ class OhlcvBar(Base):
 
 class UniverseMembership(Base):
     __tablename__ = "universe_membership"
+    __table_args__ = (sa.Index("ix_universe_membership_symbol", "symbol"),)
 
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(sa.String(32))
