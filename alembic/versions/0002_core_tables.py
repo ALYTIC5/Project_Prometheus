@@ -36,6 +36,7 @@ def upgrade() -> None:
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),
     )
+    op.create_index("ix_results_experiment_id", "results", ["experiment_id"])
     op.create_table(
         "decisions",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
@@ -45,6 +46,7 @@ def upgrade() -> None:
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),
     )
+    op.create_index("ix_decisions_experiment_id", "decisions", ["experiment_id"])
     op.create_table(
         "policy_versions",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
@@ -64,6 +66,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("id_counters")
     op.drop_table("policy_versions")
+    op.drop_index("ix_decisions_experiment_id", table_name="decisions")
     op.drop_table("decisions")
+    op.drop_index("ix_results_experiment_id", table_name="results")
     op.drop_table("results")
     op.drop_table("experiments")

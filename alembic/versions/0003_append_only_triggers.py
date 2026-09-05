@@ -35,9 +35,24 @@ def upgrade() -> None:
             FOR EACH ROW EXECUTE FUNCTION prevent_history_mutation();
             """
         )
+    # Row-level triggers do not fire on TRUNCATE, so the loop above alone
+    # would leave `TRUNCATE experiments, results, decisions CASCADE;` as a
+    # silent, complete bypass of Law 6. TRUNCATE triggers must be
+    # statement-level. prevent_history_mutation() needs no change: TG_OP
+    # reports 'TRUNCATE' and the existing message format handles it.
+    for table in _TABLES:
+        op.execute(
+            f"""
+            CREATE TRIGGER {table}_append_only_truncate
+            BEFORE TRUNCATE ON {table}
+            FOR EACH STATEMENT EXECUTE FUNCTION prevent_history_mutation();
+            """
+        )
 
 
 def downgrade() -> None:
+    for table in _TABLES:
+        op.execute(f"DROP TRIGGER IF EXISTS {table}_append_only_truncate ON {table};")
     for table in _TABLES:
         op.execute(f"DROP TRIGGER IF EXISTS {table}_append_only ON {table};")
     op.execute("DROP FUNCTION IF EXISTS prevent_history_mutation();")

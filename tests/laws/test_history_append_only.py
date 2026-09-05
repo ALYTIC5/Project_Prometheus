@@ -1,10 +1,18 @@
-"""Law 6: history is append-only. UPDATE and DELETE on experiments,
-results, decisions raise — enforced by a real Postgres trigger, not
-application code, per the migration in alembic/versions/0003_*.
+"""Law 6: history is append-only. UPDATE, DELETE and TRUNCATE on
+experiments, results, decisions raise — enforced by real Postgres
+triggers, not application code, per the migration in
+alembic/versions/0003_*. TRUNCATE needs its own statement-level trigger:
+row-level triggers do not fire on it.
 
 Requires a live Postgres with migrations applied. Skipped (not xfail —
 this is missing infrastructure, not missing code) when TEST_DATABASE_URL
 isn't set. CI provides it via a postgres service container.
+
+WARNING: rows inserted by the fixtures below accumulate forever — the
+append-only trigger forbids the DELETE that would clean them up. That is
+harmless against CI's ephemeral per-run Postgres service container, but
+would grow without bound if TEST_DATABASE_URL ever pointed at a
+long-lived shared database.
 """
 from __future__ import annotations
 
@@ -31,7 +39,9 @@ def engine():
 
 @pytest.fixture()
 def experiment_id(engine) -> str:
-    exp_id = f"EXP-TEST-{uuid.uuid4().hex[:8]}"
+    # Conforms to prometheus.core.ids.EXPERIMENT_ID_RE (^EXP-\d{4}-\d{6}$).
+    # Year 9999 marks it as fixture data and can never collide with a real year.
+    exp_id = f"EXP-9999-{uuid.uuid4().int % 1_000_000:06d}"
     with engine.begin() as conn:
         conn.execute(
             text("INSERT INTO experiments (id, status) VALUES (:id, 'pending')"),
@@ -90,3 +100,29 @@ def test_delete_child_tables_raises(engine, experiment_id: str, table: str) -> N
         engine.begin() as conn,
     ):
         conn.execute(text(f"DELETE FROM {table} WHERE id = :id"), {"id": row_id})
+
+
+# TRUNCATE is not covered by the row-level BEFORE UPDATE OR DELETE trigger —
+# it needs the separate statement-level BEFORE TRUNCATE trigger added in
+# migration 0003. CASCADE is used deliberately: Postgres checks the
+# foreign-key truncate restriction before firing BEFORE TRUNCATE triggers,
+# so a bare `TRUNCATE experiments` would fail on the FK check rather than on
+# the law. CASCADE is also the form that actually destroys the corpus.
+@pytest.mark.parametrize("table", ["experiments", "results", "decisions"])
+def test_truncate_raises(engine, experiment_id: str, table: str) -> None:
+    with (
+        pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"),
+        engine.begin() as conn,
+    ):
+        conn.execute(text(f"TRUNCATE {table} CASCADE"))
+
+
+def test_truncate_all_history_tables_in_one_statement_raises(
+    engine, experiment_id: str
+) -> None:
+    """The specific whole-corpus bypass: one statement, all three tables."""
+    with (
+        pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"),
+        engine.begin() as conn,
+    ):
+        conn.execute(text("TRUNCATE experiments, results, decisions CASCADE"))
