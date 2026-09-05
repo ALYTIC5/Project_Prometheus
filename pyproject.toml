@@ -42,7 +42,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
-python_version = "3.11"
+# numpy==2.5.2 (pulled in by polars==1.44.1) ships stubs using PEP 695
+# `type X = ...` aliases, which mypy only parses under python_version >= 3.12.
+# mypy's python_version is not overridable per-module, so this must be the
+# global setting; requires-python (>=3.11) is unaffected.
+python_version = "3.12"
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
