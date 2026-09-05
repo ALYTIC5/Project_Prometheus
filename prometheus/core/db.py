@@ -1,5 +1,14 @@
 """Async engine, session factory, and the ORM models for the
 append-only history tables plus the id-counter table.
+
+Column types here are spelled out explicitly (BigInteger, String(64),
+DateTime(timezone=True)) rather than left to SQLAlchemy's default mapping
+for bare `Mapped[int]` / `Mapped[datetime]`. alembic/env.py points
+`target_metadata` at this metadata, so any drift between these models and
+the DDL in alembic/versions/0002_* becomes a spurious autogenerate diff —
+one that would propose narrowing BIGINT primary keys to INTEGER and
+stripping timezone awareness, on tables Law 6 forbids correcting by UPDATE
+afterwards.
 """
 from __future__ import annotations
 
@@ -9,6 +18,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy import ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import (
@@ -31,41 +41,52 @@ class Experiment(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
     status: Mapped[str] = mapped_column(default="pending")
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Result(Base):
     __tablename__ = "results"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Decision(Base):
     __tablename__ = "decisions"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
     decision: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class PolicyVersion(Base):
     __tablename__ = "policy_versions"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    content_hash: Mapped[str] = mapped_column()
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    content_hash: Mapped[str] = mapped_column(sa.String(64))
     raw_yaml: Mapped[str] = mapped_column(Text)
-    loaded_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    loaded_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class IdCounter(Base):
     __tablename__ = "id_counters"
 
     scope: Mapped[str] = mapped_column(primary_key=True)
-    next_value: Mapped[int] = mapped_column(default=0)
+    # Holds the LAST value issued, not literally "next" — core/ids.py's
+    # upsert increments and returns in one statement, so the returned value
+    # is the id suffix immediately. Column name kept to avoid migration churn.
+    next_value: Mapped[int] = mapped_column(sa.BigInteger, default=0)
 
 
 _engine: AsyncEngine | None = None
