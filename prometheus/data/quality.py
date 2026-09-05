@@ -84,24 +84,31 @@ def check_volume_spikes(frame: pl.DataFrame, threshold: float = 20.0) -> list[st
     A naive mean/std z-score is self-masking here: a single huge outlier
     drags the mean and inflates the std enough to hide itself (checked
     numerically — a 10,000x spike among 29 flat bars does not clear 20
-    sigma of the *contaminated* std). Median absolute deviation from the
+    sigma of the *contaminated* std). Mean absolute deviation from the
     median is used instead: the median resists a single outlier, so the
     spike still reads as far from typical even though it also pulls the
     mean absolute deviation up somewhat.
+
+    Deliberately NOT the median absolute deviation (MAD): for data shaped
+    like this (29 identical values + 1 outlier), the *median* of the
+    absolute deviations is 0 (29 of 30 deviations are 0), which would trip
+    the zero-guard below and let the spike through undetected. Do not
+    "fix" this to `.median()` — that reintroduces the exact bug this
+    function was written to avoid.
     """
     issues = []
     for symbol in frame["symbol"].unique().sort().to_list():
         sub = frame.filter(pl.col("symbol") == symbol)
         median = sub["volume"].median()
         abs_dev = (sub["volume"] - median).abs()
-        mad = abs_dev.mean()
-        if median is None or mad is None or mad == 0:
+        mean_abs_dev = abs_dev.mean()
+        if median is None or mean_abs_dev is None or mean_abs_dev == 0:
             continue
-        spikes = sub.filter(((pl.col("volume") - median).abs() / mad) > threshold)
+        spikes = sub.filter(((pl.col("volume") - median).abs() / mean_abs_dev) > threshold)
         if spikes.height:
             issues.append(
                 f"{symbol}: {spikes.height} volume spike(s) beyond "
-                f"{threshold}x median absolute deviation"
+                f"{threshold}x mean absolute deviation from median"
             )
     return issues
 
