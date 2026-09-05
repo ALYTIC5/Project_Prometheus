@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_RESEARCH_POLICY_PATH = Path("config/research_policy.yaml")
 
@@ -72,23 +75,29 @@ def _content_hash(raw_yaml: str) -> str:
     return hashlib.sha256(raw_yaml.encode("utf-8")).hexdigest()
 
 
-def load_research_policy(
+async def load_research_policy(
+    session: AsyncSession,
     path: Path = DEFAULT_RESEARCH_POLICY_PATH,
-    session: Any | None = None,
 ) -> ResearchPolicy:
-    """Load ResearchPolicy from YAML. If `session` is given (an
-    `AsyncSession`-like object with `.add()`), writes a `PolicyVersion`
-    row with the content hash — every load is versioned, per CLAUDE.md.
-    Import-local to avoid a hard dependency from config.py -> db.py at
-    module-load time (config must be importable with no DB available).
+    """Load ResearchPolicy from YAML and record the load.
+
+    `session` is required, not optional: "every load is versioned" is only
+    true if there is no call shape that skips the version row. The
+    `PolicyVersion` row is added and flushed — flushed so it is ordered and
+    visible inside the caller's transaction, but *not* committed, because
+    committing someone else's transaction from a helper is not this
+    function's decision to make.
+
+    The `PolicyVersion` import stays function-local so `core/config.py`
+    remains importable with zero DB dependency at module-load time; only
+    the type annotation lives under TYPE_CHECKING.
     """
     raw = path.read_text(encoding="utf-8")
     data = yaml.safe_load(raw) or {}
     policy = ResearchPolicy(**data)
-    if session is not None:
-        from prometheus.core.db import PolicyVersion
 
-        session.add(
-            PolicyVersion(content_hash=_content_hash(raw), raw_yaml=raw)
-        )
+    from prometheus.core.db import PolicyVersion
+
+    session.add(PolicyVersion(content_hash=_content_hash(raw), raw_yaml=raw))
+    await session.flush()
     return policy
