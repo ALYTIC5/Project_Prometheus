@@ -497,6 +497,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -519,7 +520,7 @@ class Experiment(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True)
     status: Mapped[str] = mapped_column(default="pending")
-    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -528,7 +529,7 @@ class Result(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
-    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -537,7 +538,7 @@ class Decision(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
-    decision: Mapped[dict] = mapped_column(JSONB, default=dict)
+    decision: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
