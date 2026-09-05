@@ -16,7 +16,15 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: mypy prometheus/core/
-      - run: pytest tests/ -v --ignore=tests/laws
+      # Exit code 5 is pytest's EXIT_NOTESTSCOLLECTED. There are no non-law
+      # tests outside tests/laws/ yet, so 5 is the correct state right now
+      # and must not fail the job. Any other non-zero code still does.
+      - name: Run non-law tests
+        run: |
+          set +e
+          pytest tests/ -v --ignore=tests/laws
+          code=$?
+          if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then exit "$code"; fi
 
   laws:
     runs-on: ubuntu-latest
