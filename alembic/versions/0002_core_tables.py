@@ -22,28 +22,28 @@ def upgrade() -> None:
         sa.Column("id", sa.String, primary_key=True),
         sa.Column("status", sa.String, nullable=False, server_default="pending"),
         sa.Column("payload", JSONB, nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "results",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("experiment_id", sa.String, sa.ForeignKey("experiments.id"), nullable=False),
         sa.Column("payload", JSONB, nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "decisions",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("experiment_id", sa.String, sa.ForeignKey("experiments.id"), nullable=False),
         sa.Column("decision", JSONB, nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "policy_versions",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("content_hash", sa.String(64), nullable=False),
         sa.Column("raw_yaml", sa.Text, nullable=False),
-        sa.Column("loaded_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("loaded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "id_counters",
