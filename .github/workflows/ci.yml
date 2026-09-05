@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-type-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy core/
+      - run: pytest tests/ -v --ignore=tests/laws
+
+  laws:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: prometheus
+          POSTGRES_PASSWORD: prometheus
+          POSTGRES_DB: prometheus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
+      TEST_DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
+      MAX_POSITION_PCT: "11"
+      MAX_GROSS_EXPOSURE_PCT: "22"
+      MAX_LEVERAGE: "3"
+      MAX_DAILY_LOSS_PCT: "4"
+      MAX_DRAWDOWN_PCT: "15"
+      KILL_SWITCH: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: alembic upgrade head
+      - name: Run law tests
+        run: pytest tests/laws/ -v || (echo "::error::LAW VIOLATION — a tests/laws/ check failed. This gate does not get weakened, skipped, or deleted; fix the code." && exit 1)
