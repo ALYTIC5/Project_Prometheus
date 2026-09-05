@@ -2,8 +2,9 @@
 output, or config mutation may alter them once the process has started.
 """
 import pytest
-from core.config import RISK_LIMITS, RiskLimits
 from pydantic import ValidationError
+
+from prometheus.core.config import RISK_LIMITS, RiskLimits
 
 
 def test_setting_any_attribute_raises() -> None:

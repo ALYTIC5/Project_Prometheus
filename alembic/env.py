@@ -1,16 +1,17 @@
 """Alembic runs synchronously (psycopg), even though the app runtime is
 async (asyncpg) — this is the standard split; see docs/DEPENDENCIES.md.
 DATABASE_URL is read here, not at import time elsewhere, matching the
-lazy-DB-config decision in core/db.py.
+lazy-DB-config decision in prometheus/core/db.py.
 """
 from __future__ import annotations
 
 import os
 from logging.config import fileConfig
 
-from alembic import context
-from core.db import Base
 from sqlalchemy import engine_from_config, pool
+
+from alembic import context
+from prometheus.core.db import Base
 
 config = context.config
 if config.config_file_name is not None:

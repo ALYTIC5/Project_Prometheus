@@ -11,4 +11,4 @@ repos:
       - id: mypy
         additional_dependencies: ["pydantic==2.9.2", "pydantic-settings==2.5.2", "sqlalchemy==2.0.35"]
         args: ["--config-file=pyproject.toml"]
-        files: ^core/
+        files: ^prometheus/core/

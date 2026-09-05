@@ -28,16 +28,12 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = [
-    "core", "data", "strategy", "backtest", "validation",
-    "experiments", "research", "paper", "world", "api",
-]
+packages = ["prometheus"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["core", "data", "strategy", "backtest", "validation",
-       "experiments", "research", "paper", "world", "api", "tests"]
+src = ["."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -50,7 +46,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["core.*", "validation.*"]
+module = ["prometheus.core.*", "prometheus.validation.*"]
 strict = true
 
 [tool.pytest.ini_options]

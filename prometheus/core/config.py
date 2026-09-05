@@ -86,7 +86,7 @@ def load_research_policy(
     data = yaml.safe_load(raw) or {}
     policy = ResearchPolicy(**data)
     if session is not None:
-        from core.db import PolicyVersion
+        from prometheus.core.db import PolicyVersion
 
         session.add(
             PolicyVersion(content_hash=_content_hash(raw), raw_yaml=raw)
