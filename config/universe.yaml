@@ -1,0 +1,114 @@
+# Universe seed data for Project Prometheus's crypto-majors universe.
+# Membership is reconstructed as-of a historical date from listed_at/
+# delisted_at, never from "what trades on Binance today" — Law 2.
+#
+# Dates below are best-effort approximations of real Binance spot
+# listing/delisting history (public exchange announcements and
+# community records). They are fixtures for survivorship-bias testing,
+# not audited exchange records — treat as illustrative until
+# cross-checked against Binance's own historical announcements before
+# this matters for anything beyond testing the as_of() mechanism.
+symbols:
+  # --- currently active majors + liquid pairs ---
+  - symbol: BTC/USDT
+    exchange: binance
+    listed_at: 2017-08-01
+    delisted_at: null
+  - symbol: ETH/USDT
+    exchange: binance
+    listed_at: 2017-08-01
+    delisted_at: null
+  - symbol: SOL/USDT
+    exchange: binance
+    listed_at: 2020-08-11
+    delisted_at: null
+  - symbol: BNB/USDT
+    exchange: binance
+    listed_at: 2017-11-06
+    delisted_at: null
+  - symbol: XRP/USDT
+    exchange: binance
+    listed_at: 2018-05-04
+    delisted_at: null
+  - symbol: ADA/USDT
+    exchange: binance
+    listed_at: 2018-04-25
+    delisted_at: null
+  - symbol: DOGE/USDT
+    exchange: binance
+    listed_at: 2019-07-05
+    delisted_at: null
+  - symbol: TRX/USDT
+    exchange: binance
+    listed_at: 2018-06-28
+    delisted_at: null
+  - symbol: DOT/USDT
+    exchange: binance
+    listed_at: 2020-08-19
+    delisted_at: null
+  - symbol: MATIC/USDT
+    exchange: binance
+    listed_at: 2019-04-26
+    delisted_at: null
+  - symbol: LTC/USDT
+    exchange: binance
+    listed_at: 2017-08-01
+    delisted_at: null
+  - symbol: AVAX/USDT
+    exchange: binance
+    listed_at: 2020-09-22
+    delisted_at: null
+  - symbol: LINK/USDT
+    exchange: binance
+    listed_at: 2019-01-16
+    delisted_at: null
+  - symbol: ATOM/USDT
+    exchange: binance
+    listed_at: 2019-04-29
+    delisted_at: null
+  - symbol: UNI/USDT
+    exchange: binance
+    listed_at: 2020-09-17
+    delisted_at: null
+  - symbol: XLM/USDT
+    exchange: binance
+    listed_at: 2018-05-31
+    delisted_at: null
+  - symbol: ETC/USDT
+    exchange: binance
+    listed_at: 2018-06-20
+    delisted_at: null
+  - symbol: FIL/USDT
+    exchange: binance
+    listed_at: 2020-10-15
+    delisted_at: null
+  - symbol: APT/USDT
+    exchange: binance
+    listed_at: 2022-10-19
+    delisted_at: null
+  - symbol: NEAR/USDT
+    exchange: binance
+    listed_at: 2020-10-14
+    delisted_at: null
+
+  # --- delisted / rebranded pairs, kept for survivorship-bias testing ---
+  - symbol: BCHSV/USDT
+    exchange: binance
+    listed_at: 2018-12-14
+    delisted_at: 2019-04-22
+  - symbol: VEN/USDT
+    exchange: binance
+    listed_at: 2017-08-23
+    delisted_at: 2018-07-23
+  - symbol: LEND/USDT
+    exchange: binance
+    listed_at: 2018-01-22
+    delisted_at: 2020-10-05
+  - symbol: PAX/USDT
+    exchange: binance
+    listed_at: 2018-09-24
+    delisted_at: 2021-05-01
+  - symbol: SUSD/USDT
+    exchange: binance
+    listed_at: 2019-03-08
+    delisted_at: 2019-11-15
