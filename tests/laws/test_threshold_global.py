@@ -5,7 +5,10 @@ import pytest
 
 
 @pytest.mark.xfail(
-    reason="validation/scoring.py threshold/weight versioning not implemented yet — PROMPTS.md PROMPT 3 (validation and falsification)",
+    reason=(
+        "validation/scoring.py threshold/weight versioning not implemented yet — "
+        "PROMPTS.md PROMPT 3 (validation and falsification)"
+    ),
     strict=True,
 )
 def test_threshold_change_requires_full_corpus_reevaluation() -> None:

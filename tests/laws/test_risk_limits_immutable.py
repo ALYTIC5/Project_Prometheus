@@ -2,9 +2,8 @@
 output, or config mutation may alter them once the process has started.
 """
 import pytest
-from pydantic import ValidationError
-
 from core.config import RISK_LIMITS, RiskLimits
+from pydantic import ValidationError
 
 
 def test_setting_any_attribute_raises() -> None:
@@ -20,7 +19,7 @@ def test_env_change_after_import_does_not_change_running_instance(
     monkeypatch.setenv("MAX_LEVERAGE", "999999")
     # RISK_LIMITS was constructed once at import time; env changes after
     # that must not reach the already-running instance.
-    assert RISK_LIMITS.MAX_LEVERAGE == original
+    assert original == RISK_LIMITS.MAX_LEVERAGE
 
 
 def test_missing_env_var_raises_on_construction(

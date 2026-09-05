@@ -15,9 +15,7 @@ CORE_DIR = Path(__file__).resolve().parents[2] / "core"
 def _imported_names(tree: ast.Module) -> set[str]:
     names: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            names.update(alias.asname or alias.name for alias in node.names)
-        elif isinstance(node, ast.Import):
+        if isinstance(node, ast.ImportFrom | ast.Import):
             names.update(alias.asname or alias.name for alias in node.names)
     return names
 

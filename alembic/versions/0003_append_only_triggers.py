@@ -18,7 +18,8 @@ _TABLES = ("experiments", "results", "decisions")
 _TRIGGER_FN = """
 CREATE OR REPLACE FUNCTION prevent_history_mutation() RETURNS trigger AS $$
 BEGIN
-    RAISE EXCEPTION 'LAW VIOLATION: % on % is forbidden — history is append-only (Law 6)', TG_OP, TG_TABLE_NAME;
+    RAISE EXCEPTION 'LAW VIOLATION: % on % is forbidden — history is append-only (Law 6)',
+        TG_OP, TG_TABLE_NAME;
 END;
 $$ LANGUAGE plpgsql;
 """

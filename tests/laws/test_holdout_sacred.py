@@ -5,7 +5,10 @@ import pytest
 
 
 @pytest.mark.xfail(
-    reason="validation/holdout.py not implemented yet — PROMPTS.md PROMPT 3 (validation and falsification)",
+    reason=(
+        "validation/holdout.py not implemented yet — PROMPTS.md PROMPT 3 "
+        "(validation and falsification)"
+    ),
     strict=True,
 )
 def test_second_holdout_access_raises() -> None:

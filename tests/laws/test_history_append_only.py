@@ -41,18 +41,16 @@ def experiment_id(engine) -> str:
 
 
 def test_update_experiments_raises(engine, experiment_id: str) -> None:
-    with pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"):
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE experiments SET status = 'changed' WHERE id = :id"),
-                {"id": experiment_id},
-            )
+    with pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"), engine.begin() as conn:
+        conn.execute(
+            text("UPDATE experiments SET status = 'changed' WHERE id = :id"),
+            {"id": experiment_id},
+        )
 
 
 def test_delete_experiments_raises(engine, experiment_id: str) -> None:
-    with pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"):
-        with engine.begin() as conn:
-            conn.execute(text("DELETE FROM experiments WHERE id = :id"), {"id": experiment_id})
+    with pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"), engine.begin() as conn:
+        conn.execute(text("DELETE FROM experiments WHERE id = :id"), {"id": experiment_id})
 
 
 @pytest.mark.parametrize("table", ["results", "decisions"])
@@ -66,12 +64,14 @@ def test_update_child_tables_raises(engine, experiment_id: str, table: str) -> N
             ),
             {"eid": experiment_id},
         ).scalar_one()
-    with pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"):
-        with engine.begin() as conn:
-            conn.execute(
-                text(f"UPDATE {table} SET {value_col} = '{{\"x\":1}}'::jsonb WHERE id = :id"),
-                {"id": row_id},
-            )
+    with (
+        pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"),
+        engine.begin() as conn,
+    ):
+        conn.execute(
+            text(f"UPDATE {table} SET {value_col} = '{{\"x\":1}}'::jsonb WHERE id = :id"),
+            {"id": row_id},
+        )
 
 
 @pytest.mark.parametrize("table", ["results", "decisions"])
@@ -85,6 +85,8 @@ def test_delete_child_tables_raises(engine, experiment_id: str, table: str) -> N
             ),
             {"eid": experiment_id},
         ).scalar_one()
-    with pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"):
-        with engine.begin() as conn:
-            conn.execute(text(f"DELETE FROM {table} WHERE id = :id"), {"id": row_id})
+    with (
+        pytest.raises((DBAPIError, IntegrityError), match="LAW VIOLATION"),
+        engine.begin() as conn,
+    ):
+        conn.execute(text(f"DELETE FROM {table} WHERE id = :id"), {"id": row_id})
