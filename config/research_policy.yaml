@@ -1,0 +1,5 @@
+# Research policy. Hot-reloadable, versioned on every load (see
+# core.config.load_research_policy). No numeric thresholds live here
+# yet — see core/config.py:ResearchPolicy docstring and CLAUDE.md's
+# "don't invent thresholds" rule. PROMPT 3 populates real fields.
+schema_version: 1
