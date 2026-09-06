@@ -29,7 +29,7 @@ _INGESTION_LAG = timedelta(minutes=5)
 # adapt a list parameter through text() across dialects.
 _SELECT_BARS_FOR_VERSIONING = text(
     """
-    SELECT symbol, timeframe, event_time, close
+    SELECT symbol, timeframe, event_time, available_at, open, high, low, close, volume
     FROM ohlcv_bars
     WHERE symbol IN :symbols AND event_time >= :since
     """
@@ -168,7 +168,12 @@ async def _load_bars_for_versioning(
             "symbol": [r["symbol"] for r in rows],
             "timeframe": [r["timeframe"] for r in rows],
             "event_time": [r["event_time"] for r in rows],
+            "available_at": [r["available_at"] for r in rows],
+            "open": [float(r["open"]) for r in rows],
+            "high": [float(r["high"]) for r in rows],
+            "low": [float(r["low"]) for r in rows],
             "close": [float(r["close"]) for r in rows],
+            "volume": [float(r["volume"]) for r in rows],
         }
     )
 
