@@ -8,29 +8,36 @@ all, not a code path returning the wrong value.
 
 The check is deliberately written before any broker code exists. That is
 the point: it is a tripwire armed in advance, so the first commit that
-imports a live-exchange SDK or defines an order-submission call outside
-`prometheus/paper/` fails the build on the way in, rather than being
-reviewed by whoever happens to read that diff. Unlike the four
-`xfail(strict=True)` stubs for laws whose guarded code doesn't exist yet,
-this check is real code that runs today and passes today.
+defines an order-submission call outside `prometheus/paper/` fails the
+build on the way in, rather than being reviewed by whoever happens to
+read that diff. Unlike the four `xfail(strict=True)` stubs for laws
+whose guarded code doesn't exist yet, this check is real code that runs
+today and passes today.
 
-Three things are asserted, over every `.py` file under `prometheus/`:
+Two things are asserted, over every `.py` file under `prometheus/`:
 
-1. No module imports a live-broker / live-exchange trading SDK. There is
-   no exemption for `prometheus/paper/` here — a paper broker is
-   simulated in-process against recorded or simulated fills; it has no
-   business holding an exchange client library at all.
-2. No module calls a function named like an order submission
+1. No module calls a function named like an order submission
    (`create_order`, `submit_order`, `place_order`, `place_live_order`)
    outside `prometheus/paper/`. `paper/` is the only package that may
    eventually contain order-submission-shaped code, and even there Law 5
    binds it to simulation; this test does not attempt to prove
    paper-only-ness of `paper/` itself, only that live-order-shaped calls
    do not leak into the rest of the system.
-3. No module binds a live-money-suggesting identifier (`LIVE_TRADING`,
+2. No module binds a live-money-suggesting identifier (`LIVE_TRADING`,
    `PRODUCTION_BROKER`, `REAL_MONEY`, `LIVE_BROKER`, ...) to a truthy
    literal. Matching is on identifiers rather than raw file text so the
    check stays meaningful instead of tripping on prose in a docstring.
+
+An earlier version of this test also blanket-banned importing any
+live-exchange SDK (ccxt, binance, ...) anywhere under `prometheus/`. That
+check measured the wrong thing: Law 5 is about submitting real orders,
+not about which library is imported, and the same SDKs this repo needs
+for read-only public market data (PROMPT 1's `data/ingestion.py`) and
+for paper-trading (PROMPT 7's testnet/sandbox adapter) are the only
+realistic clients for those exchanges. A blanket import ban cannot
+coexist with the project's own architecture, so it was removed —
+order-submission detection (check 1) is the actual enforcement
+mechanism for "no real money, ever, from code."
 """
 from __future__ import annotations
 
@@ -40,30 +47,6 @@ from pathlib import Path
 
 PROMETHEUS_DIR = Path(__file__).resolve().parents[2] / "prometheus"
 PAPER_DIR = PROMETHEUS_DIR / "paper"
-
-# Root module names of client libraries whose primary purpose is talking to
-# a live exchange or brokerage. Importing any of them anywhere in this repo
-# is a Law 5 violation on its face.
-_LIVE_BROKER_MODULES = frozenset(
-    {
-        "alpaca",
-        "alpaca_trade_api",
-        "binance",
-        "bybit",
-        "ccxt",
-        "coinbase",
-        "ib_insync",
-        "ibapi",
-        "kiteconnect",
-        "krakenex",
-        "MetaTrader5",
-        "oandapyV20",
-        "robin_stocks",
-        "schwab",
-        "tda",
-        "tradier",
-    }
-)
 
 # Function names that mean "send this to a venue". Allowed only under
 # prometheus/paper/.
@@ -124,25 +107,6 @@ def _assigned_value(node: ast.AST) -> ast.expr | None:
     if isinstance(node, ast.AnnAssign):
         return node.value
     return None
-
-
-def test_no_module_imports_a_live_broker_sdk() -> None:
-    offenders: list[str] = []
-    for path in _python_files():
-        for node in ast.walk(_parse(path)):
-            if isinstance(node, ast.Import):
-                roots = [alias.name.split(".")[0] for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                roots = [(node.module or "").split(".")[0]]
-            else:
-                continue
-            for root in roots:
-                if root in _LIVE_BROKER_MODULES:
-                    offenders.append(f"{path}: imports {root!r}")
-    assert not offenders, (
-        "LAW 5 VIOLATION: live-broker/exchange SDK imported. This repo is "
-        f"paper-only and has no live broker adapter: {offenders}"
-    )
 
 
 def test_no_order_submission_calls_outside_paper() -> None:
