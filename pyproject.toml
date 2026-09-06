@@ -55,6 +55,13 @@ warn_unused_ignores = true
 module = ["prometheus.core.*", "prometheus.validation.*"]
 strict = true
 
+# ccxt ships no py.typed marker / stubs; prometheus.data.ingestion imports
+# it directly (real exchange client). Scoped to just this module rather
+# than a blanket ignore_missing_imports.
+[[tool.mypy.overrides]]
+module = ["ccxt"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
