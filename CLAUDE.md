@@ -41,6 +41,14 @@ code, never the test.
    changed only by an experiment that re-evaluates it across the *entire*
    historical experiment corpus. Changing a threshold while a specific strategy
    is pending is a `RESEARCH_VIOLATION` and is logged as such.
+8. **Everything runs against Buy & Hold.** Every strategy, every backtest, every
+   paper-trading result, every dashboard view is compared against a €1,000
+   buy-and-hold of the strategy's own universe (equal-weight for multi-asset,
+   100% for single-asset). The benchmark uses the SAME cost model for entry
+   (one buy at inception). If a strategy cannot beat this after costs, it is
+   not an edge — it is activity. The buy-and-hold equity curve is always
+   visible. The system's job is to prove it can do better; the default
+   assumption is that it cannot.
 
 ---
 
