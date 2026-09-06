@@ -17,19 +17,33 @@ if TYPE_CHECKING:
 
 
 def compute_content_hash(frame: pl.DataFrame) -> str:
-    """Deterministic hash of a dataset's content: sorted (symbol,
-    timeframe, event_time, close) tuples, so two datasets with identical
-    bars hash identically regardless of row order.
+    """Deterministic hash of a dataset's content: the full bar shape
+    (symbol, timeframe, event_time, available_at, open, high, low, close,
+    volume — matching prometheus.data.schema's bar columns), sorted by
+    (symbol, timeframe, event_time) with ties held in their original
+    order, so two datasets with identical bars hash identically regardless
+    of row order, and a correction to any column — not just close — is
+    detected.
     """
-    canonical = frame.select(["symbol", "timeframe", "event_time", "close"]).sort(
-        ["symbol", "timeframe", "event_time"]
-    )
+    canonical = frame.select(
+        [
+            "symbol",
+            "timeframe",
+            "event_time",
+            "available_at",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+        ]
+    ).sort(["symbol", "timeframe", "event_time"], maintain_order=True)
     raw = canonical.write_csv()
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 async def record_data_version(
-    session: "AsyncSession",
+    session: AsyncSession,
     frame: pl.DataFrame,
     date_range_start: date,
     date_range_end: date,
