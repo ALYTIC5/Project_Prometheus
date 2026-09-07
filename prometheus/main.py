@@ -8,6 +8,7 @@ production.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -24,14 +25,24 @@ from prometheus.api.routes import (
     scoreboard_router,
     world_router,
 )
+from prometheus.api.routes.world import start_background_updater
 
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "out"
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "out"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
-    """Application lifespan: startup and shutdown hooks."""
-    yield
+    """Application lifespan: startup and shutdown hooks.
+
+    Starts the background task that pushes world-state deltas over the
+    /world/deltas WebSocket, and cancels it cleanly on shutdown.
+    """
+    updater_task = start_background_updater()
+    try:
+        yield
+    finally:
+        updater_task.cancel()
+        await asyncio.gather(updater_task, return_exceptions=True)
 
 
 app = FastAPI(

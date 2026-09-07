@@ -50,7 +50,7 @@ CONSTRUCTION_MANIFEST: dict[str, dict[str, Any]] = {
     },
     "treasury": {
         "prompt": 2,
-        "activates_on": ["benchmark"],
+        "activates_on": ["benchmark_equity"],
         "agent_roles": ["guardian"],
         "description": "Portfolio treasury and benchmark",
         "kind": "treasury",
@@ -92,7 +92,7 @@ CONSTRUCTION_MANIFEST: dict[str, dict[str, Any]] = {
     },
     "monument": {
         "prompt": 1,
-        "activates_on": ["benchmark"],
+        "activates_on": ["benchmark_equity"],
         "agent_roles": [],
         "description": "Buy-and-hold benchmark — the first thing you beat",
         "kind": "monument",

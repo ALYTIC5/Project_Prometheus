@@ -11,7 +11,7 @@ holds no business logic. The world can never be the source of truth.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -115,7 +115,7 @@ class VsBenchmark(BaseModel):
 
 
 class Treasury(BaseModel):
-    total_equity: float = 1000.0
+    total_equity: float | None = None
     allocation_by_family: dict[str, float] = Field(default_factory=dict)
     drawdown: float = 0.0
     paper_pnl_today: float = 0.0
@@ -157,7 +157,7 @@ class WorldState(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     tick: int = 0
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source_data_version: str | None = None
 
     climate: ClimateState = Field(default_factory=ClimateState)

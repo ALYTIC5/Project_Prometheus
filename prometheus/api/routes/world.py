@@ -94,11 +94,16 @@ async def world_deltas(websocket: WebSocket) -> None:
 
 async def broadcast_world_update() -> None:
     """Broadcast a full world state update to all websocket clients."""
-    global _world_state_cache
+    global _world_state_cache, _cache_time
 
     async with get_session_factory()() as session:
         state = await build_world_state(session)
     delta = jsonable_encoder(state)
+
+    # Keep /world/state's cache in sync with what was just broadcast, so the
+    # two paths never disagree about current state.
+    _world_state_cache = state
+    _cache_time = datetime.now(UTC).timestamp()
 
     connections_to_remove = []
     for client_id, ws in _active_connections.items():
@@ -122,12 +127,16 @@ async def get_world_tick() -> dict[str, Any]:
     }
 
 
-def start_background_updater() -> None:
-    """Start the background task that updates websockets."""
+def start_background_updater() -> asyncio.Task[None]:
+    """Start the background task that pushes world state deltas over websockets.
+
+    Returns the task so the caller (the app lifespan) can cancel it cleanly
+    on shutdown.
+    """
 
     async def update_loop() -> None:
         while True:
             await asyncio.sleep(5.0)
             await broadcast_world_update()
 
-    _bg_task = asyncio.create_task(update_loop())  # noqa: RUF006
+    return asyncio.create_task(update_loop())

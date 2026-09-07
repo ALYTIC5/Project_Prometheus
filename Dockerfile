@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python deps
 COPY pyproject.toml .
 COPY alembic.ini .
+COPY prometheus/ prometheus/
 # Runtime deps only — ruff/mypy/pytest/pre-commit do not ship to production.
 RUN pip install -e .
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from prometheus.core.db import get_session_factory
 from prometheus.world.construction import (
@@ -56,7 +56,7 @@ async def get_buildings() -> dict[str, Any]:
 async def get_building(building_id: str) -> dict[str, Any]:
     """Get details for a specific building."""
     if building_id not in CONSTRUCTION_MANIFEST:
-        return {"error": f"Unknown building: {building_id}"}
+        raise HTTPException(status_code=404, detail=f"Unknown building: {building_id}")
 
     async with get_session_factory()() as session:
         phases = await get_construction_phases(session)

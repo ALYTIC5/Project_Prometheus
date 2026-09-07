@@ -99,10 +99,6 @@ LAWS: list[LawCompliance] = [
 ]
 
 
-def _building_state_for_phase(phase: ConstructionPhase) -> str:
-    return phase.value
-
-
 def determine_phase(
     structure_id: str,
     row_counts: dict[str, int],
@@ -140,6 +136,11 @@ async def _count_rows(session: AsyncSession, table: str) -> int:
         result = await session.scalar(text(f"SELECT COUNT(*) FROM {table}"))
         return int(result) if result is not None else 0
     except Exception:
+        # On Postgres a failed statement aborts the whole transaction — every
+        # later query on this same session would raise identically until the
+        # session is rolled back. Without this, one missing table poisons the
+        # count for every alphabetically-later table in the same session.
+        await session.rollback()
         return 0
 
 
@@ -172,17 +173,11 @@ async def get_benchmark_curve(session: AsyncSession) -> list[dict[str, Any]]:
         rows = result.fetchall()
         return [{"date": r[0].isoformat(), "equity": float(r[1])} for r in rows]
     except Exception:
+        # Same shared-session poisoning risk as _count_rows: an aborted
+        # statement must be rolled back or every later query on this session
+        # (in build_world_state) fails too.
+        await session.rollback()
         return []
-
-
-async def _get_experiments_summary(session: AsyncSession) -> dict[str, int]:
-    try:
-        result = await session.execute(
-            text("SELECT status, COUNT(*) FROM experiments GROUP BY status"),
-        )
-        return {row[0]: int(row[1]) for row in result.fetchall()}
-    except Exception:
-        return {}
 
 
 async def _get_recent_events(session: AsyncSession) -> list[WorldEvent]:
@@ -204,6 +199,7 @@ async def _get_recent_events(session: AsyncSession) -> list[WorldEvent]:
             for r in rows
         ]
     except Exception:
+        await session.rollback()
         return []
 
 
@@ -241,12 +237,6 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     benchmark_value = benchmark_curve[-1]["equity"] if benchmark_curve else 1000.0
     benchmark_return = (benchmark_value - 1000.0) / 1000.0 * 100
 
-    # Try to get system value from experiments
-    experiments_summary = await _get_experiments_summary(session)
-    active_experiments = sum(
-        v for k, v in experiments_summary.items() if k in ("pending", "running")
-    )
-
     # Districts are per strategy FAMILY (docs/WORLD_MAPPING.md), and the
     # strategy_families table does not exist until Prompt 4. Pipeline buildings
     # are `structures`, not districts — conflating them would make the world
@@ -258,13 +248,17 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     # fabricated agent would be the world lying about work it is not doing.
     agents: list[Agent] = []
 
+    # No strategy has ever paper traded (that's Prompt 8 / the `harbour`
+    # building). There is no real system_value to report and nothing to
+    # compare against the benchmark yet, so system_value/excess stay None
+    # and the verdict stays NOT_STARTED regardless of any pending/running
+    # experiments — an experiment existing is not the same as a portfolio
+    # existing.
     scoreboard = Scoreboard(
-        system_value=benchmark_value,
+        system_value=None,
         benchmark_value=benchmark_value,
-        excess=0.0,
-        verdict=ScoreboardVerdict.NOT_STARTED
-        if active_experiments == 0
-        else ScoreboardVerdict.INCONCLUSIVE,
+        excess=None,
+        verdict=ScoreboardVerdict.NOT_STARTED,
     )
 
     events = await _get_recent_events(session)
@@ -287,7 +281,7 @@ async def build_world_state(session: AsyncSession) -> WorldState:
         structures=structures,
         events=events,
         treasury=Treasury(
-            total_equity=benchmark_value,
+            total_equity=None,
             benchmark=BenchmarkMetrics(equity=benchmark_value, return_pct=benchmark_return),
         ),
         laws=LAWS,

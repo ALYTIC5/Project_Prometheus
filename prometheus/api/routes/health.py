@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter
+from sqlalchemy import text
 
 from prometheus.core.db import get_session_factory
 from prometheus.world.construction import BUILDING_ORDER, CONSTRUCTION_MANIFEST
@@ -38,6 +39,12 @@ def health_check() -> dict[str, Any]:
 async def readiness_check() -> dict[str, Any]:
     """Readiness probe — returns real system status from the database."""
     async with get_session_factory()() as session:
+        # Deliberately unswallowed: if the DB is genuinely unreachable this
+        # raises and FastAPI turns it into a 500, which is the correct signal
+        # for a readiness probe. Per-table counting below treats a query
+        # failure as "table doesn't exist yet" — that must never be allowed
+        # to mask a real outage.
+        await session.execute(text("SELECT 1"))
         phases = await get_construction_phases(session)
 
     return {
