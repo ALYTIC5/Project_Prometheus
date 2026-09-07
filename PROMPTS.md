@@ -21,6 +21,10 @@ The falsification-before-generation principle still holds: the Oracle (validatio
 opens before the Forge starts accepting external strategies. The world simply
 makes that sequence visible.
 
+Prompt 12 is the art pass, and it comes last on purpose. Everything up to it runs
+on programmatic placeholder sprites behind a swap layer, so the world is fully
+functional and provably correct before a single pixel is drawn.
+
 ---
 
 ## PROMPT 0 — Skeleton, laws, and database
@@ -240,8 +244,51 @@ Art: programmatic placeholder sprites — coloured isometric prisms with distinc
 silhouettes per role and building type. Builder sprites are yellow hard-hat
 figures. Buildings are geometric shapes with role-appropriate outlines (Oracle
 has columns, Forge has a chimney, Harbour has a dock outline, etc). The state
-machine must be provably correct before anyone commissions pixel art. Ship a
-sprite-swap layer so real art drops in without touching logic.
+machine must be provably correct before anyone commissions pixel art.
+
+SPRITE-SWAP LAYER — build this properly now, it is what makes Prompt 12 cheap.
+
+  world_client/sprites/registry.ts
+
+  Every visual thing resolves through ONE function:
+
+    resolveSprite(kind, variant, state, frame) -> TextureRef
+
+  where kind = "building" | "agent" | "hero" | "prop" | "tile",
+  variant = the semantic subtype (oracle, scribe, momentum_hero...),
+  state = the construction_phase / activity enum, frame = animation frame.
+
+  Backed by a SpriteManifest JSON: semantic key -> atlas name + frame rect +
+  anchor + frame count + fps. The placeholder manifest points at
+  procedurally-drawn textures generated at runtime. Prompt 12 swaps the manifest
+  to point at real atlases. NO rendering code changes. If you find yourself
+  writing `if (variant === "oracle")` anywhere outside the manifest, stop.
+
+ISOMETRIC MATH — do not improvise this. Read
+github.com/0xheycat/isometric-game-skills first; it is an agent-ready toolkit
+covering exactly the hard parts: grid math, depth sorting, autotiling,
+pathfinding, and Canvas2D isometric rendering. Its rendering target is Canvas2D
+/ Godot rather than PixiJS and its art pipeline is ComfyUI/SDXL (needs a local
+GPU, will NOT run on Railway) — so borrow the ALGORITHMS, not the stack:
+
+  - screen<->grid conversion at the 2:1 ratio
+  - depth sorting for overlapping sprites (this is where naive implementations
+    break — agents walking behind buildings)
+  - A* pathfinding on the tile grid, for agents moving between buildings
+  - autotiling rules for ground/terrain transitions
+
+  Port these into world_client/iso/ as our own PixiJS-native module. Record the
+  attribution and its license in docs/DEPENDENCIES.md.
+
+AGENT MOTION — agents must feel alive without any randomness that lies:
+  - Position is interpolated along an A* path between from_location and
+    to_location, parameterised by the backend's `progress` 0-1 field.
+  - Walk-cycle frame is a function of distance travelled, not wall-clock, so
+    sprites don't moonwalk when the tab throttles.
+  - Idle micro-animation (bob, tool swing) is cosmetic and allowed to be
+    time-based, because it carries no information.
+  - Easing on arrival/departure only. No random wandering — every movement
+    corresponds to a real job transition.
 
 Performance budget: 60fps with 300 agents, under 40MB of textures, degrades
 to static view on slow connections.
@@ -774,6 +821,94 @@ Build meta-learning. Read CLAUDE.md.
 
 Verify with: run meta-analysis on accumulated experiments, confirm at least
 3 non-trivial patterns are detected and surfaced.
+```
+
+---
+
+## PROMPT 12 — The art pass (placeholders become a world)
+
+**Do this LAST, deliberately.** Every prior prompt runs on programmatic
+placeholder sprites. That is not a compromise — it is the point. Art is the one
+thing here that cannot be verified by a test, so it ships only after the state
+machine is provably correct. If you commission or generate art before Prompt 11,
+you will be redrawing it every time a state enum changes.
+
+```
+Replace placeholder sprites with real pixel art. Read CLAUDE.md and
+world_client/sprites/registry.ts.
+
+HARD CONSTRAINT: you may not modify any rendering logic, any state machine, or
+any projection code in this prompt. The ONLY things that change are the sprite
+manifest and the asset files. If a piece of art requires a code change, the
+sprite-swap layer from Prompt 1 was built wrong — fix that layer, don't special-
+case the art.
+
+1. TOOLING — use aldegad/sprite-gen (github.com/aldegad/sprite-gen, ~576 stars,
+   actively maintained). It installs as a Claude Code skill, so you can drive it
+   directly. Its component-row pipeline is what we want: state rows -> alpha
+   cleanup -> frame extraction -> runtime atlases. That final atlas output feeds
+   PixiJS's batched renderer directly, which is the whole performance budget.
+
+   Read its actual README and license before use. Record it in
+   docs/DEPENDENCIES.md with version/commit pinned. If its output format does
+   not match our SpriteManifest schema, write a thin converter in
+   tools/sprite_import.py — do NOT bend the manifest schema to match a tool.
+
+2. ART DIRECTION — one coherent city, not a gallery of one-offs.
+   - Fixed palette: define ~32 colours in world_client/sprites/palette.json and
+     quantise every generated asset to it. This single constraint is what makes
+     independently-generated sprites look like they belong to one world.
+   - Isometric 2:1. Consistent light source (top-left). Consistent tile
+     footprint per building size class (1x1, 2x2, 3x3).
+   - Readable silhouettes at zoomed-out scale — a user must identify the Oracle
+     vs the Forge from the shape alone, with no colour and no label.
+   - Restrained. Aim for "quiet scientific civilisation", not mobile-game
+     candy. The Monument in particular should read as sombre and permanent.
+
+3. ASSET LIST — generate state rows for each, matching the existing enums
+   exactly. Do not invent states the backend cannot produce.
+
+   Buildings (each needs: PLANNED, SCAFFOLDING, FOUNDATION, ACTIVE, DAMAGED,
+   SEALED, OVERGROWN):
+     Library, Forge, Oracle, Arena, Vault, Treasury, Harbour, Archive,
+     Underworld, Watchtower, Temple of Knowledge, Monument
+   Note the Vault only ever renders SEALED, and the Monument only ACTIVE — but
+   generate the full rows anyway so the manifest stays uniform.
+
+   Agents (each needs: idle, walk 8-frame, work, carry):
+     builder, scribe, engineer, experimenter, statistician, guardian, auditor,
+     necromancer, scholar, prophet
+
+   Heroes — parameterised, NOT one-off. Generate a small component set
+   (body / armour weight / weapon / aura) and compose per strategy from its
+   real stats: high turnover -> light fast silhouette, long horizon -> heavy
+   armoured, market-neutral -> dual-wield, regime specialist -> elemental aura.
+   The composition rule lives in the manifest and is deterministic from
+   StrategySpec. A hero's look must be reproducible from its fingerprint.
+
+   Terrain/props: ground tiles + autotile transitions, scaffolding, road,
+   water for the Harbour, weather particle sheets (rain, lightning, fog, snow).
+
+4. THE MONUMENT gets bespoke attention — it is the emotional centre of the
+   whole interface. Carved stone, "€1,000" at the base, height driven by
+   benchmark value, and the golden-light mechanic from Prompt 8. It should look
+   older and more solid than anything the system builds around it.
+
+5. PERFORMANCE — hold the Prompt 1 budget: 60fps with 300 agents, under 40MB
+   of texture memory. Power-of-two atlases, mipmaps off (pixel art), nearest-
+   neighbour filtering, one atlas per category to minimise draw-call batching
+   breaks. Measure before and after; if the art pass costs more than 10fps,
+   cut frames, not resolution.
+
+6. Keep the placeholder manifest in the repo as
+   sprites/manifest.placeholder.json and add an env flag SPRITE_SET=placeholder
+   |production. Placeholders stay the CI rendering target forever — visual
+   tests must not depend on art assets, and a broken atlas must never be able
+   to fail the law tests.
+
+Verify with: the Prompt 1 fixture page renders every enum value with real art
+and zero code diffs outside sprites/; toggle SPRITE_SET back to placeholder and
+confirm the world still renders identically in structure; profile 300 agents.
 ```
 
 ---
