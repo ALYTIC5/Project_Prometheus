@@ -7,14 +7,14 @@ Polars, synthetic data, runs everywhere.
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import polars as pl
 
 from prometheus.data.schema import PointInTimeFrame
 
 _SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
-_START = datetime(2023, 1, 1, tzinfo=timezone.utc)
+_START = datetime(2023, 1, 1, tzinfo=UTC)
 _N_BARS = 500
 
 
