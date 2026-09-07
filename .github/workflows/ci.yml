@@ -60,3 +60,9 @@ jobs:
       - run: alembic upgrade head
       - name: Run law tests
         run: pytest tests/laws/ -v || (echo "::error::LAW VIOLATION — a tests/laws/ check failed. This gate does not get weakened, skipped, or deleted; fix the code." && exit 1)
+
+# Railway deployment is configured separately, outside CI, once the
+# project owner has a Railway project + credentials set up (PROMPTS.md
+# PROMPT 1 Part D). A CI-triggered deploy step will be added here once
+# that exists. Do not add a Docker-Hub-based deploy job in the meantime
+# -- Docker Hub is not this project's deployment target.
