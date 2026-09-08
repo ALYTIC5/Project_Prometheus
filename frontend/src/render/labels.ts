@@ -61,6 +61,16 @@ export function updateLabels(
 
     if (!placed.some((p) => overlaps(p, label))) {
       placed.push(label);
+      // Dark plate behind the text, sized to its measured bounds -- the
+      // "small pixel-font banner with a dark plate" the labels rewrite asks
+      // for. Structural fill stays opaque (Part 1's rule); this isn't a
+      // building face, but there's no reason to make an exception here.
+      const plate = new PIXI.Graphics();
+      const pad = 3;
+      plate
+        .rect(label.x - label.width / 2 - pad, label.y - label.height - pad, label.width + pad * 2, label.height + pad * 2)
+        .fill({ color: 0x0a0a1a });
+      layer.addChild(plate);
       layer.addChild(label);
     }
   }

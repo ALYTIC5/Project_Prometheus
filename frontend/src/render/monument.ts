@@ -1,10 +1,17 @@
 import * as PIXI from 'pixi.js';
 import { Layer, depthOf, gridToScreen, TILE_HEIGHT, TILE_WIDTH } from '../iso/projection';
+import { STOREY_PIXEL_HEIGHT } from '../sprites/registry';
 
 const STONE_COLOR = 0x9a9488;
 const STONE_DARK = 0x6f6a60;
+// A pre-mixed solid (not an alpha blend over STONE_DARK) for the shaft's
+// shadow edge -- Part 1's rule is alpha=1.0 on every structural fill.
+const SHAFT_SHADOW = 0x433f38;
 const BASE_HEIGHT = 60;
-const MAX_HEIGHT = 220;
+/** Tallest structure in the city -- 10 storeys, the same unit every other
+ * building's height comes from (render/building.ts), so the Monument
+ * scales consistently if that constant is ever retuned. */
+const MAX_HEIGHT = 10 * STOREY_PIXEL_HEIGHT;
 const MIN_HEIGHT = 30;
 /** Ease the monument's height toward the real benchmark equity over ~2s,
  * rather than snapping -- it is the city's one deliberately alive figure. */
@@ -50,13 +57,37 @@ export function createMonument(gridX: number, gridY: number, initialEquity: numb
   container.addChild(graphics);
   container.addChild(plaque);
 
+  // Ground-glow -- concentric low-alpha rings so the eye lands here first.
+  // This (and the spotlight cones below) is the one place outside weather/
+  // selection/damage-smoke this renderer uses alpha: it's a genuine light
+  // effect, not structural fill.
+  const glow = new PIXI.Graphics();
+  for (const [radius, alpha] of [
+    [halfW * 3.2, 0.05],
+    [halfW * 2.2, 0.09],
+    [halfW * 1.3, 0.14],
+  ] as const) {
+    glow.ellipse(0, 0, radius, radius * 0.5).fill({ color: 0xffe8b0, alpha });
+  }
+  container.addChildAt(glow, 0);
+
+  // Ground-level spotlights -- upward translucent light cones.
+  const spotlights = new PIXI.Graphics();
+  for (const angle of [Math.PI * 0.2, Math.PI * 0.8, Math.PI * 1.5]) {
+    const bx = Math.cos(angle) * halfW * 1.8;
+    const by = Math.sin(angle) * halfH * 1.8;
+    spotlights
+      .poly([bx - 4, by, bx + 4, by, bx + 14, by - 100, bx - 14, by - 100])
+      .fill({ color: 0xfff2cc, alpha: 0.06 });
+  }
+  container.addChildAt(spotlights, 1);
+
   // Plaza dais -- a wide, flat stone platform under the obelisk itself.
   const dais = new PIXI.Graphics();
   dais.poly([0, -halfH * 1.6, halfW * 2.2, 0, 0, halfH * 1.6, -halfW * 2.2, 0]).fill({
     color: STONE_DARK,
-    alpha: 0.9,
   });
-  container.addChildAt(dais, 0);
+  container.addChildAt(dais, 2);
 
   let currentHeight = heightForEquity(initialEquity);
 
@@ -80,7 +111,7 @@ export function createMonument(gridX: number, gridY: number, initialEquity: numb
       .fill({ color: STONE_COLOR });
     graphics
       .poly([shaftW, shaftBase, shaftW * 0.6, shaftTop, shaftW * 0.6 - 4, shaftTop, shaftW - 5, shaftBase])
-      .fill({ color: STONE_DARK, alpha: 0.6 });
+      .fill({ color: SHAFT_SHADOW });
 
     // "€1,000" carved into the base plinth -- always readable, static.
     const base = new PIXI.Text({

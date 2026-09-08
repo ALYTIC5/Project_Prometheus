@@ -120,6 +120,11 @@ export type SilhouetteFeature =
   | 'beacon-tower'
   | 'dome'
   | 'blast-door'
+  | 'oval-tiers'
+  | 'colonnade'
+  | 'buttressed-hall'
+  | 'sunken-ruin'
+  | 'ziggurat'
   | 'stepped-obelisk'
   | 'none';
 
@@ -130,8 +135,44 @@ const SILHOUETTE: Record<string, SilhouetteFeature> = {
   watchtower: 'beacon-tower',
   library: 'dome',
   vault: 'blast-door',
+  arena: 'oval-tiers',
+  treasury: 'colonnade',
+  archive: 'buttressed-hall',
+  underworld: 'sunken-ruin',
+  temple: 'ziggurat',
   monument: 'stepped-obelisk',
 };
+
+/** Storeys per real building `kind`, driving pixel height in
+ * render/building.ts -- not a flat per-footprint-class constant, so a
+ * LARGE 3x3 building at 6 storeys (Oracle) reads as visibly taller than
+ * it is wide, per the world-renderer verticality pass. The Monument is
+ * handled separately in render/monument.ts (its height is driven by the
+ * real benchmark equity, not a fixed storey count). */
+export const STOREYS: Record<string, number> = {
+  library: 3,
+  archive: 2,
+  underworld: 2,
+  temple: 4,
+  harbour: 2,
+  forge: 4,
+  oracle: 6,
+  arena: 3,
+  treasury: 4,
+  watchtower: 8,
+  vault: 3,
+};
+
+export const STOREY_PIXEL_HEIGHT = 22;
+
+/** Deterministic string hash (not Math.random) -- stable across renders,
+ * used to pick a per-building lit-window pattern, work activity, etc.
+ * without persisting any state. */
+export function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
 
 export function resolveSprite(
   kind: SpriteKind,

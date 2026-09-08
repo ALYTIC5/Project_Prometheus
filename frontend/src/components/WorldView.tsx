@@ -11,6 +11,7 @@ import { drawGround } from '../render/ground';
 import { updateLabels, type LabelCandidate } from '../render/labels';
 import { createMonument, type MonumentHandle } from '../render/monument';
 import { drawHoverOutline, drawSelectionOutline, pickBuilding } from '../render/selection';
+import { drawVignette } from '../render/vignette';
 import type { Building, ScoreboardResponse, WorldState } from '../types';
 
 const CANVAS_BG = 0x0a0a1a;
@@ -23,6 +24,7 @@ export default function WorldView() {
   const monumentRef = useRef<MonumentHandle | null>(null);
   const buildersRef = useRef<BuildersHandle | null>(null);
   const buildingsLayerRef = useRef<PIXI.Container | null>(null);
+  const groundLayerRef = useRef<PIXI.Container | null>(null);
   const labelLayerRef = useRef<PIXI.Container | null>(null);
   const overlayLayerRef = useRef<PIXI.Container | null>(null);
   const debugLayerRef = useRef<PIXI.Container | null>(null);
@@ -105,22 +107,40 @@ export default function WorldView() {
         // insertion order relative to each other, not by zIndex.
         const world = new PIXI.Container();
         app.stage.addChild(world);
+        // Ground needs real building locations (for the plaza + road
+        // network), which haven't loaded yet at Pixi-init time -- this
+        // starts empty and is populated by the buildings-redraw effect
+        // below, once real data exists.
+        const groundLayer = new PIXI.Container();
         const buildingsLayer = new PIXI.Container();
         buildingsLayer.sortableChildren = true;
         const labelLayer = new PIXI.Container();
         const overlayLayer = new PIXI.Container();
         const debugLayer = new PIXI.Container();
-        world.addChild(drawGround());
+        world.addChild(groundLayer);
         world.addChild(buildingsLayer);
         world.addChild(overlayLayer);
         world.addChild(labelLayer);
         world.addChild(debugLayer);
+        groundLayerRef.current = groundLayer;
         buildingsLayerRef.current = buildingsLayer;
         labelLayerRef.current = labelLayer;
         overlayLayerRef.current = overlayLayer;
         debugLayerRef.current = debugLayer;
 
         cameraRef.current = attachCamera(app, world);
+
+        // Screen-space vignette -- added to app.stage, not `world`, so it
+        // stays fixed relative to the viewport instead of panning/zooming
+        // with the camera. Redrawn on resize (app.screen changes as the
+        // window does, since Pixi was init'd with resizeTo: window).
+        let vignette = drawVignette(app.screen.width, app.screen.height);
+        app.stage.addChild(vignette);
+        app.renderer.on('resize', (w: number, h: number) => {
+          app.stage.removeChild(vignette);
+          vignette = drawVignette(w, h);
+          app.stage.addChild(vignette);
+        });
 
         app.stage.on('pointermove', (e: PIXI.FederatedPointerEvent) => {
           const id = pickBuilding(e.global, world, buildingsStateRef.current);
@@ -143,6 +163,7 @@ export default function WorldView() {
           monumentRef.current?.update(scoreboardStateRef.current?.benchmark?.equity ?? 1000, deltaMs);
           buildersRef.current?.update(ticker.lastTime);
           redrawOverlays(ticker.lastTime);
+          redrawLabels();
           buildingsLayer.sortChildren();
 
           frames++;
@@ -186,6 +207,26 @@ export default function WorldView() {
     }
   }
 
+  // Zoom changes continuously via drag/wheel (camera state, not React
+  // state), so labels are recomputed every frame like the hover/selection
+  // overlays above, not only when buildings/selection change.
+  function redrawLabels(): void {
+    const layer = labelLayerRef.current;
+    if (!layer) return;
+    const zoom = cameraRef.current?.getZoom() ?? 1;
+    const candidates: LabelCandidate[] = buildingsStateRef.current.map((b) => {
+      const anchor = gridToScreen(b.location.x + b.location.width / 2, b.location.y);
+      return {
+        id: b.id,
+        x: anchor.x,
+        y: anchor.y - 60,
+        text: b.id,
+        force: b.id === hoveredRef.current || b.id === selectedIdRef.current,
+      };
+    });
+    updateLabels(layer, candidates, zoom > ZOOM_LABEL_THRESHOLD);
+  }
+
   // Create the monument once buildings/pixi are ready (its geometry is a
   // special case per render/monument.ts, but it still lives in the shared
   // sortable entities layer for correct occlusion -- see below).
@@ -216,7 +257,13 @@ export default function WorldView() {
   // this reason).
   useEffect(() => {
     const layer = buildingsLayerRef.current;
+    const groundLayer = groundLayerRef.current;
     if (!pixiReady || !layer || buildings.length === 0) return;
+
+    if (groundLayer) {
+      groundLayer.removeChildren();
+      groundLayer.addChild(drawGround(buildings));
+    }
 
     layer.removeChildren();
     const nonMonument = buildings.filter((b) => b.kind !== 'monument');
@@ -229,7 +276,7 @@ export default function WorldView() {
     if (monumentRef.current) layer.addChild(monumentRef.current.container);
 
     const handle = createBuilders(nonMonument);
-    layer.addChild(handle.container);
+    for (const root of handle.roots) layer.addChild(root);
     buildersRef.current = handle;
   }, [pixiReady, buildings]);
 
@@ -259,23 +306,6 @@ export default function WorldView() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  // Rebuild label candidates whenever buildings/selection change.
-  useEffect(() => {
-    const layer = labelLayerRef.current;
-    if (!pixiReady || !layer) return;
-    const candidates: LabelCandidate[] = buildings.map((b) => {
-      const anchor = gridToScreen(b.location.x + b.location.width / 2, b.location.y);
-      return {
-        id: b.id,
-        x: anchor.x,
-        y: anchor.y - 60,
-        text: b.id,
-        force: b.id === hoveredRef.current || b.id === selected?.id,
-      };
-    });
-    updateLabels(layer, candidates, false);
-  }, [pixiReady, buildings, selected]);
 
   if (mode === 'truth') {
     return (

@@ -1,0 +1,10 @@
+{
+  "stone": { "dark": "#4A453D", "mid": "#7A7268", "light": "#A89F8F", "highlight": "#D6CBB8" },
+  "blue": { "dark": "#1F4A6B", "mid": "#2F6EA3", "light": "#4A90D9", "highlight": "#7AB8F0" },
+  "orange": { "dark": "#8A4A12", "mid": "#C1651C", "light": "#E67E22", "highlight": "#F5A94F" },
+  "purple": { "dark": "#4A2560", "mid": "#6B3489", "light": "#8E44AD", "highlight": "#B46FD1" },
+  "yellow": { "dark": "#8A6F0A", "mid": "#C19C12", "light": "#F1C40F", "highlight": "#F8DC6B" },
+  "green": { "dark": "#145C33", "mid": "#1E8449", "light": "#27AE60", "highlight": "#58D68D" },
+  "red": { "dark": "#7D221A", "mid": "#B13327", "light": "#E74C3C", "highlight": "#F17D70" },
+  "slate": { "dark": "#14202B", "mid": "#23394D", "light": "#2C3E50", "highlight": "#4A6178" }
+}
