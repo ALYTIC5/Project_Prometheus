@@ -99,6 +99,8 @@ export default function WorldView() {
   const [selected, setSelected] = useState<Building | null>(null);
   const [mode, setMode] = useState<'world' | 'truth'>('world');
   const [loading, setLoading] = useState(true);
+  const [pixiReady, setPixiReady] = useState(false);
+  const [pixiError, setPixiError] = useState<string | null>(null);
 
   // Poll the real backend — the world only ever shows what these calls return.
   useEffect(() => {
@@ -138,6 +140,11 @@ export default function WorldView() {
         }
         hostRef.current.appendChild(app.canvas);
         appRef.current = app;
+        setPixiReady(true);
+      })
+      .catch((err: unknown) => {
+        console.error('PixiJS init failed:', err);
+        setPixiError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       destroyed = true;
@@ -151,7 +158,7 @@ export default function WorldView() {
   // Redraw whenever the data or app changes.
   useEffect(() => {
     const app = appRef.current;
-    if (!app || buildings.length === 0) return;
+    if (!pixiReady || !app || buildings.length === 0) return;
 
     app.stage.removeChildren();
     const worldContainer = new PIXI.Container();
@@ -170,7 +177,7 @@ export default function WorldView() {
     for (const b of sorted) {
       worldContainer.addChild(drawBuilding(b, benchmarkEquity, setSelected));
     }
-  }, [buildings, scoreboard]);
+  }, [buildings, scoreboard, pixiReady]);
 
   if (loading) {
     return (
@@ -220,6 +227,18 @@ export default function WorldView() {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#0a0a1a' }}>
       <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
+
+      {pixiError && (
+        <div
+          style={{
+            position: 'absolute', bottom: 10, left: 10, right: 10, background: 'rgba(120,0,0,0.85)',
+            color: '#fff', padding: 12, borderRadius: 6, fontFamily: 'monospace', fontSize: 12,
+          }}
+        >
+          Pixel-art renderer failed to start ({pixiError}). This browser/GPU may not support
+          WebGL — the world data above is still real, just rendered as text.
+        </div>
+      )}
 
       <div style={{ position: 'absolute', top: 10, left: 10, color: '#eee', fontFamily: 'monospace', pointerEvents: 'none' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Project Prometheus</h1>
