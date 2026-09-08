@@ -179,15 +179,7 @@ export default function WorldView() {
     }
   }, [buildings, scoreboard, pixiReady]);
 
-  if (loading) {
-    return (
-      <div style={{ color: '#aaa', padding: 40, fontFamily: 'monospace' }}>
-        Loading world...
-      </div>
-    );
-  }
-
-  if (mode === 'truth') {
+  if (!loading && mode === 'truth') {
     return (
       <div style={{ color: '#eee', padding: 40, fontFamily: 'monospace', background: '#0a0a1a', minHeight: '100vh' }}>
         <h1 style={{ color: '#4A90D9' }}>Truth View</h1>
@@ -227,6 +219,12 @@ export default function WorldView() {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#0a0a1a' }}>
       <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
+
+      {loading && (
+        <div style={{ color: '#aaa', padding: 40, fontFamily: 'monospace', position: 'absolute', top: 0, left: 0 }}>
+          Loading world...
+        </div>
+      )}
 
       {pixiError && (
         <div
