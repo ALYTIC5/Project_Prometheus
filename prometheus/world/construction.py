@@ -99,19 +99,35 @@ CONSTRUCTION_MANIFEST: dict[str, dict[str, Any]] = {
     },
 }
 
+MONUMENT_CLEAR_RADIUS = 2
+
+# City layout, hand-authored on a 26x26 tile grid. Footprint size class is
+# implied by width/height (1x1 = TOWER, 2x2 = MEDIUM, 3x3 = LARGE) rather
+# than tracked as a separate field -- one source of truth per building.
+# Placement rules (enforced by tests/test_building_layout.py):
+#   - zero pairwise footprint overlap
+#   - >=1 empty tile between every pair of footprints
+#   - nothing else inside the monument's MONUMENT_CLEAR_RADIUS-tile box --
+#     it is the city's visual anchor and must never be occluded
+#   - vault sits one tile from oracle (validation guards the holdout) but
+#     in its own isolated footprint, not merged into the oracle block
+#   - underworld sits alone in the low-right corner, away from every
+#     other cluster
+#   - harbour sits near the low-x map edge; columns x<2 are reserved as
+#     water in the frontend's ground renderer
 BUILDING_LOCATIONS: dict[str, dict[str, float]] = {
-    "library": {"x": 1, "y": 2, "width": 3, "height": 2},
-    "forge": {"x": 5, "y": 2, "width": 3, "height": 2},
-    "oracle": {"x": 9, "y": 2, "width": 3, "height": 2},
-    "arena": {"x": 1, "y": 5, "width": 3, "height": 2},
-    "vault": {"x": 5, "y": 5, "width": 2, "height": 2},
-    "treasury": {"x": 8, "y": 5, "width": 3, "height": 2},
-    "harbour": {"x": 12, "y": 2, "width": 3, "height": 2},
-    "archive": {"x": 12, "y": 5, "width": 2, "height": 2},
-    "underworld": {"x": 12, "y": 8, "width": 2, "height": 2},
-    "watchtower": {"x": 1, "y": 8, "width": 2, "height": 2},
-    "temple": {"x": 5, "y": 8, "width": 3, "height": 2},
-    "monument": {"x": 4, "y": 3.5, "width": 2, "height": 2},
+    "monument": {"x": 13, "y": 13, "width": 1, "height": 1},
+    "watchtower": {"x": 13, "y": 4, "width": 1, "height": 1},
+    "forge": {"x": 2, "y": 4, "width": 3, "height": 3},
+    "oracle": {"x": 18, "y": 10, "width": 3, "height": 3},
+    "arena": {"x": 4, "y": 18, "width": 3, "height": 3},
+    "treasury": {"x": 18, "y": 4, "width": 3, "height": 3},
+    "vault": {"x": 18, "y": 14, "width": 2, "height": 2},
+    "underworld": {"x": 22, "y": 22, "width": 2, "height": 2},
+    "harbour": {"x": 2, "y": 13, "width": 2, "height": 2},
+    "library": {"x": 3, "y": 10, "width": 2, "height": 2},
+    "archive": {"x": 22, "y": 4, "width": 2, "height": 2},
+    "temple": {"x": 8, "y": 18, "width": 2, "height": 2},
 }
 
 BUILDING_COLORS: dict[str, str] = {
