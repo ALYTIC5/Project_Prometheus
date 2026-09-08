@@ -1,7 +1,23 @@
 # Dockerfile — multi-stage build for Project Prometheus API
-# Serves FastAPI + (optionally) a static Next.js frontend export.
+# Serves FastAPI + a static Next.js frontend export, in ONE container.
 # Cost target: 0.5 vCPU / 512MB per Railway billing ~$10/month.
 
+# --- Frontend build stage ---
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+# Empty string = same-origin: the frontend and API share one container/
+# domain in production, so relative fetch paths ("/world/state") are
+# correct and there's no CORS round-trip at all.
+ENV NEXT_PUBLIC_API_URL=""
+RUN npm run build
+
+# --- Python builder stage ---
 FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -43,6 +59,10 @@ COPY alembic.ini .
 COPY alembic/ alembic/
 COPY pyproject.toml .
 COPY .env.example .
+
+# Static frontend export -- served by prometheus/main.py's StaticFiles
+# mount at FRONTEND_DIST (<repo>/frontend/out).
+COPY --from=frontend-builder /frontend/out frontend/out
 
 # Non-root user
 RUN adduser --disabled-password --gecos "" prometheus

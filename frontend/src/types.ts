@@ -98,6 +98,34 @@ export interface BuildProgress {
   scaffolding: number;
 }
 
+/** GET /scoreboard/'s response — a superset of the Scoreboard model,
+ * flattened with verdict_label plus the benchmark/vs_benchmark objects. */
+export interface ScoreboardResponse extends Scoreboard {
+  verdict_label: string;
+  benchmark: BenchmarkMetrics;
+  vs_benchmark: VsBenchmark;
+  build_progress: BuildProgress;
+}
+
+export interface BuildingLocation {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Building {
+  id: string;
+  kind: string;
+  description: string;
+  prompt: number | null;
+  phase: string;
+  location: BuildingLocation;
+  color: string;
+  agent_roles: string[];
+  activates_on: string[];
+}
+
 export interface WorldState {
   tick: number;
   generated_at: string;

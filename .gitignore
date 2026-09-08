@@ -15,3 +15,10 @@ build/
 .claude-flow/
 .swarm/
 .superpowers/
+
+# frontend build artifacts — never committed, rebuilt by the Dockerfile's
+# Node stage on every deploy
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
