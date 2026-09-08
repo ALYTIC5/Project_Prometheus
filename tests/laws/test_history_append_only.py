@@ -79,7 +79,7 @@ def test_update_child_tables_raises(engine, experiment_id: str, table: str) -> N
         engine.begin() as conn,
     ):
         conn.execute(
-            text(f"UPDATE {table} SET {value_col} = :new_value::jsonb WHERE id = :id"),
+            text(f"UPDATE {table} SET {value_col} = CAST(:new_value AS jsonb) WHERE id = :id"),
             {"new_value": '{"x": 1}', "id": row_id},
         )
 
