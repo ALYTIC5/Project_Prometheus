@@ -19,7 +19,6 @@ const ZOOM_LABEL_THRESHOLD = 1.5;
 export default function WorldView() {
   const hostRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
-  const worldRef = useRef<PIXI.Container | null>(null);
   const cameraRef = useRef<CameraHandle | null>(null);
   const monumentRef = useRef<MonumentHandle | null>(null);
   const buildersRef = useRef<BuildersHandle | null>(null);
@@ -93,11 +92,19 @@ export default function WorldView() {
         hostRef.current.appendChild(app.canvas);
         appRef.current = app;
 
+        // `world` is a FIXED-ORDER layer stack (ground always behind
+        // everything, overlay/labels/debug always in front) -- it must
+        // NOT be sortableChildren itself. Only `buildingsLayer` (the
+        // "entities" layer: buildings, the monument, and builders all as
+        // siblings) is depth-sorted, so an object of any of those three
+        // kinds can correctly occlude or be occluded by any other,
+        // regardless of which one added it. Splitting them into separate
+        // sibling containers of `world` (an earlier version of this file
+        // did exactly that for the monument and builders) breaks
+        // cross-type occlusion entirely, since containers only stack by
+        // insertion order relative to each other, not by zIndex.
         const world = new PIXI.Container();
-        world.sortableChildren = true;
         app.stage.addChild(world);
-        worldRef.current = world;
-
         const buildingsLayer = new PIXI.Container();
         buildingsLayer.sortableChildren = true;
         const labelLayer = new PIXI.Container();
@@ -136,7 +143,6 @@ export default function WorldView() {
           monumentRef.current?.update(scoreboardStateRef.current?.benchmark?.equity ?? 1000, deltaMs);
           buildersRef.current?.update(ticker.lastTime);
           redrawOverlays(ticker.lastTime);
-          if (world.sortableChildren) world.sortChildren();
           buildingsLayer.sortChildren();
 
           frames++;
@@ -180,11 +186,12 @@ export default function WorldView() {
     }
   }
 
-  // Rebuild the monument once buildings/pixi are ready (it's a special
-  // case rendered outside the generic building layer, per render/monument.ts).
+  // Create the monument once buildings/pixi are ready (its geometry is a
+  // special case per render/monument.ts, but it still lives in the shared
+  // sortable entities layer for correct occlusion -- see below).
   useEffect(() => {
-    const world = worldRef.current;
-    if (!pixiReady || !world || buildings.length === 0 || monumentRef.current) return;
+    const layer = buildingsLayerRef.current;
+    if (!pixiReady || !layer || buildings.length === 0 || monumentRef.current) return;
     const monument = buildings.find((b) => b.kind === 'monument');
     if (!monument) return;
     const handle = createMonument(
@@ -192,11 +199,21 @@ export default function WorldView() {
       monument.location.y,
       scoreboard?.benchmark?.equity ?? 1000,
     );
-    world.addChild(handle.container);
+    // Added to buildingsLayer (the shared sortable "entities" layer), NOT
+    // `world` directly -- it must compete on zIndex with every other
+    // building and builder for correct occlusion, the same reason
+    // builders live there too (see the effect below).
+    buildingsLayerRef.current?.addChild(handle.container);
     monumentRef.current = handle;
   }, [pixiReady, buildings, scoreboard]);
 
   // Redraw non-monument buildings and builders whenever real data changes.
+  // All three (buildings, the monument, builders) share this one
+  // sortableChildren layer so any of them can correctly occlude any other
+  // by real zIndex -- separate sibling containers can only stack by
+  // insertion order relative to each other, which is the layering bug
+  // this replaced (ground was drawing over every building for exactly
+  // this reason).
   useEffect(() => {
     const layer = buildingsLayerRef.current;
     if (!pixiReady || !layer || buildings.length === 0) return;
@@ -206,14 +223,14 @@ export default function WorldView() {
     for (const b of nonMonument) {
       layer.addChild(drawBuilding(b));
     }
+    // removeChildren() above also detached the monument (if it already
+    // existed) -- Pixi's addChild re-parents an already-parented display
+    // object rather than duplicating it, so this simply re-inserts it.
+    if (monumentRef.current) layer.addChild(monumentRef.current.container);
 
-    const world = worldRef.current;
-    if (world) {
-      if (buildersRef.current) world.removeChild(buildersRef.current.container);
-      const handle = createBuilders(nonMonument);
-      world.addChild(handle.container);
-      buildersRef.current = handle;
-    }
+    const handle = createBuilders(nonMonument);
+    layer.addChild(handle.container);
+    buildersRef.current = handle;
   }, [pixiReady, buildings]);
 
   // Debug overlay (press D): per-object grid coords + depth value.
