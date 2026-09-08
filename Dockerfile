@@ -51,6 +51,11 @@ USER prometheus
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"
+  CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health/')"
 
-CMD ["uvicorn", "prometheus.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Railway assigns PORT dynamically at runtime -- shell form so it actually
+# expands, unlike exec-form CMD's hardcoded "8000". Migrations run as the
+# release step on every deploy, per PROMPTS.md PROMPT 1 Part D ("Alembic
+# migrations run on deploy via a release command") -- never destructive,
+# alembic upgrade only ever moves forward.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn prometheus.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
