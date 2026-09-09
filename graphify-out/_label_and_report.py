@@ -1,0 +1,130 @@
+import json
+from graphify.build import build_from_json
+from graphify.cluster import score_all
+from graphify.analyze import god_nodes, surprising_connections, suggest_questions
+from graphify.report import generate
+from pathlib import Path
+
+extraction = json.loads(Path('graphify-out/.graphify_extract.json').read_text(encoding='utf-8-sig'))
+detection = json.loads(Path('graphify-out/.graphify_detect.json').read_text(encoding='utf-8-sig'))
+analysis = json.loads(Path('graphify-out/.graphify_analysis.json').read_text(encoding='utf-8-sig'))
+
+G = build_from_json(extraction, root='.', directed=False)
+communities = {int(k): v for k, v in analysis['communities'].items()}
+cohesion = {int(k): v for k, v in analysis['cohesion'].items()}
+tokens = {'input': extraction.get('input_tokens', 0), 'output': extraction.get('output_tokens', 0)}
+
+labels = {
+    0: "Isometric Skills Repo Overview",
+    1: "Data Ingestion & Versioning",
+    2: "Project Constitution & Dependencies",
+    3: "Core DB Schema & Survivorship",
+    4: "Risk & Research Policy Config",
+    5: "The Laws & Point-in-Time Plan",
+    6: "Asset Generation Pipeline",
+    7: "No-Real-Money & Policy Isolation",
+    8: "Frontend Package Manifest",
+    9: "Data Quality Checks",
+    10: "World State Entities",
+    11: "Iso.js Rendering Engine",
+    12: "Point-in-Time Schema & Lookahead Test",
+    13: "Frontend World View & API",
+    14: "Building Sprites & Registry",
+    15: "Scoreboard & World API Routes",
+    16: "Frontend TypeScript Config",
+    17: "Frontend Isometric Projection & Monument",
+    18: "App Entrypoint & Static Serving",
+    19: "Frontend Type Definitions",
+    20: "Buildings API & World Broadcast",
+    21: "Builder Agent Rendering",
+    22: "World Construction & Drilldown",
+    23: "Append-Only History Tests",
+    24: "Social Preview Card Content",
+    25: "Health Check API",
+    26: "Ground & Road Rendering",
+    27: "Sprite Color Palette",
+    28: "Iso Engine Package Manifest",
+    29: "Construction Phase Determination",
+    30: "Building Layout Tests",
+    31: "Terrain Tile Set Assets",
+    32: "AgentQuant & Temple Prompts",
+    33: "World Enums",
+    34: "Python venv Activation Script",
+    35: "Paper-Only Law & Qubx Eval",
+    36: "TimescaleDB Migration",
+    37: "Core Tables Migration",
+    38: "Append-Only Triggers Migration",
+    39: "Data Layer Tables Migration",
+    40: "Sample Map Rendering Assets",
+    41: "Next.js Root Layout",
+    42: "Next.js Home Page",
+    43: "Depth-Sorting Diagram Panels",
+    44: "Terrain Tiling Comparison",
+    45: "Holdout Sacred Test",
+    46: "Global Threshold Test",
+    47: "Cost Discipline Note",
+    48: "Deterministic Core Principle",
+    49: "Pin Everything Principle",
+    50: "Next.js Config",
+    51: "Watchtower Building Prompt",
+    52: "Stratevo Evaluation Prompt",
+    53: "Test Fixtures (conftest)",
+    54: "Project Identity Node",
+    55: "asyncpg Dependency",
+    56: "httpx Dependency",
+    57: "mypy Dependency",
+    58: "pre-commit Dependency",
+    59: "psycopg Dependency",
+    60: "pytest Dependency",
+    61: "pytest-asyncio Dependency",
+    62: "pyyaml Dependency",
+    63: "react Dependency",
+    64: "ruff Dependency",
+    65: "sqlalchemy Dependency",
+    66: "types-pyyaml Dependency",
+    67: "typescript Dependency",
+    68: "Experiment ID Counter (Plan)",
+    69: "Strategy ID Counter (Plan)",
+    70: "Data Layer Models (Plan)",
+    71: "Data Quality (Plan)",
+    72: "Vitest Config",
+    73: "Demo Animation Asset",
+    74: "Hero Banner Image",
+    75: "Code of Conduct",
+    76: "Sample Map Asset",
+    77: "GitHub Funding Config",
+    78: "Skill Validator Script",
+    79: "Security Policy",
+    80: "Animated Sprite Demo Image",
+    81: "ComfyUI Build Workflow Script",
+    82: "Python Package Manifest",
+    83: "API Package Init",
+    84: "Backtest Package Init",
+    85: "Core Package Init",
+    86: "Data Package Init",
+    87: "Experiments Package Init",
+    88: "Prometheus Package Init",
+    89: "Paper Package Init",
+    90: "Research Package Init",
+    91: "Strategy Package Init",
+    92: "Validation Package Init",
+    93: "World Package Init",
+    94: "Prompt 11 Node",
+    95: "Autotiling Demo Image",
+    96: "Depth-Sorting Diagram",
+    97: "Building Sprites Demo Image",
+    98: "Character Sprites Demo Image",
+    99: "Grid Math Diagram",
+    100: "Object Sprites Demo Image",
+    101: "Terrain Goal Map Image",
+    102: "Single Grass Tile Image",
+    103: "Tests Package Init",
+    104: "Laws Tests Package Init",
+}
+
+questions = suggest_questions(G, communities, labels)
+
+report = generate(G, communities, cohesion, labels, analysis['gods'], analysis['surprises'], detection, tokens, '.', suggested_questions=questions)
+Path('graphify-out/GRAPH_REPORT.md').write_text(report, encoding='utf-8')
+Path('graphify-out/.graphify_labels.json').write_text(json.dumps({str(k): v for k, v in labels.items()}, ensure_ascii=False), encoding='utf-8')
+print('Report updated with community labels')
