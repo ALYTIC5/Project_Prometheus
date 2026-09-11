@@ -27,10 +27,9 @@ dependencies = [
 # main dependencies and out of the production container.
 art = [
     "pillow==12.3.0",
-    # 2.5.2 matches what polars==1.44.1 already resolves transitively
-    # (see the [tool.mypy] comment below) -- pinned here to that same
-    # version so tools/art/'s direct import can't diverge from it.
-    "numpy==2.5.2",
+    # 2.4.6 is the newest numpy that still supports requires-python's
+    # floor (py3.11) -- 2.5.x requires python>=3.12 and breaks CI.
+    "numpy==2.4.6",
 ]
 dev = [
     "ruff==0.6.9",
