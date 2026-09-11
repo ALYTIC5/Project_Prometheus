@@ -42,7 +42,7 @@ PROCEDURAL_BY_PHASE = {
 
 def main() -> int:
     manifest_path = SPRITES_DIR / "manifest.production.json"
-    palette_path = SPRITES_DIR / "palette.json"
+    palette_path = SPRITES_DIR / "sprite_palette.json"
     if not manifest_path.exists():
         print(f"No manifest at {manifest_path} -- run pack_atlas first", file=sys.stderr)
         return 1

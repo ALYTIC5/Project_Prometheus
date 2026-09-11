@@ -258,7 +258,7 @@ def _pack(sprites: list[Sprite]) -> tuple[np.ndarray, dict[str, dict]]:
 def main() -> int:
     from PIL import Image
 
-    palette_path = SPRITES_DIR / "palette.json"
+    palette_path = SPRITES_DIR / "sprite_palette.json"
     if not palette_path.exists():
         print(f"No palette at {palette_path} -- run build_palette first", file=sys.stderr)
         return 1

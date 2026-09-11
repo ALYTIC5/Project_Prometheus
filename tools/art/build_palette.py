@@ -1,12 +1,17 @@
-"""A5 - derive a shared 64-colour palette from every scaled sprite.
+"""A5 - derive a 64-colour sprite-quantization palette from every scaled sprite.
 
 Collects every opaque pixel across art/scaled/*.png, runs Pillow's
 built-in median-cut quantizer once on the pooled population (not
 per-sheet, which would let each sheet's palette drift from the others),
-and writes frontend/src/sprites/palette.json in the exact structural
-shape palette.ts already depends on: {family: {dark,mid,light,highlight}}
--- 16 families x 4 shades = 64 colours, PaletteValue's four names
-untouched, PaletteFamily just widens from 8 keys to 16.
+and writes frontend/src/sprites/sprite_palette.json in the same
+structural shape palette.ts's renderer palette uses:
+{family: {dark,mid,light,highlight}} -- 16 families x 4 shades = 64
+colours. This is a SEPARATE file from palette.json: palette.json is the
+renderer's hand-authored 8-family semantic palette (PALETTE['blue.dark']
+etc, read by frontend/src/render/*.ts) and must never be overwritten by
+this pipeline -- the two serve different consumers (procedural Pixi
+fills vs. recovered-art colour quantization) and happened to collide
+under one filename once before, breaking every renderer colour lookup.
 """
 
 from __future__ import annotations
@@ -74,7 +79,7 @@ def main() -> int:
     ]
 
     families = bucket_palette_into_families(palette_rgb, family_size=4)
-    json_dump(families, SPRITES_DIR / "palette.json")
+    json_dump(families, SPRITES_DIR / "sprite_palette.json")
 
     # population_share per palette entry, for the report only.
     quant_arr = np.array(quantized.convert("RGB"))
@@ -101,7 +106,7 @@ def main() -> int:
     )
 
     low_share = [e for e in report_entries if e["population_share"] < 0.0005]
-    print(f"Wrote {SPRITES_DIR / 'palette.json'} (16 families x 4 shades = 64 colours)")
+    print(f"Wrote {SPRITES_DIR / 'sprite_palette.json'} (16 families x 4 shades = 64 colours)")
     print(f"Sampled {len(population):,} pixels from {len(files)} sprites")
     if low_share:
         print(f"{len(low_share)} palette entries have near-zero population share (see report)")
