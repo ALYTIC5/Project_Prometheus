@@ -15,6 +15,11 @@ COPY frontend/ ./
 # domain in production, so relative fetch paths ("/world/state") are
 # correct and there's no CORS round-trip at all.
 ENV NEXT_PUBLIC_API_URL=""
+# The art pipeline's real atlases (tools/art/) are verified and committed --
+# ship them. Placeholder stays the default everywhere else (registry.ts,
+# frontend/src/sprites/registry.ts) so local dev and tests aren't coupled
+# to the art assets, per PROMPTS.md's SPRITE_SET=placeholder|production flag.
+ENV NEXT_PUBLIC_SPRITE_SET="production"
 RUN npm run build
 
 # --- Python builder stage ---
