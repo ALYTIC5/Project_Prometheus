@@ -31,3 +31,6 @@ art/*
 art/sliced/*
 !art/sliced/overrides.json
 !art/coverage_matrix.json
+
+# graphify command scratch output — regenerable, never committed
+graphify-out/
