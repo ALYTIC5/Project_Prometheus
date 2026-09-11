@@ -1,10 +1,98 @@
 {
-  "stone": { "dark": "#4A453D", "mid": "#7A7268", "light": "#A89F8F", "highlight": "#D6CBB8" },
-  "blue": { "dark": "#1F4A6B", "mid": "#2F6EA3", "light": "#4A90D9", "highlight": "#7AB8F0" },
-  "orange": { "dark": "#8A4A12", "mid": "#C1651C", "light": "#E67E22", "highlight": "#F5A94F" },
-  "purple": { "dark": "#4A2560", "mid": "#6B3489", "light": "#8E44AD", "highlight": "#B46FD1" },
-  "yellow": { "dark": "#8A6F0A", "mid": "#C19C12", "light": "#F1C40F", "highlight": "#F8DC6B" },
-  "green": { "dark": "#145C33", "mid": "#1E8449", "light": "#27AE60", "highlight": "#58D68D" },
-  "red": { "dark": "#7D221A", "mid": "#B13327", "light": "#E74C3C", "highlight": "#F17D70" },
-  "slate": { "dark": "#14202B", "mid": "#23394D", "light": "#2C3E50", "highlight": "#4A6178" }
+  "hue00": {
+    "dark": "#382828",
+    "highlight": "#484848",
+    "light": "#484040",
+    "mid": "#383838"
+  },
+  "hue01": {
+    "dark": "#303030",
+    "highlight": "#504037",
+    "light": "#483832",
+    "mid": "#40302E"
+  },
+  "hue02": {
+    "dark": "#504843",
+    "highlight": "#685646",
+    "light": "#585049",
+    "mid": "#5A473B"
+  },
+  "hue03": {
+    "dark": "#383028",
+    "highlight": "#725F4C",
+    "light": "#60564C",
+    "mid": "#403830"
+  },
+  "hue04": {
+    "dark": "#484037",
+    "highlight": "#7B705F",
+    "light": "#736859",
+    "mid": "#686056"
+  },
+  "hue05": {
+    "dark": "#232018",
+    "highlight": "#969379",
+    "light": "#7D7867",
+    "mid": "#707060"
+  },
+  "hue06": {
+    "dark": "#68684F",
+    "highlight": "#686861",
+    "light": "#707058",
+    "mid": "#686858"
+  },
+  "hue07": {
+    "dark": "#606048",
+    "highlight": "#606058",
+    "light": "#606050",
+    "mid": "#585851"
+  },
+  "hue08": {
+    "dark": "#484837",
+    "highlight": "#505048",
+    "light": "#50503F",
+    "mid": "#484840"
+  },
+  "hue09": {
+    "dark": "#303028",
+    "highlight": "#585947",
+    "light": "#404137",
+    "mid": "#383830"
+  },
+  "hue10": {
+    "dark": "#283027",
+    "highlight": "#617060",
+    "light": "#5A6858",
+    "mid": "#505B4F"
+  },
+  "hue11": {
+    "dark": "#1F2A20",
+    "highlight": "#445443",
+    "light": "#354238",
+    "mid": "#2E382E"
+  },
+  "hue12": {
+    "dark": "#17201A",
+    "highlight": "#70787B",
+    "light": "#5E7866",
+    "mid": "#586064"
+  },
+  "hue13": {
+    "dark": "#383840",
+    "highlight": "#707074",
+    "light": "#505051",
+    "mid": "#404142"
+  },
+  "hue14": {
+    "dark": "#18161B",
+    "highlight": "#303038",
+    "light": "#28282A",
+    "mid": "#202023"
+  },
+  "hue15": {
+    "dark": "#282024",
+    "highlight": "#40383A",
+    "light": "#383033",
+    "mid": "#30282A"
+  }
 }

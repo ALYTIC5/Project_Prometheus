@@ -1,0 +1,246 @@
+{
+  "_zero_art_kinds_note": "harbour/vault/treasury/archive/underworld intentionally have zero manifest entries and render procedurally -- absence is correct, not a gap",
+  "arena": {
+    "active": {
+      "key": "arena_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "arena_damaged",
+      "source": "arena_active",
+      "status": "substituted"
+    },
+    "foundation": {
+      "key": "arena_foundation",
+      "source": "temple_foundation",
+      "status": "substituted"
+    },
+    "overgrown": {
+      "key": "arena_overgrown",
+      "source": "arena_active",
+      "status": "substituted"
+    },
+    "planned": {
+      "key": "arena_planned",
+      "source": "temple_planned",
+      "status": "substituted"
+    },
+    "scaffolding": {
+      "key": "arena_scaffolding",
+      "source": "temple_scaffolding",
+      "status": "substituted"
+    },
+    "sealed": {
+      "key": "arena_sealed",
+      "source": "arena_active",
+      "status": "substituted"
+    }
+  },
+  "forge": {
+    "active": {
+      "key": "forge_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "forge_damaged",
+      "source": "forge_active",
+      "status": "substituted"
+    },
+    "foundation": {
+      "key": "forge_foundation",
+      "source": "temple_foundation",
+      "status": "substituted"
+    },
+    "overgrown": {
+      "key": "forge_overgrown",
+      "source": "forge_active",
+      "status": "substituted"
+    },
+    "planned": {
+      "key": "forge_planned",
+      "source": "temple_planned",
+      "status": "substituted"
+    },
+    "scaffolding": {
+      "key": "forge_scaffolding",
+      "source": "temple_scaffolding",
+      "status": "substituted"
+    },
+    "sealed": {
+      "key": "forge_sealed",
+      "source": "forge_active",
+      "status": "substituted"
+    }
+  },
+  "library": {
+    "active": {
+      "key": "library_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "library_damaged",
+      "status": "real"
+    },
+    "foundation": {
+      "key": "library_foundation",
+      "source": "temple_foundation",
+      "status": "substituted"
+    },
+    "overgrown": {
+      "key": "library_overgrown",
+      "source": "library_active",
+      "status": "substituted"
+    },
+    "planned": {
+      "key": "library_planned",
+      "source": "temple_planned",
+      "status": "substituted"
+    },
+    "scaffolding": {
+      "key": "library_scaffolding",
+      "source": "temple_scaffolding",
+      "status": "substituted"
+    },
+    "sealed": {
+      "key": "library_sealed",
+      "status": "real"
+    }
+  },
+  "monument": {
+    "active": {
+      "key": "monument_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "monument_damaged",
+      "source": "monument_active",
+      "status": "substituted"
+    },
+    "foundation": {
+      "key": "monument_foundation",
+      "status": "real"
+    },
+    "overgrown": {
+      "key": "monument_overgrown",
+      "source": "monument_active",
+      "status": "substituted"
+    },
+    "planned": {
+      "key": "monument_planned",
+      "source": "temple_planned",
+      "status": "substituted"
+    },
+    "scaffolding": {
+      "key": "monument_scaffolding",
+      "source": "temple_scaffolding",
+      "status": "substituted"
+    },
+    "sealed": {
+      "key": "monument_sealed",
+      "source": "monument_active",
+      "status": "substituted"
+    }
+  },
+  "oracle": {
+    "active": {
+      "key": "oracle_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "oracle_damaged",
+      "source": "oracle_active",
+      "status": "substituted"
+    },
+    "foundation": {
+      "key": "oracle_foundation",
+      "source": "temple_foundation",
+      "status": "substituted"
+    },
+    "overgrown": {
+      "key": "oracle_overgrown",
+      "source": "oracle_active",
+      "status": "substituted"
+    },
+    "planned": {
+      "key": "oracle_planned",
+      "source": "temple_planned",
+      "status": "substituted"
+    },
+    "scaffolding": {
+      "key": "oracle_scaffolding",
+      "source": "temple_scaffolding",
+      "status": "substituted"
+    },
+    "sealed": {
+      "key": "oracle_sealed",
+      "source": "oracle_active",
+      "status": "substituted"
+    }
+  },
+  "temple": {
+    "active": {
+      "key": "temple_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "temple_damaged",
+      "status": "real"
+    },
+    "foundation": {
+      "key": "temple_foundation",
+      "status": "real"
+    },
+    "overgrown": {
+      "key": "temple_overgrown",
+      "status": "real"
+    },
+    "planned": {
+      "key": "temple_planned",
+      "status": "real"
+    },
+    "scaffolding": {
+      "key": "temple_scaffolding",
+      "status": "real"
+    },
+    "sealed": {
+      "key": "temple_sealed",
+      "status": "real"
+    }
+  },
+  "watchtower": {
+    "active": {
+      "key": "watchtower_active",
+      "status": "real"
+    },
+    "damaged": {
+      "key": "watchtower_damaged",
+      "source": "watchtower_active",
+      "status": "substituted"
+    },
+    "foundation": {
+      "key": "watchtower_foundation",
+      "source": "temple_foundation",
+      "status": "substituted"
+    },
+    "overgrown": {
+      "key": "watchtower_overgrown",
+      "source": "watchtower_active",
+      "status": "substituted"
+    },
+    "planned": {
+      "key": "watchtower_planned",
+      "source": "temple_planned",
+      "status": "substituted"
+    },
+    "scaffolding": {
+      "key": "watchtower_scaffolding",
+      "source": "temple_scaffolding",
+      "status": "substituted"
+    },
+    "sealed": {
+      "key": "watchtower_sealed",
+      "source": "watchtower_active",
+      "status": "substituted"
+    }
+  }
+}

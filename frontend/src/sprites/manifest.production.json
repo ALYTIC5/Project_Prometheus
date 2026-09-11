@@ -1,0 +1,1154 @@
+{
+  "arena_active": {
+    "anchor": {
+      "x": 100,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 146,
+      "width": 192,
+      "x": 0,
+      "y": 391
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "arena_damaged": {
+    "anchor": {
+      "x": 100,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 146,
+      "width": 192,
+      "x": 0,
+      "y": 391
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "arena_foundation": {
+    "anchor": {
+      "x": 71,
+      "y": 115
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 116,
+      "width": 142,
+      "x": 66,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "arena_overgrown": {
+    "anchor": {
+      "x": 100,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 146,
+      "width": 192,
+      "x": 0,
+      "y": 391
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "arena_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "arena_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "arena_sealed": {
+    "anchor": {
+      "x": 100,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 146,
+      "width": 192,
+      "x": 0,
+      "y": 391
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  },
+  "forge_active": {
+    "anchor": {
+      "x": 105,
+      "y": 183
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 184,
+      "width": 192,
+      "x": 260,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "forge_damaged": {
+    "anchor": {
+      "x": 105,
+      "y": 183
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 184,
+      "width": 192,
+      "x": 260,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "forge_foundation": {
+    "anchor": {
+      "x": 71,
+      "y": 115
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 116,
+      "width": 142,
+      "x": 66,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "forge_overgrown": {
+    "anchor": {
+      "x": 105,
+      "y": 183
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 184,
+      "width": 192,
+      "x": 260,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "forge_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "forge_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "forge_sealed": {
+    "anchor": {
+      "x": 105,
+      "y": 183
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 184,
+      "width": 192,
+      "x": 260,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  },
+  "library_active": {
+    "anchor": {
+      "x": 62,
+      "y": 91
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 92,
+      "width": 131,
+      "x": 210,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "library_damaged": {
+    "anchor": {
+      "x": 61,
+      "y": 117
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 118,
+      "width": 128,
+      "x": 186,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "library_foundation": {
+    "anchor": {
+      "x": 71,
+      "y": 115
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 116,
+      "width": 142,
+      "x": 66,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "library_overgrown": {
+    "anchor": {
+      "x": 62,
+      "y": 91
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 92,
+      "width": 131,
+      "x": 210,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "library_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "library_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "library_sealed": {
+    "anchor": {
+      "x": 63,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 146,
+      "width": 128,
+      "x": 333,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  },
+  "monument_active": {
+    "anchor": {
+      "x": 31,
+      "y": 88
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 89,
+      "width": 64,
+      "x": 343,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "monument_damaged": {
+    "anchor": {
+      "x": 31,
+      "y": 88
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 89,
+      "width": 64,
+      "x": 343,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "monument_foundation": {
+    "anchor": {
+      "x": 29,
+      "y": 80
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 81,
+      "width": 64,
+      "x": 0,
+      "y": 780
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "monument_overgrown": {
+    "anchor": {
+      "x": 31,
+      "y": 88
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 89,
+      "width": 64,
+      "x": 343,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "monument_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "monument_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "monument_sealed": {
+    "anchor": {
+      "x": 31,
+      "y": 88
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 89,
+      "width": 64,
+      "x": 343,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  },
+  "monument_tier_extreme": {
+    "anchor": {
+      "x": 32,
+      "y": 227
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 228,
+      "width": 64,
+      "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "monument_tier_short": {
+    "anchor": {
+      "x": 33,
+      "y": 83
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 84,
+      "width": 77,
+      "x": 409,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "monument_tier_tall": {
+    "anchor": {
+      "x": 32,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 117,
+      "width": 64,
+      "x": 0,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_active": {
+    "anchor": {
+      "x": 88,
+      "y": 214
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 215,
+      "width": 192,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "oracle_damaged": {
+    "anchor": {
+      "x": 88,
+      "y": 214
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 215,
+      "width": 192,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "oracle_foundation": {
+    "anchor": {
+      "x": 71,
+      "y": 115
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 116,
+      "width": 142,
+      "x": 66,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "oracle_overgrown": {
+    "anchor": {
+      "x": 88,
+      "y": 214
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 215,
+      "width": 192,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "oracle_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "oracle_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "oracle_sealed": {
+    "anchor": {
+      "x": 88,
+      "y": 214
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 215,
+      "width": 192,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  },
+  "temple_active": {
+    "anchor": {
+      "x": 56,
+      "y": 124
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 125,
+      "width": 156,
+      "x": 324,
+      "y": 391
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "temple_damaged": {
+    "anchor": {
+      "x": 63,
+      "y": 133
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 134,
+      "width": 128,
+      "x": 194,
+      "y": 391
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "temple_foundation": {
+    "anchor": {
+      "x": 71,
+      "y": 115
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 116,
+      "width": 142,
+      "x": 66,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "temple_overgrown": {
+    "anchor": {
+      "x": 66,
+      "y": 158
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 159,
+      "width": 132,
+      "x": 0,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "temple_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "temple_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "temple_sealed": {
+    "anchor": {
+      "x": 66,
+      "y": 158
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 159,
+      "width": 131,
+      "x": 134,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  },
+  "terrain_beach": {
+    "anchor": {
+      "x": 32,
+      "y": 51
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 52,
+      "width": 64,
+      "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_carved_1": {
+    "anchor": {
+      "x": 29,
+      "y": 31
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 59,
+      "x": 123,
+      "y": 98
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_carved_2": {
+    "anchor": {
+      "x": 30,
+      "y": 31
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 60,
+      "x": 184,
+      "y": 98
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_cliff": {
+    "anchor": {
+      "x": 32,
+      "y": 51
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 52,
+      "width": 64,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_cobblestone": {
+    "anchor": {
+      "x": 30,
+      "y": 39
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 40,
+      "width": 60,
+      "x": 186,
+      "y": 54
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_dirt_cross": {
+    "anchor": {
+      "x": 30,
+      "y": 41
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 42,
+      "width": 60,
+      "x": 124,
+      "y": 54
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_dirt_patch": {
+    "anchor": {
+      "x": 30,
+      "y": 41
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 42,
+      "width": 60,
+      "x": 62,
+      "y": 54
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_dock": {
+    "anchor": {
+      "x": 32,
+      "y": 51
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 52,
+      "width": 64,
+      "x": 132,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_grass": {
+    "anchor": {
+      "x": 30,
+      "y": 41
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 42,
+      "width": 60,
+      "x": 0,
+      "y": 54
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_rubble": {
+    "anchor": {
+      "x": 30,
+      "y": 39
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 40,
+      "width": 60,
+      "x": 61,
+      "y": 98
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_stone_path": {
+    "anchor": {
+      "x": 29,
+      "y": 39
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 40,
+      "width": 59,
+      "x": 0,
+      "y": 98
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_weathered": {
+    "anchor": {
+      "x": 30,
+      "y": 31
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 60,
+      "x": 0,
+      "y": 140
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "watchtower_active": {
+    "anchor": {
+      "x": 30,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 146,
+      "width": 64,
+      "x": 267,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
+  },
+  "watchtower_damaged": {
+    "anchor": {
+      "x": 30,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 146,
+      "width": 64,
+      "x": 267,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "cracks",
+    "outlineColor": 16729156
+  },
+  "watchtower_foundation": {
+    "anchor": {
+      "x": 71,
+      "y": 115
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.1,
+    "frame": {
+      "height": 116,
+      "width": 142,
+      "x": 66,
+      "y": 661
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 14540253
+  },
+  "watchtower_overgrown": {
+    "anchor": {
+      "x": 30,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.5,
+    "frame": {
+      "height": 146,
+      "width": 64,
+      "x": 267,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "vines",
+    "outlineColor": 3825466
+  },
+  "watchtower_planned": {
+    "anchor": {
+      "x": 91,
+      "y": 119
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.6,
+    "frame": {
+      "height": 120,
+      "width": 184,
+      "x": 0,
+      "y": 539
+    },
+    "hasVolume": false,
+    "litWindows": false,
+    "outline": "dashed-stakes",
+    "outlineColor": 8947848
+  },
+  "watchtower_scaffolding": {
+    "anchor": {
+      "x": 68,
+      "y": 116
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.2,
+    "frame": {
+      "height": 117,
+      "width": 142,
+      "x": 316,
+      "y": 539
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "post-and-beam",
+    "outlineColor": 13421772
+  },
+  "watchtower_sealed": {
+    "anchor": {
+      "x": 30,
+      "y": 145
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0.7,
+    "frame": {
+      "height": 146,
+      "width": 64,
+      "x": 267,
+      "y": 230
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "chains",
+    "outlineColor": 16711680
+  }
+}

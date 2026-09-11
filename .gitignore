@@ -22,3 +22,12 @@ frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/next-env.d.ts
+
+# art pipeline intermediates — regenerable by `make art`, never committed.
+# art/sliced/overrides.json is the ONE exception: it holds every hand-made
+# naming and anchor decision and is the pipeline's real source of truth.
+art/*
+!art/sliced/
+art/sliced/*
+!art/sliced/overrides.json
+!art/coverage_matrix.json
