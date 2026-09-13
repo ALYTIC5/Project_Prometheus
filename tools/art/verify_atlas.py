@@ -14,6 +14,7 @@ import numpy as np
 from tools.art.common import (
     ART_COVERED_KINDS,
     CONSTRUCTION_PHASES,
+    PUBLIC_SPRITES_DIR,
     SPRITES_DIR,
     ZERO_ART_KINDS,
     load_rgba,
@@ -74,7 +75,7 @@ def main() -> int:
     atlas_images: dict[str, np.ndarray] = {}
     atlas_names = {entry["atlas"] for entry in manifest.values() if entry.get("atlas")}
     for atlas_name in atlas_names:
-        path = SPRITES_DIR / atlas_name
+        path = PUBLIC_SPRITES_DIR / atlas_name
         if not path.exists():
             errors.append(f"atlas file missing: {atlas_name}")
             continue

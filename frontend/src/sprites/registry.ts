@@ -271,6 +271,15 @@ export function resolveAgentSprite(
   return productionManifest[key] ?? null;
 }
 
+/** Terrain sprite keys with real atlas art (see manifest.production.json's
+ * terrain_* entries) -- ground.ts hashes over these for the default tile
+ * fill and picks 'terrain_cobblestone' for the plaza; water and roads have
+ * no matching art and stay procedural. */
+export function resolveTerrainSprite(key: string): AtlasSpec | null {
+  if (!productionManifest) return null;
+  return productionManifest[key] ?? null;
+}
+
 export function isProduction(): boolean {
   return SPRITE_SET === 'production';
 }

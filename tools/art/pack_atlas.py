@@ -27,6 +27,7 @@ from tools.art.common import (
     ART,
     ART_COVERED_KINDS,
     CONSTRUCTION_PHASES,
+    PUBLIC_SPRITES_DIR,
     SPRITES_DIR,
     alpha_mask,
     json_dump,
@@ -288,7 +289,8 @@ def main() -> int:
             continue
         atlas, placements = _pack(cat_sprites)
         atlas_filename = f"{category}_atlas.png"
-        Image.fromarray(atlas, "RGBA").save(SPRITES_DIR / atlas_filename)
+        PUBLIC_SPRITES_DIR.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(atlas, "RGBA").save(PUBLIC_SPRITES_DIR / atlas_filename)
         pack_report["categories"][category] = {
             "atlas": atlas_filename,
             "size": [int(atlas.shape[1]), int(atlas.shape[0])],

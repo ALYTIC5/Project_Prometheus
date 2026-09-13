@@ -1,12 +1,14 @@
 # Concept-art -> sprite-atlas pipeline
 
 Turns the hand-painted JPEG concept sheets in `Mockups/` into
-`frontend/src/sprites/{manifest.production.json, sprite_palette.json,
-*_atlas.png}`, matching the existing `AtlasSpec` schema in
-`frontend/src/sprites/registry.ts` exactly. `sprite_palette.json` is a
-separate file from the renderer's hand-authored `palette.json` (read by
-`frontend/src/render/*.ts` via `palette.ts`) -- never overwrite that one.
-No renderer files are ever
+`frontend/src/sprites/{manifest.production.json, sprite_palette.json}`
+and `frontend/public/sprites/*_atlas.png` (images live under `public/`
+so they're fetchable by plain URL under Next's static export; data
+stays under `src/sprites/` as importable JS modules), matching the
+existing `AtlasSpec` schema in `frontend/src/sprites/registry.ts`
+exactly. `sprite_palette.json` is a separate file from the renderer's
+hand-authored `palette.json` (read by `frontend/src/render/*.ts` via
+`palette.ts`) -- never overwrite that one. No renderer files are ever
 touched by this pipeline.
 
 ## The real sequence

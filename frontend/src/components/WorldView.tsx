@@ -12,6 +12,7 @@ import { updateLabels, type LabelCandidate } from '../render/labels';
 import { createMonument, type MonumentHandle } from '../render/monument';
 import { drawHoverOutline, drawSelectionOutline, pickBuilding } from '../render/selection';
 import { drawVignette } from '../render/vignette';
+import { loadAtlasTextures } from '../sprites/atlasTextures';
 import type { Building, ScoreboardResponse, WorldState } from '../types';
 
 const CANVAS_BG = 0x0a0a1a;
@@ -86,6 +87,7 @@ export default function WorldView() {
     const app = new PIXI.Application();
     void app
       .init({ background: CANVAS_BG, resizeTo: window, antialias: true })
+      .then(() => loadAtlasTextures())
       .then(() => {
         if (destroyed || !hostRef.current) {
           app.destroy(true, { children: true });

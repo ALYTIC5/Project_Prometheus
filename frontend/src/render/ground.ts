@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js';
 import { gridToScreen, TILE_HEIGHT, TILE_WIDTH } from '../iso/projection';
-import { hashString } from '../sprites/registry';
+import { getAtlasFrame } from '../sprites/atlasTextures';
+import { hashString, isProduction, resolveTerrainSprite } from '../sprites/registry';
 import { PALETTE } from '../sprites/palette';
 import type { Building } from '../types';
 
@@ -21,8 +22,31 @@ const PLAZA_COLOR = PALETTE['stone.light'];
 const ROAD_BASE = PALETTE['stone.mid'];
 const ROAD_LINE = PALETTE['stone.highlight'];
 
+// Real atlas keys for the default tile fill -- no water or road art exists,
+// so only these two roles (default ground, plaza) have a production path.
+const TERRAIN_SPRITE_VARIANTS = [
+  'terrain_grass', 'terrain_dirt_patch', 'terrain_dirt_cross', 'terrain_weathered', 'terrain_rubble',
+];
+const PLAZA_SPRITE = 'terrain_cobblestone';
+
 function terrainHash(gx: number, gy: number): number {
   return hashString(`${gx},${gy}`) % TERRAIN_VARIANTS.length;
+}
+
+function terrainSpriteHash(gx: number, gy: number): string {
+  return TERRAIN_SPRITE_VARIANTS[hashString(`${gx},${gy}`) % TERRAIN_SPRITE_VARIANTS.length];
+}
+
+/** Real-art tile for the default/plaza fill, or null to fall back to the
+ * procedural colour diamond (placeholder mode, or a missing terrain key). */
+function drawAtlasTile(key: string): PIXI.Sprite | null {
+  const spec = resolveTerrainSprite(key);
+  if (!spec) return null;
+  const texture = getAtlasFrame(spec);
+  if (!texture) return null;
+  const sprite = new PIXI.Sprite(texture);
+  sprite.anchor.set(spec.anchor!.x / spec.frame!.width, spec.anchor!.y / spec.frame!.height);
+  return sprite;
 }
 
 function footprintOf(b: Building) {
@@ -122,15 +146,25 @@ export function drawGround(buildings: Building[]): PIXI.Container {
         Math.abs(gy - monument.location.y) <= PLAZA_RADIUS;
       const isRoad = roads.has(`${gx},${gy}`);
 
-      let tile: PIXI.Graphics;
+      let tile: PIXI.Container;
       if (isRoad && !isWater) {
         tile = drawRoadTile(gx, gy, roads);
-      } else {
+      } else if (isWater) {
         const halfW = TILE_WIDTH / 2;
         const halfH = TILE_HEIGHT / 2;
-        const color = isWater ? WATER_COLOR : isPlaza ? PLAZA_COLOR : TERRAIN_VARIANTS[terrainHash(gx, gy)];
-        tile = new PIXI.Graphics();
-        tile.poly([0, -halfH, halfW, 0, 0, halfH, -halfW, 0]).fill({ color });
+        tile = new PIXI.Graphics().poly([0, -halfH, halfW, 0, 0, halfH, -halfW, 0]).fill({ color: WATER_COLOR });
+      } else {
+        const atlasTile = isProduction()
+          ? drawAtlasTile(isPlaza ? PLAZA_SPRITE : terrainSpriteHash(gx, gy))
+          : null;
+        if (atlasTile) {
+          tile = atlasTile;
+        } else {
+          const halfW = TILE_WIDTH / 2;
+          const halfH = TILE_HEIGHT / 2;
+          const color = isPlaza ? PLAZA_COLOR : TERRAIN_VARIANTS[terrainHash(gx, gy)];
+          tile = new PIXI.Graphics().poly([0, -halfH, halfW, 0, 0, halfH, -halfW, 0]).fill({ color });
+        }
       }
       tile.x = x;
       tile.y = y;

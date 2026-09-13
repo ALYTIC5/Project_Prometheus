@@ -1,6 +1,7 @@
 import * as PIXI from 'pixi.js';
 import { Layer, depthOf, gridToScreen, TILE_HEIGHT, TILE_WIDTH } from '../iso/projection';
 import { snapToPalette } from '../sprites/palette';
+import { getAtlasFrame } from '../sprites/atlasTextures';
 import {
   STOREYS,
   STOREY_PIXEL_HEIGHT,
@@ -8,6 +9,7 @@ import {
   hashString,
   resolveSilhouette,
   resolveSprite,
+  type AtlasSpec,
   type ConstructionPhase,
 } from '../sprites/registry';
 import type { Building } from '../types';
@@ -75,6 +77,54 @@ export function drawBuilding(building: Building): PIXI.Container {
   const halfH = TILE_HEIGHT * (location.height * 0.5 + 0.4);
   const baseColor = desaturate(snapToPalette(hexToNumber(building.color)), spec.desaturate);
   const height = heightFor(building.kind);
+
+  const atlasTexture = 'atlas' in spec ? getAtlasFrame(spec as AtlasSpec) : null;
+  if (atlasTexture) {
+    const atlasSpec = spec as AtlasSpec;
+    const sprite = new PIXI.Sprite(atlasTexture);
+    sprite.anchor.set(
+      atlasSpec.anchor!.x / atlasSpec.frame!.width,
+      atlasSpec.anchor!.y / atlasSpec.frame!.height,
+    );
+    container.addChild(sprite);
+
+    // Only DAMAGED/SEALED/OVERGROWN need a procedural overlay: pack_atlas.py
+    // falls those back to the kind's own ACTIVE frame rather than painting
+    // per-kind cracks/chains/vines art, so the overlay is what actually
+    // distinguishes them on screen. Every other phase (including PLANNED's
+    // ground-only look and SCAFFOLDING's poles) has its own dedicated frame
+    // already painted in -- a procedural dashed-stakes/post-and-beam/glow
+    // overlay sized for the procedural volume would just misalign with it.
+    const g = new PIXI.Graphics();
+    switch (spec.outline) {
+      case 'cracks':
+        g.moveTo(-halfW * 0.3, -height * 0.8).lineTo(0, -height * 0.4).lineTo(-halfW * 0.15, 0).stroke({
+          color: spec.outlineColor,
+          width: 1.5,
+        });
+        g.circle(0, -height - halfH - 10, 4).fill({ color: 0x888888, alpha: 0.5 });
+        g.circle(6, -height - halfH - 18, 5).fill({ color: 0x999999, alpha: 0.35 });
+        break;
+      case 'chains':
+        g.moveTo(-halfW, -height * 0.7).lineTo(halfW, -height * 0.2).stroke({ color: spec.outlineColor, width: 2 });
+        g.moveTo(-halfW, -height * 0.2).lineTo(halfW, -height * 0.7).stroke({ color: spec.outlineColor, width: 2 });
+        g.circle(0, -height * 0.45, 5).stroke({ color: spec.outlineColor, width: 2 });
+        break;
+      case 'vines':
+        for (let i = -1; i <= 1; i += 2) {
+          g.moveTo(i * halfW * 0.6, 0);
+          for (let s = 1; s <= 4; s++) {
+            g.lineTo(i * halfW * 0.6 + (s % 2 === 0 ? 4 : -4), -height * (s / 4));
+          }
+          g.stroke({ color: spec.outlineColor, width: 1.5 });
+        }
+        break;
+      default:
+        break;
+    }
+    container.addChild(g);
+    return container;
+  }
 
   const g = new PIXI.Graphics();
 

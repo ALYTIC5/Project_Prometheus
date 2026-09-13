@@ -23,6 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MOCKUPS = REPO_ROOT / "Mockups"
 ART = REPO_ROOT / "art"
 SPRITES_DIR = REPO_ROOT / "frontend" / "src" / "sprites"
+# Atlas PNGs must be fetchable at runtime via a plain URL (PIXI.Assets.load),
+# not bundled as a webpack asset import -- Next.js's static export (`output:
+# 'export'`) serves frontend/public/ verbatim, so images live there while
+# manifest/palette JSON (imported as JS modules) stay in SPRITES_DIR.
+PUBLIC_SPRITES_DIR = REPO_ROOT / "frontend" / "public" / "sprites"
 
 # Canonical footprint pixel widths tied to the tile system (registry.ts's
 # FootprintClass). TOWER's height is unconstrained by design.
