@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
-import { fetchBuildings, fetchScoreboard, fetchWorldState } from '../api';
+import { useBuildingsQuery, useScoreboardQuery, useWorldStateQuery } from '../data/queries';
 import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { attachCamera, type CameraHandle } from '../render/camera';
 import { drawBuilding } from '../render/building';
@@ -15,7 +15,7 @@ import { createMonument, type MonumentHandle } from '../render/monument';
 import { drawHoverOutline, drawSelectionOutline, pickBuilding } from '../render/selection';
 import { drawVignette } from '../render/vignette';
 import { loadAtlasTextures } from '../sprites/atlasTextures';
-import type { Building, ScoreboardResponse, WorldState } from '../types';
+import type { Building, ScoreboardResponse } from '../types';
 
 // A dusk-sky tone, not near-black: at 26% frame occupancy (city fills a
 // small fraction of the viewport pre-Prompt-3 map-resize/fit-to-bounds),
@@ -43,12 +43,20 @@ export default function WorldView() {
   const selectedIdRef = useRef<string | null>(null);
   const debugRef = useRef(false);
 
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [scoreboard, setScoreboard] = useState<ScoreboardResponse | null>(null);
-  const [world, setWorld] = useState<WorldState | null>(null);
+  // Server state via TanStack Query (WORLD_CONSTITUTION.md's W0.3) -- the
+  // one data adapter module is src/data/queries.ts; nothing here calls
+  // fetch/../api directly. The world only ever shows what these return.
+  const buildingsQuery = useBuildingsQuery();
+  const scoreboardQuery = useScoreboardQuery();
+  const worldQuery = useWorldStateQuery();
+
+  const buildings = buildingsQuery.data?.buildings ?? [];
+  const scoreboard = scoreboardQuery.data ?? null;
+  const world = worldQuery.data ?? null;
+  const loading = buildingsQuery.isLoading || scoreboardQuery.isLoading || worldQuery.isLoading;
+
   const [selected, setSelected] = useState<Building | null>(null);
   const [mode, setMode] = useState<'world' | 'truth'>('world');
-  const [loading, setLoading] = useState(true);
   const [pixiReady, setPixiReady] = useState(false);
   const [pixiError, setPixiError] = useState<string | null>(null);
   const [fps, setFps] = useState(0);
@@ -62,30 +70,6 @@ export default function WorldView() {
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null;
   }, [selected]);
-
-  // Poll the real backend -- the world only ever shows what these calls return.
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [b, s, w] = await Promise.all([fetchBuildings(), fetchScoreboard(), fetchWorldState()]);
-        if (cancelled) return;
-        setBuildings(b.buildings ?? []);
-        setScoreboard(s);
-        setWorld(w);
-      } catch (err) {
-        console.error('world data fetch failed:', err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    const interval = setInterval(load, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
 
   // Set up the PixiJS application once.
   useEffect(() => {

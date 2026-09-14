@@ -1,3 +1,5 @@
+import { Providers } from './providers';
+
 export const metadata = {
   title: 'Project Prometheus',
   description: 'A quantitative research and paper-trading laboratory, rendered as a living world.',
@@ -17,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: `window.__SPRITE_SET__ = ${JSON.stringify(spriteSet)};` }}
         />
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
