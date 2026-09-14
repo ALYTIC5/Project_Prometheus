@@ -9,6 +9,7 @@ import { drawBuilding } from '../render/building';
 import { createBuilders, type BuildersHandle } from '../render/builders';
 import { createGods } from '../render/gods';
 import { drawGround } from '../render/ground';
+import { createVegetation } from '../render/vegetation';
 import { updateLabels, type LabelCandidate } from '../render/labels';
 import { createMonument, type MonumentHandle } from '../render/monument';
 import { drawHoverOutline, drawSelectionOutline, pickBuilding } from '../render/selection';
@@ -16,7 +17,12 @@ import { drawVignette } from '../render/vignette';
 import { loadAtlasTextures } from '../sprites/atlasTextures';
 import type { Building, ScoreboardResponse, WorldState } from '../types';
 
-const CANVAS_BG = 0x0a0a1a;
+// A dusk-sky tone, not near-black: at 26% frame occupancy (city fills a
+// small fraction of the viewport pre-Prompt-3 map-resize/fit-to-bounds),
+// empty background otherwise caps any brightness measurement regardless of
+// how bright the city itself is. Still much darker than the city so it
+// doesn't compete with it.
+const CANVAS_BG = 0x1c2438;
 const ZOOM_LABEL_THRESHOLD = 1.5;
 
 export default function WorldView() {
@@ -285,6 +291,11 @@ export default function WorldView() {
     // Gods stand at their real building (archive/oracle/vault) -- static,
     // no per-frame update, recomputed fresh on every redraw like builders.
     for (const root of createGods(nonMonument)) layer.addChild(root);
+
+    // Vegetation is static geography, not agent/building state -- still
+    // lives in the shared sortable layer (Layer.PROP) so it occludes and is
+    // occluded correctly against buildings and agents at the same tile.
+    for (const root of createVegetation(nonMonument)) layer.addChild(root);
   }, [pixiReady, buildings]);
 
   // Debug overlay (press D): per-object grid coords + depth value.

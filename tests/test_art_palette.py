@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import colorsys
 
+import pytest
+
+from tools.art.build_palette import lift_lightness_and_saturation
 from tools.art.common import bucket_palette_into_families, snap_to_palette
 
 
@@ -64,3 +67,49 @@ def test_snap_to_palette_picks_true_nearest() -> None:
 def test_snap_to_palette_is_idempotent_on_exact_match() -> None:
     palette = [(10, 20, 30), (200, 150, 90)]
     assert snap_to_palette((200, 150, 90), palette) == (200, 150, 90)
+
+
+def _lightness_of(rgb: tuple[int, int, int]) -> float:
+    _, lightness, _ = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
+    return lightness
+
+
+def test_lift_maps_darkest_and_brightest_to_floor_and_ceiling() -> None:
+    # A dark, muddy source palette -- everything under L~0.3, like the
+    # measured recovered-JPEG art this transform exists to fix.
+    lightness_values = (0.05, 0.15, 0.25, 0.29)
+    dark_palette = [colorsys.hls_to_rgb(0.4, lightness, 0.5) for lightness in lightness_values]
+    dark_palette = [(round(r * 255), round(g * 255), round(b * 255)) for r, g, b in dark_palette]
+
+    lifted, report = lift_lightness_and_saturation(dark_palette, floor=0.18, ceiling=0.88)
+
+    lightnesses = [_lightness_of(rgb) for rgb in lifted]
+    assert min(lightnesses) == pytest.approx(0.18, abs=3e-3)
+    assert max(lightnesses) == pytest.approx(0.88, abs=3e-3)
+    assert report["lightness_before"]["min"] == pytest.approx(0.05, abs=0.01)
+
+
+def test_lift_preserves_hue() -> None:
+    palette = [colorsys.hls_to_rgb(h, 0.3, 0.5) for h in (0.0, 0.25, 0.5, 0.75)]
+    palette = [(round(r * 255), round(g * 255), round(b * 255)) for r, g, b in palette]
+    lifted, _ = lift_lightness_and_saturation(palette)
+    for (r, g, b), (lr, lg, lb) in zip(palette, lifted, strict=False):
+        original_hue, _, _ = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+        lifted_hue, _, _ = colorsys.rgb_to_hls(lr / 255, lg / 255, lb / 255)
+        assert abs(original_hue - lifted_hue) < 0.01
+
+
+def test_lift_saturation_boost_is_capped_at_one() -> None:
+    palette = [(round(0.9 * 255), round(0.1 * 255), round(0.1 * 255))]  # already highly saturated
+    lifted, _ = lift_lightness_and_saturation(palette, saturation_boost=2.0)
+    _, _, sat = colorsys.rgb_to_hls(*(c / 255 for c in lifted[0]))
+    assert sat <= 1.0
+
+
+def test_lift_is_a_no_op_when_palette_is_a_single_flat_colour() -> None:
+    # span == 0 guard: must not divide by zero.
+    palette = [(120, 120, 120)] * 4
+    lifted, report = lift_lightness_and_saturation(palette, floor=0.18, ceiling=0.88)
+    assert len(lifted) == 4
+    for rgb in lifted:
+        assert _lightness_of(rgb) == pytest.approx((0.18 + 0.88) / 2, abs=0.01)

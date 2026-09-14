@@ -21,11 +21,20 @@ describe('snapToPalette', () => {
     expect(snapToPalette(sample)).toBe(sample);
   });
 
-  it('maps the real building colours to a sane family', () => {
-    // From prometheus/world/construction.py's BUILDING_COLORS.
-    expect(snapToPalette(0x4a90d9)).toBe(PALETTE['blue.light']); // library
-    expect(snapToPalette(0xe67e22)).toBe(PALETTE['orange.light']); // forge
-    expect(snapToPalette(0x8e44ad)).toBe(PALETTE['purple.light']); // oracle
-    expect(snapToPalette(0xe74c3c)).toBe(PALETTE['red.light']); // watchtower
+  it('maps the real building colours to the correct family (shade may drift when palette.json changes)', () => {
+    // From prometheus/world/construction.py's BUILDING_COLORS. Asserts the
+    // FAMILY (hue) stays correct -- the specific nearest SHADE is a function
+    // of palette.json's exact values and legitimately shifts when the tonal
+    // range changes (see the tonal-fix session that brightened palette.json).
+    for (const [name, hex, family] of [
+      ['library', 0x4a90d9, 'blue'],
+      ['forge', 0xe67e22, 'orange'],
+      ['oracle', 0x8e44ad, 'purple'],
+      ['watchtower', 0xe74c3c, 'red'],
+    ] as const) {
+      const snapped = snapToPalette(hex);
+      const matchedKey = Object.entries(PALETTE).find(([, v]) => v === snapped)?.[0];
+      expect(matchedKey?.startsWith(`${family}.`), `${name}: expected a ${family}.* shade, got ${matchedKey}`).toBe(true);
+    }
   });
 });

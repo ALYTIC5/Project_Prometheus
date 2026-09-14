@@ -31,12 +31,11 @@ from tools.art.common import (
     PUBLIC_SPRITES_DIR,
     SPRITES_DIR,
     alpha_mask,
+    colour_distance,
     json_dump,
     load_rgba,
     next_power_of_two,
-    palette_rgb_list,
     read_overrides,
-    snap_to_palette,
 )
 
 SCALED_DIR = ART / "scaled"
@@ -217,7 +216,34 @@ def _validate_agent_name(name: str) -> None:
         raise SystemExit(1)
 
 
-def _quantize_sprite(rgba: np.ndarray, palette: list[tuple[int, int, int]]) -> np.ndarray:
+def _nearest_index(rgb: tuple[int, int, int], palette: list[tuple[int, int, int]]) -> int:
+    best_i, best_dist = 0, None
+    for i, candidate in enumerate(palette):
+        dist = colour_distance(rgb, candidate)
+        if best_dist is None or dist < best_dist:
+            best_dist, best_i = dist, i
+    return best_i
+
+
+def _quantize_sprite(
+    rgba: np.ndarray,
+    original_palette: list[tuple[int, int, int]],
+    output_palette: list[tuple[int, int, int]],
+) -> np.ndarray:
+    """Match each pixel against `original_palette` (stable assignment -- this
+    is the same clustering every sprite was already grouped by), then output
+    through `output_palette` at that same index.
+
+    Matching directly against a lightness-lifted palette instead (fuzzy
+    re-match post-lift) was tried and measured wrong: lifting shifts each of
+    the 64 colours by a different absolute RGB delta (a linear lightness lift
+    is nonuniform in RGB depending on each cluster's hue/saturation), which
+    reshuffles the nearest-neighbour assignment itself -- a pixel could end up
+    reassigned to a DIFFERENT, less-lifted cluster than before, largely
+    cancelling the intended brightening. Matching against the untouched
+    original and only substituting the output colour by index avoids this
+    entirely: assignment is unchanged, only the rendered colour is brighter.
+    """
     out = rgba.copy()
     mask = alpha_mask(rgba)
     memo: dict[tuple[int, int, int], tuple[int, int, int]] = {}
@@ -225,7 +251,8 @@ def _quantize_sprite(rgba: np.ndarray, palette: list[tuple[int, int, int]]) -> n
     for y, x in zip(ys, xs, strict=False):
         rgb = tuple(int(v) for v in rgba[y, x, :3])
         if rgb not in memo:
-            memo[rgb] = snap_to_palette(rgb, palette)
+            idx = _nearest_index(rgb, original_palette)
+            memo[rgb] = output_palette[idx]
         out[y, x, :3] = memo[rgb]
     out[~mask] = (0, 0, 0, 0)
     return out
@@ -272,13 +299,19 @@ def main() -> int:
     from PIL import Image
 
     palette_path = SPRITES_DIR / "sprite_palette.json"
-    if not palette_path.exists():
+    palette_report_path = ART / "palette_report.json"
+    if not palette_path.exists() or not palette_report_path.exists():
         print(f"No palette at {palette_path} -- run build_palette first", file=sys.stderr)
         return 1
     import json
 
-    palette_json = json.loads(palette_path.read_text(encoding="utf-8"))
-    palette = palette_rgb_list(palette_json)
+    # palette_report.json (not just sprite_palette.json) is required here: it
+    # carries BOTH the original clustered colour and its lightness-lifted
+    # counterpart per index, which is what makes index-preserving quantization
+    # (see _quantize_sprite's docstring) possible.
+    palette_report = json.loads(palette_report_path.read_text(encoding="utf-8"))
+    original_palette = [tuple(e["rgb"]) for e in palette_report["entries"]]
+    lifted_palette = [tuple(e["lifted_rgb"]) for e in palette_report["entries"]]
 
     sprites = _load_sprites()
     if not sprites:
@@ -296,7 +329,7 @@ def main() -> int:
         # visibly degrade it for no benefit; verify_atlas.py's palette
         # conformance check is scoped to exclude characters_atlas.png to match.
         if not is_pixellab_rotation:
-            sprite.rgba = _quantize_sprite(sprite.rgba, palette)
+            sprite.rgba = _quantize_sprite(sprite.rgba, original_palette, lifted_palette)
         by_category[category].append(sprite)
 
     manifest: dict[str, dict] = {}

@@ -7,10 +7,13 @@ import * as PIXI from 'pixi.js';
  * not a structural fill. */
 export function drawVignette(width: number, height: number): PIXI.Graphics {
   const g = new PIXI.Graphics();
+  // Softened alphas -- the previous values stacked with an already-dark
+  // background/ground to push the scene's brightest tenth (p90) toward
+  // near-black. Still a real vignette, just no longer fighting the tonal fix.
   const rings: [number, number][] = [
-    [1.15, 0.28],
-    [0.95, 0.16],
-    [0.75, 0.08],
+    [1.15, 0.18],
+    [0.95, 0.10],
+    [0.75, 0.05],
   ];
   const cx = width / 2;
   const cy = height / 2;

@@ -16,7 +16,10 @@ export const WATER_MAX_X = 2;
  * processes), verified visually rather than by a shared constant. */
 export const PLAZA_RADIUS = 2;
 
-const TERRAIN_VARIANTS = [PALETTE['green.dark'], PALETTE['green.mid'], PALETTE['slate.dark'], PALETTE['stone.dark']];
+// slate.dark was here (a shadow tone, not a grass tone) and put ~25% of
+// ground tiles near-black -- the single largest contributor to the scene's
+// dark median. Grass rotation now stays within the green/stone families.
+const TERRAIN_VARIANTS = [PALETTE['green.dark'], PALETTE['green.mid'], PALETTE['green.light'], PALETTE['stone.dark']];
 const WATER_COLOR = PALETTE['blue.dark'];
 const PLAZA_COLOR = PALETTE['stone.light'];
 const ROAD_BASE = PALETTE['stone.mid'];
@@ -53,7 +56,7 @@ function footprintOf(b: Building) {
   return { x: b.location.x, y: b.location.y, w: b.location.width, h: b.location.height };
 }
 
-function isInsideAnyFootprint(gx: number, gy: number, buildings: Building[]): boolean {
+export function isInsideAnyFootprint(gx: number, gy: number, buildings: Building[]): boolean {
   return buildings.some((b) => {
     const f = footprintOf(b);
     return gx >= f.x && gx < f.x + f.w && gy >= f.y && gy < f.y + f.h;
@@ -68,7 +71,7 @@ function isInsideAnyFootprint(gx: number, gy: number, buildings: Building[]): bo
  * this is intentionally simpler than a general autotiling ruleset (see
  * docs/DEPENDENCIES.md): one fixed hand-authored layout, not a terrain
  * editor. */
-function computeRoadTiles(buildings: Building[]): Set<string> {
+export function computeRoadTiles(buildings: Building[]): Set<string> {
   const roads = new Set<string>();
   const monument = buildings.find((b) => b.kind === 'monument');
   if (!monument) return roads;

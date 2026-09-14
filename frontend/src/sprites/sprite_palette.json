@@ -1,98 +1,98 @@
 {
   "hue00": {
-    "dark": "#000000",
-    "highlight": "#72332C",
-    "light": "#444040",
-    "mid": "#522D2D"
+    "dark": "#2E2E2E",
+    "highlight": "#9E3E33",
+    "light": "#625B5B",
+    "mid": "#7C3E3E"
   },
   "hue01": {
-    "dark": "#524742",
-    "highlight": "#B7774D",
-    "light": "#97583A",
-    "mid": "#755542"
+    "dark": "#716058",
+    "highlight": "#C58357",
+    "light": "#BA653C",
+    "mid": "#96684D"
   },
   "hue02": {
-    "dark": "#635144",
-    "highlight": "#D2A172",
-    "light": "#877866",
-    "mid": "#70685C"
+    "dark": "#836855",
+    "highlight": "#DBA571",
+    "light": "#998772",
+    "mid": "#877C6C"
   },
   "hue03": {
-    "dark": "#434037",
-    "highlight": "#EAD6B2",
-    "light": "#636059",
-    "mid": "#53514C"
+    "dark": "#6E6B63",
+    "highlight": "#ECD1A1",
+    "light": "#8B877C",
+    "mid": "#7B766C"
   },
   "hue04": {
-    "dark": "#46483C",
-    "highlight": "#79766D",
-    "light": "#70706B",
-    "mid": "#57594C"
+    "dark": "#656051",
+    "highlight": "#82827C",
+    "light": "#727561",
+    "mid": "#656955"
   },
   "hue05": {
-    "dark": "#2C312D",
-    "highlight": "#EDF5F2",
-    "light": "#666C58",
-    "mid": "#40544B"
+    "dark": "#4B554D",
+    "highlight": "#D6EAE3",
+    "light": "#7C8469",
+    "mid": "#557466"
   },
   "hue06": {
-    "dark": "#47746D",
-    "highlight": "#96CBCA",
-    "light": "#A2A5A5",
-    "mid": "#58746E"
+    "dark": "#539389",
+    "highlight": "#92CFCE",
+    "light": "#A5A9A9",
+    "mid": "#668D84"
   },
   "hue07": {
-    "dark": "#383939",
-    "highlight": "#C5D5D8",
-    "light": "#6994A4",
-    "mid": "#384142"
+    "dark": "#575959",
+    "highlight": "#BAD0D3",
+    "light": "#73A0B0",
+    "mid": "#526264"
   },
   "hue08": {
-    "dark": "#465A76",
-    "highlight": "#8B99A4",
-    "light": "#717982",
-    "mid": "#667584"
+    "dark": "#526E95",
+    "highlight": "#91A0AC",
+    "light": "#7E8791",
+    "mid": "#738597"
   },
   "hue09": {
-    "dark": "#2A3447",
-    "highlight": "#646A79",
-    "light": "#575E6D",
-    "mid": "#3F4A5D"
+    "dark": "#3E5072",
+    "highlight": "#727A8E",
+    "light": "#677186",
+    "mid": "#51627F"
   },
   "hue10": {
-    "dark": "#000105",
-    "highlight": "#374364",
-    "light": "#353A4F",
-    "mid": "#242732"
+    "dark": "#001360",
+    "highlight": "#45578A",
+    "light": "#495274",
+    "mid": "#3F455C"
   },
   "hue11": {
-    "dark": "#020205",
-    "highlight": "#292A43",
-    "light": "#131421",
-    "mid": "#02020F"
+    "dark": "#191948",
+    "highlight": "#3E406E",
+    "light": "#2D3055",
+    "mid": "#060662"
   },
   "hue12": {
-    "dark": "#000004",
-    "highlight": "#00000B",
-    "light": "#010109",
-    "mid": "#000005"
+    "dark": "#00005F",
+    "highlight": "#000064",
+    "light": "#04045F",
+    "mid": "#000060"
   },
   "hue13": {
-    "dark": "#010007",
-    "highlight": "#464453",
-    "light": "#232238",
-    "mid": "#070612"
+    "dark": "#0E0061",
+    "highlight": "#5D5A71",
+    "light": "#3B3966",
+    "mid": "#1D1756"
   },
   "hue14": {
-    "dark": "#201329",
-    "highlight": "#36313A",
-    "light": "#232125",
-    "mid": "#211B2B"
+    "dark": "#492761",
+    "highlight": "#564D5E",
+    "light": "#48434D",
+    "mid": "#43355B"
   },
   "hue15": {
-    "dark": "#2B2829",
-    "highlight": "#41393B",
-    "light": "#432628",
-    "mid": "#372333"
+    "dark": "#50494C",
+    "highlight": "#625458",
+    "light": "#703A3E",
+    "mid": "#633B5B"
   }
 }
