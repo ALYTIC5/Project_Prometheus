@@ -103,7 +103,8 @@ def main() -> int:
                 for colour in bad[:20]:
                     count = int((rgb == np.array(colour)).all(axis=1).sum())
                     errors.append(
-                        f"palette: {atlas_name} has colour {colour} ({count}px) outside palette.json"
+                        f"palette: {atlas_name} has colour {colour} "
+                        f"({count}px) outside palette.json"
                     )
         alpha = img[:, :, 3]
         non_binary = ((alpha != 0) & (alpha != 255)).sum()

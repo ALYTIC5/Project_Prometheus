@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from tools.art.compute_anchors import _category_of as anchors_category_of
 from tools.art.import_pixellab import ROTATION_INDEX, _base_name
-from tools.art.pack_atlas import CHARACTER_ROTATION_RE, _category_of as pack_category_of
+from tools.art.pack_atlas import CHARACTER_ROTATION_RE
+from tools.art.pack_atlas import _category_of as pack_category_of
 
 
 def test_rotation_index_covers_all_8_compass_directions_exactly_once() -> None:
