@@ -30,6 +30,25 @@ from prometheus.api.routes.world import start_background_updater
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "out"
 
 
+def resolve_static_path(path: str, root: Path) -> Path | None:
+    """Resolve a request path against a Next.js static export directory.
+
+    Next writes a non-root app-router page as `<path>.html` (no trailing
+    slash by default), which sits ALONGSIDE any same-named directory copied
+    from public/ (e.g. the `/sprites` page exports to `sprites.html`, while
+    `public/sprites/*.png` exports to the `sprites/` directory) -- checking
+    only the bare path first would resolve to that directory and silently
+    fall through to the SPA shell instead of the real page. Exact-file match
+    still wins first, so a real static asset under a route-shaped path is
+    never shadowed by this.
+    """
+    candidates = [root / path, root / f"{path}.html", root / path / "index.html"]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
     """Application lifespan: startup and shutdown hooks.
@@ -124,9 +143,9 @@ if FRONTEND_DIST.exists():
 
     @app.get("/{path:path}")
     async def serve_static(path: str) -> Any:
-        file_path = FRONTEND_DIST / path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path))
+        resolved = resolve_static_path(path, FRONTEND_DIST)
+        if resolved is not None:
+            return FileResponse(str(resolved))
         index_path = FRONTEND_DIST / "index.html"
         if index_path.exists():
             return FileResponse(str(index_path))
