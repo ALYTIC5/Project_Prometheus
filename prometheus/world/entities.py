@@ -92,6 +92,59 @@ class Structure(BaseModel):
     prompt_built: int | None = None
 
 
+class WorldEntityType(str, Enum):
+    """W0 normalized entity contract. Every visual object in the world is one
+    of these. Most types have no real backend source yet (no strategies, no
+    jobs, no experiments) and simply never appear in WorldState.entities
+    until their owning prompt builds the table -- same rule as
+    districts/agents above, generalized to every entity kind."""
+
+    GOD = "GOD"
+    TEMPLE = "TEMPLE"
+    HERO = "HERO"
+    AGENT = "AGENT"
+    BUILDING = "BUILDING"
+    EXPERIMENT = "EXPERIMENT"
+    ARENA_MATCH = "ARENA_MATCH"
+    RESEARCH_SOURCE = "RESEARCH_SOURCE"
+    PORTFOLIO = "PORTFOLIO"
+    ALERT = "ALERT"
+    REGIME = "REGIME"
+    ARCHIVE_ENTRY = "ARCHIVE_ENTRY"
+
+
+class EntityLocation(BaseModel):
+    zone: str
+    x: float
+    y: float
+
+
+class WorldEntity(BaseModel):
+    """A normalized visual object (W0 entity contract).
+
+    `state` is always copied verbatim from a real backend value -- this
+    model never invents one. There is deliberately NO `visual_state` field
+    here: the state -> visual mapping is frontend-only, one file
+    (frontend/src/mapping/stateToVisual.ts), so the backend carries zero
+    visual opinion. `source_entity_id` names the authoritative source: a
+    real DB row where one exists, or the canonical code-defined manifest
+    entry (e.g. `construction_manifest:archive`) for entities with no DB
+    row of their own, such as a god.
+    """
+
+    entity_id: str
+    entity_type: WorldEntityType
+    source_entity_id: str
+    parent_entity_id: str | None = None
+    state: str
+    health: float = 0.0
+    activity: float = 0.0
+    location: EntityLocation
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    reasons: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class WorldEvent(BaseModel):
     type: str
     subject_id: str
@@ -164,6 +217,12 @@ class WorldState(BaseModel):
     districts: list[District] = Field(default_factory=list)
     agents: list[Agent] = Field(default_factory=list)
     structures: list[Structure] = Field(default_factory=list)
+    # W0 normalized entity contract -- additive, alongside the pre-existing
+    # districts/agents/structures fields above (the /buildings/ route and
+    # renderer still consume those directly; migrating them is a separate,
+    # later effort, not bundled into this addition to avoid an unverified
+    # regression to the working renderer).
+    entities: list[WorldEntity] = Field(default_factory=list)
     events: list[WorldEvent] = Field(default_factory=list)
     treasury: Treasury = Field(default_factory=Treasury)
     laws: list[LawCompliance] = Field(default_factory=list)

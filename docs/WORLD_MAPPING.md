@@ -183,6 +183,42 @@ Fields whose source doesn't exist yet are marked with the prompt that will build
 
 ---
 
+## WorldEntity contract (W0)
+
+`WorldState.entities[]` (`prometheus/world/entities.py`'s `WorldEntity`,
+populated by `prometheus/world/projection.py`'s `build_entities`) is additive
+alongside the pre-existing `districts`/`agents`/`structures` fields -- those
+still feed `/buildings/` and the renderer directly; migrating them onto
+`entities[]` is a separate, later effort, not bundled into this addition.
+
+| WorldEntityType | Source | Status | Notes |
+|---|---|---|---|
+| `BUILDING` | One per real `Structure` row (`CONSTRUCTION_MANIFEST`) | Live | `state` = the real `ConstructionPhase` value, verbatim |
+| `GOD` | `construction.GOD_BY_BUILDING_KIND` (3 of 12 imported gods) | Live | `parent_entity_id` = its real building; `state` mirrors the building's phase |
+| `TEMPLE` | `strategy_families` table | Prompt 4 | Empty until then -- same rule as `districts[]` above |
+| `HERO` | `strategies` table | Prompt 4 | Empty; no `StrategySpec` schema exists yet either (see hero-archetype table above) |
+| `AGENT` | `jobs` table | Prompt 4 | Empty -- same rule as `agents[]` above. The static idle-decoration figures in `render/builders.ts` are NOT AGENT entities: they're a rendering detail of a BUILDING's real phase + `agent_roles`, not an individuated job |
+| `EXPERIMENT` | `experiments` table | Prompt 4 | Empty |
+| `ARENA_MATCH` | `experiments` (comparative) | Prompt 4 | Empty |
+| `RESEARCH_SOURCE` | `llm_ingestion` | Prompt 9 | Empty |
+| `PORTFOLIO` | `portfolio` | Prompt 8 | Empty |
+| `ALERT` | `strategy_alerts` | Prompt 10 | Empty |
+| `REGIME` | `regime_classification` | Prompt 5 | Empty |
+| `ARCHIVE_ENTRY` | `results` (retired) | Prompt 4 | Empty |
+
+`source_entity_id` is a real DB row reference where one exists, or the
+canonical code-defined `construction_manifest:<id>` for entities with no DB
+row of their own (both `BUILDING` and `GOD` today, since neither has a table
+row -- a building's row is itself the manifest entry, and a god has no row
+at all). `visual_state` deliberately does NOT exist on the wire -- the
+state→visual mapping is frontend-only, one file, not yet built (planned:
+`frontend/src/mapping/stateToVisual.ts`, W2).
+
+Live view: `/entities` (dev route, `frontend/app/entities/page.tsx`) lists
+every populated and every still-empty type straight from `/world/state`.
+
+---
+
 ## Character sprites (PixelLab import)
 
 38 characters imported from `art/characters/` (`tools/art/import_pixellab.py`)

@@ -23,18 +23,25 @@ from sqlalchemy import text
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.world.construction import CONSTRUCTION_MANIFEST
+from prometheus.world.construction import (
+    BUILDING_LOCATIONS,
+    CONSTRUCTION_MANIFEST,
+    GOD_BY_BUILDING_KIND,
+)
 from prometheus.world.entities import (
     Agent,
     BenchmarkMetrics,
     ClimateState,
     ConstructionPhase,
     District,
+    EntityLocation,
     LawCompliance,
     Scoreboard,
     ScoreboardVerdict,
     Structure,
     Treasury,
+    WorldEntity,
+    WorldEntityType,
     WorldEvent,
     WorldState,
 )
@@ -129,6 +136,66 @@ def determine_phase(
     if has_data:
         return ConstructionPhase.ACTIVE
     return ConstructionPhase.SCAFFOLDING
+
+
+def build_entities(structures: list[Structure]) -> list[WorldEntity]:
+    """Pure function: real Structure rows -> normalized WorldEntity list.
+
+    Only BUILDING (one per real structure) and GOD (the 3 that stand at a
+    real building) are ever populated. Every other WorldEntityType
+    (TEMPLE/HERO/AGENT/EXPERIMENT/...) has no real backend source yet --
+    strategies, jobs, and experiments do not exist -- so this function
+    never emits one, matching the existing districts=[]/agents=[] rule.
+    """
+    entities: list[WorldEntity] = []
+
+    for structure in structures:
+        loc = BUILDING_LOCATIONS.get(structure.id, {})
+        entities.append(
+            WorldEntity(
+                entity_id=f"building:{structure.id}",
+                entity_type=WorldEntityType.BUILDING,
+                source_entity_id=f"construction_manifest:{structure.id}",
+                parent_entity_id=None,
+                state=structure.construction_phase.value,
+                health=1.0 if structure.construction_phase == ConstructionPhase.ACTIVE else 0.0,
+                activity=structure.load,
+                location=EntityLocation(
+                    zone="world",
+                    x=float(loc.get("x", 0)),
+                    y=float(loc.get("y", 0)),
+                ),
+                metrics={"queue_depth": structure.queue_depth},
+                reasons=[],
+                evidence_refs=[],
+            ),
+        )
+
+        god_name = GOD_BY_BUILDING_KIND.get(structure.kind)
+        if god_name:
+            entities.append(
+                WorldEntity(
+                    entity_id=f"god:{god_name}",
+                    entity_type=WorldEntityType.GOD,
+                    source_entity_id=f"construction_manifest:{structure.id}",
+                    parent_entity_id=f"building:{structure.id}",
+                    # A god's presence mirrors its building's real phase --
+                    # borrowed verbatim from the same enum, never invented.
+                    state=structure.construction_phase.value,
+                    health=1.0 if structure.construction_phase == ConstructionPhase.ACTIVE else 0.0,
+                    activity=0.0,
+                    location=EntityLocation(
+                        zone="world",
+                        x=float(loc.get("x", 0)),
+                        y=float(loc.get("y", 0)),
+                    ),
+                    metrics={},
+                    reasons=[],
+                    evidence_refs=[],
+                ),
+            )
+
+    return entities
 
 
 async def _count_rows(session: AsyncSession, table: str) -> int:
@@ -262,6 +329,7 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     )
 
     events = await _get_recent_events(session)
+    entities = build_entities(structures)
 
     build_progress = {
         "total": len(CONSTRUCTION_MANIFEST),
@@ -279,6 +347,7 @@ async def build_world_state(session: AsyncSession) -> WorldState:
         districts=districts,
         agents=agents,
         structures=structures,
+        entities=entities,
         events=events,
         treasury=Treasury(
             total_equity=None,

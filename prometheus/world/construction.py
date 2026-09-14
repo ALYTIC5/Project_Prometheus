@@ -175,6 +175,18 @@ ROLE_COLORS: dict[str, str] = {
     "prophet": "#9B59B6",
 }
 
+# The canonical god->building mapping (W0 WorldEntity contract). Only these
+# 3 of the 12 imported PixelLab gods have a real building to stand at; the
+# other 9 are per strategy FAMILY, which doesn't exist as a real backend
+# concept until Prompt 4's strategy_families table. frontend/src/render/
+# gods.ts carries its own copy (different language/process, same pattern as
+# ROLE_COLORS/palette snap elsewhere) -- this is the source of truth.
+GOD_BY_BUILDING_KIND: dict[str, str] = {
+    "archive": "archive_keeper",
+    "oracle": "oracle_validation",
+    "vault": "risk_guardian",
+}
+
 ROLE_ICONS: dict[str, str] = {
     "builder": "🔨",
     "scribe": "📜",

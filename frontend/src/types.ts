@@ -107,6 +107,37 @@ export interface ScoreboardResponse extends Scoreboard {
   build_progress: BuildProgress;
 }
 
+/** W0 normalized entity contract (prometheus/world/entities.py's
+ * WorldEntity). Only 'BUILDING' and 'GOD' are ever populated today -- every
+ * other type has no real backend source yet (no strategies, no jobs, no
+ * experiments) and will never appear until its owning prompt builds the
+ * table. `state` is verbatim from the backend; there is deliberately no
+ * `visual_state` on the wire -- that mapping is frontend-only, one file
+ * (see docs/WORLD_MAPPING.md), not built yet. */
+export type WorldEntityType =
+  | 'GOD' | 'TEMPLE' | 'HERO' | 'AGENT' | 'BUILDING' | 'EXPERIMENT'
+  | 'ARENA_MATCH' | 'RESEARCH_SOURCE' | 'PORTFOLIO' | 'ALERT' | 'REGIME' | 'ARCHIVE_ENTRY';
+
+export interface EntityLocation {
+  zone: string;
+  x: number;
+  y: number;
+}
+
+export interface WorldEntity {
+  entity_id: string;
+  entity_type: WorldEntityType;
+  source_entity_id: string;
+  parent_entity_id: string | null;
+  state: string;
+  health: number;
+  activity: number;
+  location: EntityLocation;
+  metrics: Record<string, unknown>;
+  reasons: string[];
+  evidence_refs: string[];
+}
+
 export interface BuildingLocation {
   x: number;
   y: number;
@@ -134,6 +165,7 @@ export interface WorldState {
   districts: District[];
   agents: any[];
   structures: Structure[];
+  entities: WorldEntity[];
   events: WorldEvent[];
   treasury: Treasury;
   laws: LawCompliance[];
