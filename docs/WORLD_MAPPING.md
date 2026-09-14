@@ -180,3 +180,95 @@ Fields whose source doesn't exist yet are marked with the prompt that will build
 | Watchtower | "ACTIVE — Monitoring system health" |
 | Temple | "Under Construction — Built in Prompt 6: Meta-learning" |
 | Monument | "ACTIVE — €1,000 Buy-and-hold benchmark. The only thing that works today." |
+
+---
+
+## Character sprites (PixelLab import)
+
+38 characters imported from `art/characters/` (`tools/art/import_pixellab.py`)
+into `characters_atlas.png` / `manifest.production.json`. Only characters with
+a **real, live anchor** are ever spawned in the world; the rest are imported
+and atlased (visible on the `/sprites` dev roster route) but never rendered as
+a world entity, per the same rule `projection.py` already applies to
+`agents`/`districts`: a fabricated figure would be the world lying about
+something that isn't real yet.
+
+### Rotation index ↔ compass direction
+
+PixelLab's own order. Mirrored exactly on both sides — Python
+(`tools/art/import_pixellab.py`'s `ROTATION_INDEX`) and TypeScript
+(`frontend/src/sprites/direction.ts`) reimplement this independently rather
+than sharing one file, matching the existing `snap_to_palette`/`palette.ts`
+precedent for cross-language constants.
+
+| Index | Compass |
+|---|---|
+| r0 | south |
+| r1 | south-east |
+| r2 | east |
+| r3 | north-east |
+| r4 | north |
+| r5 | north-west |
+| r6 | west |
+| r7 | south-west |
+
+Every static character on screen today faces the Monument (grid 13,13) —
+thematically the city faces the benchmark it has to beat, and it means the
+facing direction is a pure function of position, never random.
+
+### Agent role → sprite (LIVE)
+
+`CONSTRUCTION_MANIFEST[building].agent_roles[0]` (real, `prometheus/world/construction.py`)
+resolves directly against `resolveAgentSprite(role, 'idle', rotation)`
+(`frontend/src/sprites/registry.ts`), replacing the procedural stick figure
+in `render/builders.ts` on SCAFFOLDING/FOUNDATION buildings. A role with no
+matching art (currently only `builder`, harbour's role) keeps the original
+procedural figure — never a wrong character.
+
+Roles with real art: `scribe, engineer, statistician, experimenter, guardian,
+auditor, scholar, blacksmith, historian, messenger, necromancer, prophet`.
+
+### God → building (LIVE)
+
+Only 3 of the 12 imported gods have a real building to stand at. The god IS
+the building's identity, not its activity, so it renders whenever the
+building renders — no phase threshold.
+
+| Building kind | God |
+|---|---|
+| archive | archive_keeper |
+| oracle | oracle_validation |
+| vault | risk_guardian |
+
+The other 9 (`god_momentum, god_mean_reversion, god_macro, god_value,
+god_volatility, god_stat_arb, god_machine_learning, god_event_driven,
+god_evolution`) are per strategy **family** — `districts[]` is always empty
+(no `strategy_families` table yet, Prompt 4) — so they are imported/atlased
+only, never spawned. Revisit once districts are real.
+
+### Hero (StrategySpec → sprite) — NOT YET IMPLEMENTED
+
+11 hero sprites represent individual strategies. `prometheus/strategy/` has
+no `StrategySpec` schema yet and zero strategies exist, so there is nothing
+real to derive a mapping *from* — implementing `hero_mapping.ts` now would
+mean guessing the schema it maps against, the exact "inventing thresholds"
+failure CLAUDE.md warns about. The archetype **rule** is documented here so
+Prompt 4 can wire it directly once `StrategySpec` is real:
+
+| Hero | Criteria (future) |
+|---|---|
+| tank | long holding period, low turnover, high drawdown resilience |
+| rogue | short holding period, high turnover |
+| fast | high signal responsiveness |
+| scout | exploratory / early-generation strategies |
+| duelist | market-neutral, paired/long-short |
+| mage | ML or model-driven families |
+| alchemist | feature-engineering heavy |
+| hybrid | crossover offspring of two families |
+| volatility | volatility / regime-specialist families |
+| rising | PROMISING status, evidence still accumulating |
+| dormant | DORMANT status (overrides family archetype) |
+
+Harbour NPCs (`harbor_courier, harbor_guard, harbor_trader`) are the same
+situation as heroes: imported/atlased only, spawned once Prompt 8's paper
+trading produces real activity to represent.

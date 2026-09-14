@@ -18,6 +18,7 @@ this needs zero renderer changes.
 
 from __future__ import annotations
 
+import re
 import sys
 
 import numpy as np
@@ -100,6 +101,14 @@ FALLBACK: dict[tuple[str, str], str | None] = {
 }
 HUMAN_CONFIRM_CELLS = {("monument", "foundation"), ("library", "sealed")}
 
+# A PixelLab import (tools/art/import_pixellab.py) already writes a fully
+# resolved `{base}_{action}_r{0-7}` name -- 8 genuinely distinct renders,
+# not the 2-facing (front/back) JPEG-sheet duplication `_validate_agent_name`
+# and the rotation-expansion loop below were built for. Matched separately
+# so those legacy paths (still used by any future JPEG-sourced agent sheet)
+# are untouched.
+CHARACTER_ROTATION_RE = re.compile(r"^(?P<base>.+)_r(?P<rot>[0-7])$")
+
 # Mirrors registry.ts's MANIFEST[phase] exactly (frontend/src/sprites/registry.ts).
 # resolveSprite() always spreads these AFTER the atlas spec, so the renderer
 # ignores what we write here for these 5 fields regardless -- this mirror exists
@@ -132,7 +141,10 @@ def _category_of(name: str) -> str:
     if name.startswith("monument_tier_"):
         return "buildings"
     parts = name.split("_")
-    if parts[0] in ART_COVERED_KINDS:
+    # Exact `{kind}_{phase}` match only -- a prefix check alone
+    # misclassifies e.g. "oracle_validation_idle_r0" (the oracle_validation
+    # god) as the "oracle" building kind.
+    if len(parts) == 2 and parts[0] in ART_COVERED_KINDS and parts[1] in CONSTRUCTION_PHASES:
         return "buildings"
     return "characters"
 
@@ -276,9 +288,15 @@ def main() -> int:
     by_category: dict[str, list[Sprite]] = {c: [] for c in CATEGORIES}
     for name, sprite in sprites.items():
         category = _category_of(name)
-        if category == "characters":
+        is_pixellab_rotation = category == "characters" and CHARACTER_ROTATION_RE.match(name)
+        if category == "characters" and not is_pixellab_rotation:
             _validate_agent_name(name)
-        sprite.rgba = _quantize_sprite(sprite.rgba, palette)
+        # PixelLab character art is already clean, real RGBA (26-65 colours,
+        # binary alpha) -- quantizing it to the recovered-JPEG palette would
+        # visibly degrade it for no benefit; verify_atlas.py's palette
+        # conformance check is scoped to exclude characters_atlas.png to match.
+        if not is_pixellab_rotation:
+            sprite.rgba = _quantize_sprite(sprite.rgba, palette)
         by_category[category].append(sprite)
 
     manifest: dict[str, dict] = {}
@@ -313,7 +331,11 @@ def main() -> int:
                 entry["frameCount"] = s.frame_count
                 entry["fps"] = s.fps
 
-            if category == "characters":
+            if category == "characters" and CHARACTER_ROTATION_RE.match(s.name):
+                # A real PixelLab render for this exact rotation -- write
+                # the key verbatim, no duplication.
+                manifest[s.name] = entry
+            elif category == "characters":
                 # {role}_{action}_{f|b} -> {role}_{action}_r{0..7}, front
                 # filling r0-r3 and back filling r4-r7 (duplicated, not
                 # 8 distinct renders -- resolveAgentSprite() returns null

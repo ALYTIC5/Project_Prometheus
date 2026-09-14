@@ -1,6 +1,10 @@
 """A5 - derive a 64-colour sprite-quantization palette from every scaled sprite.
 
-Collects every opaque pixel across art/scaled/*.png, runs Pillow's
+Collects every opaque pixel across art/scaled/*.png plus every raw PixelLab
+character frame (art/characters/*/*/rotations/*.png -- pooled so drawn
+renderer elements cohere with the character art, per pack_atlas.py's
+CHARACTER_ROTATION_RE branch, but the characters themselves are never
+quantized against the result), runs Pillow's
 built-in median-cut quantizer once on the pooled population (not
 per-sheet, which would let each sheet's palette drift from the others),
 and writes frontend/src/sprites/sprite_palette.json in the same
@@ -31,6 +35,7 @@ from tools.art.common import (
 )
 
 SCALED_DIR = ART / "scaled"
+CHARACTERS_DIR = ART / "characters"
 PALETTE_COLOURS = 64
 MAX_SAMPLES = 2_000_000
 RANDOM_SEED = 0xA27
@@ -48,6 +53,11 @@ def main() -> int:
     if not files:
         print(f"No scaled sprites in {SCALED_DIR} -- run normalize_scale first", file=sys.stderr)
         return 1
+    # PixelLab character art is pooled into the same union palette (so
+    # programmatic renderer elements drawn from it cohere with the art) but
+    # the characters themselves are never re-quantized to it -- see
+    # pack_atlas.py's CHARACTER_ROTATION_RE branch.
+    files = files + sorted(CHARACTERS_DIR.glob("*/*/rotations/*.png"))
 
     samples = []
     for f in files:

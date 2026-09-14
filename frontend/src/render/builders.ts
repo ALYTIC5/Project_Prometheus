@@ -1,7 +1,9 @@
 import * as PIXI from 'pixi.js';
 import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { PALETTE } from '../sprites/palette';
-import { hashString } from '../sprites/registry';
+import { directionIndexFor } from '../sprites/direction';
+import { getAtlasFrame } from '../sprites/atlasTextures';
+import { hashString, resolveAgentSprite, type AgentRole } from '../sprites/registry';
 import type { Building } from '../types';
 
 const MAX_BUILDERS = 12;
@@ -9,6 +11,12 @@ const SCALE = 3;
 const FRAME_COUNT = 8;
 const FRAME_DURATION_MS = 120;
 const OUTLINE = 0x000000;
+
+// prometheus/world/construction.py's BUILDING_LOCATIONS -- every static
+// character on screen today faces the Monument (see docs/WORLD_MAPPING.md):
+// the whole city faces the benchmark it has to beat, and it means no
+// randomness anywhere in the sprite-facing path (Prompt 2.4's requirement).
+const MONUMENT_GRID = { x: 13, y: 13 };
 
 type Activity = 'hammer' | 'measure' | 'carry';
 const ACTIVITIES: Activity[] = ['hammer', 'measure', 'carry'];
@@ -18,7 +26,8 @@ function activityFor(buildingId: string): Activity {
 }
 
 /** Role -> palette family, mirroring the intent (not the exact hex) of
- * prometheus/world/construction.py's ROLE_COLORS. */
+ * prometheus/world/construction.py's ROLE_COLORS. Only used by the
+ * procedural fallback figure -- real PixelLab art carries its own colours. */
 const ROLE_FAMILY: Record<string, string> = {
   builder: 'orange',
   scribe: 'blue',
@@ -48,7 +57,8 @@ function drawBody(hatColor: number): PIXI.Graphics {
 /** Redraws just the tool/arm for one 8-frame work-animation cycle,
  * advanced on elapsed time (not distance -- these builders don't move, so
  * there is no distance to advance on; PROMPTS.md itself treats idle/work
- * animation as cosmetic and time-based-safe, unlike a walk cycle). */
+ * animation as cosmetic and time-based-safe, unlike a walk cycle).
+ * Procedural fallback only -- real PixelLab art has no work animation yet. */
 function drawTool(g: PIXI.Graphics, activity: Activity, frame: number): boolean {
   g.clear();
   const swing = Math.sin((frame / FRAME_COUNT) * Math.PI * 2);
@@ -91,9 +101,14 @@ export interface BuildersHandle {
  * redraw, exactly like every other render layer. This is the actual
  * PROMPTS.md Prompt-1 spec ("builder sprites... idle animations"), not
  * the Prompt-4 job-driven migration system, which needs backend data
- * that does not exist yet (see docs/DEPENDENCIES.md). */
+ * that does not exist yet (see docs/DEPENDENCIES.md).
+ *
+ * Each building's real `agent_roles[0]` (prometheus/world/construction.py's
+ * CONSTRUCTION_MANIFEST) resolves against the real PixelLab agent atlas
+ * first; only a miss (no art for that role, e.g. harbour's "builder") falls
+ * back to the original procedural stick figure -- never a wrong character. */
 export function createBuilders(buildings: Building[]): BuildersHandle {
-  const figures: { root: PIXI.Container; tool: PIXI.Graphics; activity: Activity; baseY: number; dust: PIXI.Graphics | null }[] = [];
+  const figures: { root: PIXI.Container; tool: PIXI.Graphics | null; activity: Activity; baseY: number; dust: PIXI.Graphics | null }[] = [];
 
   const eligible = buildings
     .filter((b) => {
@@ -102,18 +117,33 @@ export function createBuilders(buildings: Building[]): BuildersHandle {
     })
     .slice(0, MAX_BUILDERS);
 
+  const monumentScreen = gridToScreen(MONUMENT_GRID.x, MONUMENT_GRID.y);
+
   for (const building of eligible) {
     const activity = activityFor(building.id);
-    const hatColor = hatColorFor(building.agent_roles[0]);
-    const root = new PIXI.Container();
-    root.scale.set(SCALE);
-    root.addChild(drawBody(hatColor));
-    const tool = new PIXI.Graphics();
-    root.addChild(tool);
+    const role = building.agent_roles[0];
 
     const edgeX = building.location.x + building.location.width * 0.75;
     const edgeY = building.location.y + building.location.height * 0.75;
     const { x, y } = gridToScreen(edgeX, edgeY);
+    const rotation = directionIndexFor(monumentScreen.x - x, monumentScreen.y - y);
+    const spec = role ? resolveAgentSprite(role as AgentRole, 'idle', rotation) : null;
+    const texture = spec?.atlas && spec.frame && spec.anchor ? getAtlasFrame(spec) : null;
+
+    const root = new PIXI.Container();
+    let tool: PIXI.Graphics | null = null;
+
+    if (texture && spec?.frame && spec.anchor) {
+      const sprite = new PIXI.Sprite(texture);
+      sprite.anchor.set(spec.anchor.x / spec.frame.width, spec.anchor.y / spec.frame.height);
+      root.addChild(sprite);
+    } else {
+      root.scale.set(SCALE);
+      root.addChild(drawBody(hatColorFor(role)));
+      tool = new PIXI.Graphics();
+      root.addChild(tool);
+    }
+
     root.x = x;
     root.y = y;
     root.zIndex = depthOf(edgeX, edgeY, 1, 1, Layer.AGENT);
@@ -125,6 +155,7 @@ export function createBuilders(buildings: Building[]): BuildersHandle {
     for (let i = 0; i < figures.length; i++) {
       const f = figures[i];
       f.root.y = f.baseY + Math.sin(elapsedMs / 250 + i) * 0.5;
+      if (!f.tool) continue; // real-art figure: static idle, no work animation yet
       const spawnDust = drawTool(f.tool, f.activity, frame);
       if (spawnDust && !f.dust) {
         f.dust = drawDustPuff();

@@ -7,6 +7,7 @@ import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { attachCamera, type CameraHandle } from '../render/camera';
 import { drawBuilding } from '../render/building';
 import { createBuilders, type BuildersHandle } from '../render/builders';
+import { createGods } from '../render/gods';
 import { drawGround } from '../render/ground';
 import { updateLabels, type LabelCandidate } from '../render/labels';
 import { createMonument, type MonumentHandle } from '../render/monument';
@@ -280,6 +281,10 @@ export default function WorldView() {
     const handle = createBuilders(nonMonument);
     for (const root of handle.roots) layer.addChild(root);
     buildersRef.current = handle;
+
+    // Gods stand at their real building (archive/oracle/vault) -- static,
+    // no per-frame update, recomputed fresh on every redraw like builders.
+    for (const root of createGods(nonMonument)) layer.addChild(root);
   }, [pixiReady, buildings]);
 
   // Debug overlay (press D): per-object grid coords + depth value.

@@ -203,10 +203,14 @@ export function hashString(value: string): number {
   return Math.abs(hash);
 }
 
-/** Agent roles used by the sprite manifest. */
+/** Agent roles used by the sprite manifest. `builder` has no PixelLab art
+ * (see art/characters/ -- only the 12 `agent_*` folders do) and always
+ * misses resolveAgentSprite(); callers must fall back to the procedural
+ * figure for it, same as any other miss. */
 export type AgentRole =
   | 'builder' | 'scribe' | 'engineer' | 'experimenter' | 'statistician'
-  | 'guardian' | 'auditor' | 'necromancer' | 'scholar' | 'prophet';
+  | 'guardian' | 'auditor' | 'necromancer' | 'scholar' | 'prophet'
+  | 'blacksmith' | 'historian' | 'messenger';
 
 /** Build state derived from backend `construction_phase` field. */
 export type AgentAction = 'idle' | 'walk' | 'work' | 'carry';
@@ -278,6 +282,15 @@ export function resolveAgentSprite(
 export function resolveTerrainSprite(key: string): AtlasSpec | null {
   if (!productionManifest) return null;
   return productionManifest[key] ?? null;
+}
+
+/** Raw manifest lookup for a named PixelLab character that isn't an
+ * AgentRole worker -- gods, heroes, harbour NPCs. Key format matches
+ * import_pixellab.py's naming exactly: `${characterFolder}_${action}_r${rotation}`
+ * (e.g. "god_evolution_idle_r0", "oracle_validation_idle_r0"). */
+export function resolveCharacterSprite(name: string, action: string, rotation: number): AtlasSpec | null {
+  if (!productionManifest) return null;
+  return productionManifest[`${name}_${action}_r${rotation}`] ?? null;
 }
 
 export function isProduction(): boolean {

@@ -1,10 +1,10 @@
 PY ?= python
 
-.PHONY: art art-slice art-build art-clean art-verify
+.PHONY: art art-slice art-characters art-build art-clean art-verify
 
 ## Full pipeline. Fails at normalize_scale if any sprite is still unnamed
 ## in art/sliced/overrides.json -- that is the intended human checkpoint.
-art: art-slice art-build
+art: art-slice art-characters art-build
 
 ## Stages that need no human input.
 art-slice:
@@ -15,6 +15,11 @@ art-slice:
 	@echo "NEXT: edit art/sliced/overrides.json -- set a 'name' for every sprite"
 	@echo "      you want kept, or '-' to discard it. Review"
 	@echo "      art/sliced/contact_sheet.html while you do. Then: make art-build"
+
+## PixelLab character exports (art/characters/<name>/metadata.json) -- already
+## clean RGBA, no human naming step needed, registers straight into overrides.json.
+art-characters:
+	$(PY) -m tools.art.import_pixellab
 
 ## Stages that require overrides.json to be filled in.
 art-build:

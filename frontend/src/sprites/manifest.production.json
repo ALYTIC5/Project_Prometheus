@@ -1,4 +1,148 @@
 {
+  "archive_keeper_idle_r0": {
+    "anchor": {
+      "x": 35,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r1": {
+    "anchor": {
+      "x": 30,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r2": {
+    "anchor": {
+      "x": 30,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r3": {
+    "anchor": {
+      "x": 35,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r4": {
+    "anchor": {
+      "x": 32,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r5": {
+    "anchor": {
+      "x": 27,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r6": {
+    "anchor": {
+      "x": 29,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "archive_keeper_idle_r7": {
+    "anchor": {
+      "x": 34,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
   "arena_active": {
     "anchor": {
       "x": 100,
@@ -124,6 +268,582 @@
     "litWindows": false,
     "outline": "chains",
     "outlineColor": 16711680
+  },
+  "auditor_idle_r0": {
+    "anchor": {
+      "x": 29,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 330,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r1": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 380,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r2": {
+    "anchor": {
+      "x": 21,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 430,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r3": {
+    "anchor": {
+      "x": 26,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r4": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r5": {
+    "anchor": {
+      "x": 18,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r6": {
+    "anchor": {
+      "x": 20,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "auditor_idle_r7": {
+    "anchor": {
+      "x": 30,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r1": {
+    "anchor": {
+      "x": 18,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r2": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r6": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "blacksmith_idle_r7": {
+    "anchor": {
+      "x": 29,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r0": {
+    "anchor": {
+      "x": 20,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r1": {
+    "anchor": {
+      "x": 23,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r2": {
+    "anchor": {
+      "x": 26,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r4": {
+    "anchor": {
+      "x": 22,
+      "y": 41
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r6": {
+    "anchor": {
+      "x": 24,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 974
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "engineer_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r0": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r1": {
+    "anchor": {
+      "x": 18,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r2": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r3": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r4": {
+    "anchor": {
+      "x": 25,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "experimenter_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
   },
   "forge_active": {
     "anchor": {
@@ -251,6 +971,3606 @@
     "outline": "chains",
     "outlineColor": 16711680
   },
+  "god_event_driven_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r1": {
+    "anchor": {
+      "x": 29,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r2": {
+    "anchor": {
+      "x": 33,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r3": {
+    "anchor": {
+      "x": 35,
+      "y": 57
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r4": {
+    "anchor": {
+      "x": 32,
+      "y": 57
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r5": {
+    "anchor": {
+      "x": 28,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 66
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r6": {
+    "anchor": {
+      "x": 30,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_event_driven_idle_r7": {
+    "anchor": {
+      "x": 37,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r0": {
+    "anchor": {
+      "x": 20,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r1": {
+    "anchor": {
+      "x": 25,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r2": {
+    "anchor": {
+      "x": 30,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r3": {
+    "anchor": {
+      "x": 35,
+      "y": 58
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r4": {
+    "anchor": {
+      "x": 30,
+      "y": 56
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 132
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r5": {
+    "anchor": {
+      "x": 24,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r6": {
+    "anchor": {
+      "x": 32,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_evolution_idle_r7": {
+    "anchor": {
+      "x": 40,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r0": {
+    "anchor": {
+      "x": 38,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r1": {
+    "anchor": {
+      "x": 24,
+      "y": 63
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r2": {
+    "anchor": {
+      "x": 30,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r3": {
+    "anchor": {
+      "x": 37,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 198
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r4": {
+    "anchor": {
+      "x": 32,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r5": {
+    "anchor": {
+      "x": 25,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r6": {
+    "anchor": {
+      "x": 33,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_machine_learning_idle_r7": {
+    "anchor": {
+      "x": 39,
+      "y": 63
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r0": {
+    "anchor": {
+      "x": 28,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r1": {
+    "anchor": {
+      "x": 26,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r2": {
+    "anchor": {
+      "x": 32,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 264
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r3": {
+    "anchor": {
+      "x": 34,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r4": {
+    "anchor": {
+      "x": 29,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r5": {
+    "anchor": {
+      "x": 29,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r6": {
+    "anchor": {
+      "x": 31,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_macro_idle_r7": {
+    "anchor": {
+      "x": 36,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r0": {
+    "anchor": {
+      "x": 30,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r1": {
+    "anchor": {
+      "x": 31,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 330
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r2": {
+    "anchor": {
+      "x": 33,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r3": {
+    "anchor": {
+      "x": 34,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r4": {
+    "anchor": {
+      "x": 33,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r5": {
+    "anchor": {
+      "x": 30,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r6": {
+    "anchor": {
+      "x": 30,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_mean_reversion_idle_r7": {
+    "anchor": {
+      "x": 32,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 396
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r1": {
+    "anchor": {
+      "x": 24,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r2": {
+    "anchor": {
+      "x": 34,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r3": {
+    "anchor": {
+      "x": 36,
+      "y": 57
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r4": {
+    "anchor": {
+      "x": 34,
+      "y": 57
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r5": {
+    "anchor": {
+      "x": 23,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r6": {
+    "anchor": {
+      "x": 35,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_momentum_idle_r7": {
+    "anchor": {
+      "x": 43,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 462
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r0": {
+    "anchor": {
+      "x": 31,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r1": {
+    "anchor": {
+      "x": 24,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r2": {
+    "anchor": {
+      "x": 29,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r3": {
+    "anchor": {
+      "x": 37,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r4": {
+    "anchor": {
+      "x": 31,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r5": {
+    "anchor": {
+      "x": 26,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r6": {
+    "anchor": {
+      "x": 33,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 528
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_stat_arb_idle_r7": {
+    "anchor": {
+      "x": 39,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r0": {
+    "anchor": {
+      "x": 22,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r1": {
+    "anchor": {
+      "x": 26,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r2": {
+    "anchor": {
+      "x": 29,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r3": {
+    "anchor": {
+      "x": 34,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r4": {
+    "anchor": {
+      "x": 31,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r5": {
+    "anchor": {
+      "x": 26,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 594
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r6": {
+    "anchor": {
+      "x": 32,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_value_idle_r7": {
+    "anchor": {
+      "x": 41,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r0": {
+    "anchor": {
+      "x": 19,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r1": {
+    "anchor": {
+      "x": 27,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r2": {
+    "anchor": {
+      "x": 34,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r3": {
+    "anchor": {
+      "x": 39,
+      "y": 57
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r4": {
+    "anchor": {
+      "x": 29,
+      "y": 56
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 660
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r5": {
+    "anchor": {
+      "x": 24,
+      "y": 58
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r6": {
+    "anchor": {
+      "x": 29,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "god_volatility_idle_r7": {
+    "anchor": {
+      "x": 43,
+      "y": 58
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r0": {
+    "anchor": {
+      "x": 31,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1024
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r1": {
+    "anchor": {
+      "x": 17,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r2": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r4": {
+    "anchor": {
+      "x": 25,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "guardian_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r0": {
+    "anchor": {
+      "x": 29,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r1": {
+    "anchor": {
+      "x": 21,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r2": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1074
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r3": {
+    "anchor": {
+      "x": 28,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r4": {
+    "anchor": {
+      "x": 23,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r6": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_courier_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r1": {
+    "anchor": {
+      "x": 20,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r2": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r3": {
+    "anchor": {
+      "x": 28,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1124
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r6": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_guard_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r0": {
+    "anchor": {
+      "x": 30,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r1": {
+    "anchor": {
+      "x": 18,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r2": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r3": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1174
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "harbor_trader_idle_r7": {
+    "anchor": {
+      "x": 26,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r0": {
+    "anchor": {
+      "x": 28,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r1": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r2": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r3": {
+    "anchor": {
+      "x": 28,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r4": {
+    "anchor": {
+      "x": 25,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_alchemist_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r0": {
+    "anchor": {
+      "x": 31,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1224
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r1": {
+    "anchor": {
+      "x": 17,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r2": {
+    "anchor": {
+      "x": 26,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r3": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r4": {
+    "anchor": {
+      "x": 21,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r6": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_dormant_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r1": {
+    "anchor": {
+      "x": 20,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r2": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1274
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r6": {
+    "anchor": {
+      "x": 24,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_duelist_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r0": {
+    "anchor": {
+      "x": 13,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r1": {
+    "anchor": {
+      "x": 21,
+      "y": 47
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r2": {
+    "anchor": {
+      "x": 31,
+      "y": 47
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r3": {
+    "anchor": {
+      "x": 39,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r4": {
+    "anchor": {
+      "x": 20,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1324
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r6": {
+    "anchor": {
+      "x": 26,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_fast_idle_r7": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r1": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r2": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r3": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r4": {
+    "anchor": {
+      "x": 23,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1374
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_hybrid_idle_r7": {
+    "anchor": {
+      "x": 26,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r0": {
+    "anchor": {
+      "x": 28,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r1": {
+    "anchor": {
+      "x": 19,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r2": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r3": {
+    "anchor": {
+      "x": 28,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_mage_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r0": {
+    "anchor": {
+      "x": 19,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1424
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r1": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r2": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r3": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rising_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r0": {
+    "anchor": {
+      "x": 18,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r1": {
+    "anchor": {
+      "x": 23,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r2": {
+    "anchor": {
+      "x": 27,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1474
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r3": {
+    "anchor": {
+      "x": 24,
+      "y": 41
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r4": {
+    "anchor": {
+      "x": 21,
+      "y": 41
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r6": {
+    "anchor": {
+      "x": 24,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_rogue_idle_r7": {
+    "anchor": {
+      "x": 29,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r0": {
+    "anchor": {
+      "x": 26,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r1": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r2": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1524
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_scout_idle_r7": {
+    "anchor": {
+      "x": 25,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r0": {
+    "anchor": {
+      "x": 33,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r1": {
+    "anchor": {
+      "x": 17,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r2": {
+    "anchor": {
+      "x": 21,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r4": {
+    "anchor": {
+      "x": 27,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r5": {
+    "anchor": {
+      "x": 18,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1574
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_tank_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r0": {
+    "anchor": {
+      "x": 34,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r1": {
+    "anchor": {
+      "x": 20,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r2": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r3": {
+    "anchor": {
+      "x": 29,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r4": {
+    "anchor": {
+      "x": 26,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "hero_volatility_idle_r7": {
+    "anchor": {
+      "x": 29,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r0": {
+    "anchor": {
+      "x": 28,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1624
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r1": {
+    "anchor": {
+      "x": 20,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r2": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r4": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r5": {
+    "anchor": {
+      "x": 19,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "historian_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
   "library_active": {
     "anchor": {
       "x": 62,
@@ -376,6 +4696,150 @@
     "litWindows": false,
     "outline": "chains",
     "outlineColor": 16711680
+  },
+  "messenger_idle_r0": {
+    "anchor": {
+      "x": 18,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r1": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r2": {
+    "anchor": {
+      "x": 25,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1674
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r3": {
+    "anchor": {
+      "x": 28,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r4": {
+    "anchor": {
+      "x": 23,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "messenger_idle_r7": {
+    "anchor": {
+      "x": 26,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
   },
   "monument_active": {
     "anchor": {
@@ -557,6 +5021,150 @@
     "outline": "none",
     "outlineColor": 0
   },
+  "necromancer_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r1": {
+    "anchor": {
+      "x": 21,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r2": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r3": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1724
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r5": {
+    "anchor": {
+      "x": 22,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r6": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "necromancer_idle_r7": {
+    "anchor": {
+      "x": 26,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
   "oracle_active": {
     "anchor": {
       "x": 88,
@@ -682,6 +5290,870 @@
     "litWindows": false,
     "outline": "chains",
     "outlineColor": 16711680
+  },
+  "oracle_validation_idle_r0": {
+    "anchor": {
+      "x": 31,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r1": {
+    "anchor": {
+      "x": 26,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r2": {
+    "anchor": {
+      "x": 31,
+      "y": 63
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r3": {
+    "anchor": {
+      "x": 35,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 726
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r4": {
+    "anchor": {
+      "x": 31,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r5": {
+    "anchor": {
+      "x": 29,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r6": {
+    "anchor": {
+      "x": 29,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "oracle_validation_idle_r7": {
+    "anchor": {
+      "x": 34,
+      "y": 62
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 41
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r1": {
+    "anchor": {
+      "x": 20,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r2": {
+    "anchor": {
+      "x": 23,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r4": {
+    "anchor": {
+      "x": 23,
+      "y": 41
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r6": {
+    "anchor": {
+      "x": 25,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1774
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prophet_idle_r7": {
+    "anchor": {
+      "x": 28,
+      "y": 42
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r0": {
+    "anchor": {
+      "x": 30,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r1": {
+    "anchor": {
+      "x": 22,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 330,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r2": {
+    "anchor": {
+      "x": 30,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 396,
+      "y": 792
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r3": {
+    "anchor": {
+      "x": 36,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 0,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r4": {
+    "anchor": {
+      "x": 32,
+      "y": 59
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 66,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r5": {
+    "anchor": {
+      "x": 26,
+      "y": 60
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 132,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r6": {
+    "anchor": {
+      "x": 31,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 198,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "risk_guardian_idle_r7": {
+    "anchor": {
+      "x": 37,
+      "y": 61
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 64,
+      "width": 64,
+      "x": 264,
+      "y": 858
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r0": {
+    "anchor": {
+      "x": 19,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r1": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r2": {
+    "anchor": {
+      "x": 26,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r3": {
+    "anchor": {
+      "x": 25,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r4": {
+    "anchor": {
+      "x": 22,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r6": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scholar_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1824
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r1": {
+    "anchor": {
+      "x": 22,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r2": {
+    "anchor": {
+      "x": 24,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r3": {
+    "anchor": {
+      "x": 28,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r4": {
+    "anchor": {
+      "x": 23,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r5": {
+    "anchor": {
+      "x": 20,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 250,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "scribe_idle_r7": {
+    "anchor": {
+      "x": 25,
+      "y": 46
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 300,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r0": {
+    "anchor": {
+      "x": 24,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 350,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r1": {
+    "anchor": {
+      "x": 21,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 400,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r2": {
+    "anchor": {
+      "x": 25,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 450,
+      "y": 1874
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r3": {
+    "anchor": {
+      "x": 27,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 0,
+      "y": 1924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r4": {
+    "anchor": {
+      "x": 24,
+      "y": 43
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 50,
+      "y": 1924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r5": {
+    "anchor": {
+      "x": 21,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 100,
+      "y": 1924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r6": {
+    "anchor": {
+      "x": 23,
+      "y": 44
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 150,
+      "y": 1924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "statistician_idle_r7": {
+    "anchor": {
+      "x": 27,
+      "y": 45
+    },
+    "atlas": "characters_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 48,
+      "x": 200,
+      "y": 1924
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
   },
   "temple_active": {
     "anchor": {

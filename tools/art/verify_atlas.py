@@ -7,6 +7,7 @@ wrong at once. Exits 1 on any failure, 0 otherwise.
 from __future__ import annotations
 
 import json
+import re
 import sys
 
 import numpy as np
@@ -22,6 +23,13 @@ from tools.art.common import (
 )
 
 MAX_MEMORY_BYTES = 40 * 1024 * 1024
+
+# PixelLab character art is never re-quantized to the recovered-JPEG palette
+# (pack_atlas.py's CHARACTER_ROTATION_RE branch) -- its atlas is exempt from
+# the per-pixel palette-conformance check below, but not from anything else
+# (alpha binarity, memory budget, frame/anchor bounds all still apply).
+CHARACTERS_ATLAS = "characters_atlas.png"
+CHARACTER_ROTATION_RE = re.compile(r"^(?P<base>.+)_r(?P<rot>[0-7])$")
 
 PROCEDURAL_BY_PHASE = {
     "planned": {"hasVolume": False, "outline": "dashed-stakes", "outlineColor": 0x888888,
@@ -81,19 +89,22 @@ def main() -> int:
             continue
         atlas_images[atlas_name] = load_rgba(path)
 
-    # 2. Palette conformance + alpha binarity.
+    # 2. Palette conformance (characters exempt -- see CHARACTERS_ATLAS note
+    # above) + alpha binarity (applies to every atlas, including characters:
+    # PixelLab's own alpha is already strictly binary, verified on import).
     for atlas_name, img in atlas_images.items():
-        mask = img[:, :, 3] > 0
-        rgb = img[:, :, :3][mask]
-        if len(rgb):
-            unique = np.unique(rgb, axis=0)
-            unique_tuples = [tuple(int(v) for v in c) for c in unique]
-            bad = [c for c in unique_tuples if c not in palette_set]
-            for colour in bad[:20]:
-                count = int((rgb == np.array(colour)).all(axis=1).sum())
-                errors.append(
-                    f"palette: {atlas_name} has colour {colour} ({count}px) outside palette.json"
-                )
+        if atlas_name != CHARACTERS_ATLAS:
+            mask = img[:, :, 3] > 0
+            rgb = img[:, :, :3][mask]
+            if len(rgb):
+                unique = np.unique(rgb, axis=0)
+                unique_tuples = [tuple(int(v) for v in c) for c in unique]
+                bad = [c for c in unique_tuples if c not in palette_set]
+                for colour in bad[:20]:
+                    count = int((rgb == np.array(colour)).all(axis=1).sum())
+                    errors.append(
+                        f"palette: {atlas_name} has colour {colour} ({count}px) outside palette.json"
+                    )
         alpha = img[:, :, 3]
         non_binary = ((alpha != 0) & (alpha != 255)).sum()
         if non_binary:
@@ -149,6 +160,19 @@ def main() -> int:
                         f"procedural: {key}.{field} = {entry.get(field)!r}, "
                         f"expected {value!r} (registry.ts MANIFEST[{phase!r}] mirror)"
                     )
+
+    # 8. Character rotation completeness: every `{base}_{action}_r{n}` key
+    # must have all 8 rotations, not a partial set (a missing PixelLab
+    # export frame should fail loudly here, not render as a silent gap).
+    character_bases: dict[str, set[int]] = {}
+    for key in manifest:
+        m = CHARACTER_ROTATION_RE.match(key)
+        if m:
+            character_bases.setdefault(m.group("base"), set()).add(int(m.group("rot")))
+    for base, rotations in character_bases.items():
+        missing = set(range(8)) - rotations
+        if missing:
+            errors.append(f"character: {base} missing rotations {sorted(missing)}")
 
     if errors:
         print("Verification FAILED:")

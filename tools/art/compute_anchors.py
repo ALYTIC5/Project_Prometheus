@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw
 
 from tools.art.common import (
     ART,
+    CONSTRUCTION_PHASES,
     KIND_FOOTPRINT,
     alpha_mask,
     anchor_building,
@@ -38,7 +39,10 @@ def _category_of(name: str) -> str:
     if name.startswith("monument_tier_"):
         return "building"
     parts = name.split("_")
-    if parts[0] in KIND_FOOTPRINT:
+    # Exact `{kind}_{phase}` match only -- a prefix check alone
+    # misclassifies e.g. "oracle_validation_idle_r0" (the oracle_validation
+    # god) as the "oracle" building kind, giving it the wrong anchor band.
+    if len(parts) == 2 and parts[0] in KIND_FOOTPRINT and parts[1] in CONSTRUCTION_PHASES:
         return "building"
     return "agent"
 

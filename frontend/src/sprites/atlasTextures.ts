@@ -4,7 +4,11 @@ import { isProduction, type AtlasSpec } from './registry';
 /** Atlas PNGs live under public/ (not src/sprites/), so they're fetchable
  * by plain URL under Next's static export -- see tools/art/common.py's
  * PUBLIC_SPRITES_DIR comment for why this can't be a webpack asset import. */
-const ATLAS_URLS = ['/sprites/buildings_atlas.png', '/sprites/terrain_atlas.png'];
+const ATLAS_URLS = [
+  '/sprites/buildings_atlas.png',
+  '/sprites/terrain_atlas.png',
+  '/sprites/characters_atlas.png',
+];
 
 const baseTextures = new Map<string, PIXI.Texture>();
 const frameCache = new Map<string, PIXI.Texture>();
