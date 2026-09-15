@@ -217,6 +217,45 @@ state→visual mapping is frontend-only, one file, not yet built (planned:
 Live view: `/entities` (dev route, `frontend/app/entities/page.tsx`) lists
 every populated and every still-empty type straight from `/world/state`.
 
+## State -> visual mapping (W2)
+
+The one source of visual truth: `frontend/src/mapping/stateToVisual.ts`. If a
+visual decision is made anywhere else, that is a bug -- with one documented
+exception: `frontend/src/sprites/registry.ts`'s `MANIFEST` remains the actual
+renderer implementation for BUILDING construction-phase visuals (it predates
+this file and is cross-checked against the Python atlas pipeline); the new
+file's `mapBuildingStateToVisual` documents the same semantic mapping without
+replacing that already-working system.
+
+Every function is pure (state in, visual descriptor out) and tested against
+fixture inputs (`stateToVisual.test.ts`) -- not live data, because for every
+row below except the phase/queue_depth ones, no live data of that kind exists.
+**Wired** means the function's output is actually connected to the renderer
+today; unwired functions are complete and tested, ready for the prompt that
+makes their input real.
+
+| Source state | Function | Visual | Source field | Wired? |
+|---|---|---|---|---|
+| family HEALTHY | `mapFamilyStateToVisual` | lights on, construction activity, agents present | `strategy_families.status` (Prompt 4) | No -- table doesn't exist |
+| family QUARANTINED | `mapFamilyStateToVisual` | chains, guards, sealed gate, warning pulse | `strategy_families.status` (Prompt 4) | No |
+| family DORMANT | `mapFamilyStateToVisual` | overgrown, dark, sleeping | `strategy_families.status` (Prompt 4) | No |
+| family RETIRED | `mapFamilyStateToVisual` | ruins | `strategy_families.status` (Prompt 4) | No |
+| strategy PROMISING | `mapStrategyStateToVisual` | RISING_HERO: halo, upward particles, no crown, not in champion temple | `strategies.status` (Prompt 4) | No |
+| strategy VALIDATED | `mapStrategyStateToVisual` | CHAMPION_CANDIDATE: formal banner, arena-eligible | `strategies.status` (Prompt 4) | No |
+| strategy CHAMPION | `mapStrategyStateToVisual` | crowned, throne | `strategies.status` (Prompt 4) | No |
+| strategy RETIRED | `mapStrategyStateToVisual` | statue, Hall of Legends | `strategies.status` (Prompt 4) | No |
+| strategy REJECTED | `mapStrategyStateToVisual` | Underworld, tombstone + cause of death | `strategies.status` + `decisions.reason` (Prompt 4) | No |
+| building queue_depth high | `mapBuildingStateToVisual` | BUSY: dense agent traffic, full board | `jobs` count per building (Prompt 4); `busy` threshold is a required function argument, deliberately not defaulted -- no real queue data exists to calibrate "high" against yet | No (`queueDepth` is real and always 0; the flag is exercised, never true) |
+| oracle validation bottleneck | `mapBuildingStateToVisual` | CONGESTED: visible queue of scribes | `validation_results` backlog (Prompt 5) | No -- field doesn't exist |
+| harbour execution divergence | `mapBuildingStateToVisual` | WARNING: warning lamps, disordered motion | `paper_reconciliation` divergence flag (Prompt 8) | No |
+| risk breach | `mapBuildingStateToVisual` | guardian BLOCKING | A real risk-limit breach signal; Law 4's env-var limits exist, but no breach-detection event does yet | No |
+| regime BEAR | `mapRegimeToClimate` | storm: rain, darker ambient, reduced activity (0.6x) | `regime_classification.current_regime` (Prompt 5) | No -- `climate.regime` is hardcoded `"unknown"` today |
+| regime CRISIS | `mapRegimeToClimate` | earthquake, emergency activity | `regime_classification.crisis_flag` (Prompt 5) | No |
+| regime (all others incl. UNKNOWN) | `mapRegimeToClimate` | neutral/CALM, no features | n/a -- source prompt specifies no visual for these; not invented here | No |
+| component VALUABLE | `mapComponentVerdictToVisual` | tool shrine grows | `component_registry.verdict` (Prompt 6); `Structure.verdict` is a real field, always `null` today | No |
+| component HARMFUL | `mapComponentVerdictToVisual` | shrine neglected, abandoned | `component_registry.verdict` (Prompt 6) | No |
+| diversification up | `mapDiversificationToAllianceVisual` | alliance bridge between temples | Portfolio return correlation between families (Prompt 8); complementary/redundant thresholds are required function arguments, not defaulted -- no correlation data exists to calibrate against | No |
+
 ## Truth layer (W1)
 
 `TruthDrawer.tsx` (right-side Sheet, opens on clicking a building in the
