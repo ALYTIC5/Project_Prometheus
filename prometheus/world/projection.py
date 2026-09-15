@@ -138,14 +138,24 @@ def determine_phase(
     return ConstructionPhase.SCAFFOLDING
 
 
-def build_entities(structures: list[Structure]) -> list[WorldEntity]:
-    """Pure function: real Structure rows -> normalized WorldEntity list.
+def build_entities(
+    structures: list[Structure],
+    strategies: list[dict[str, Any]] | None = None,
+    experiments: list[dict[str, Any]] | None = None,
+) -> list[WorldEntity]:
+    """Pure function: real DB rows -> normalized WorldEntity list.
 
-    Only BUILDING (one per real structure) and GOD (the 3 that stand at a
-    real building) are ever populated. Every other WorldEntityType
-    (TEMPLE/HERO/AGENT/EXPERIMENT/...) has no real backend source yet --
-    strategies, jobs, and experiments do not exist -- so this function
-    never emits one, matching the existing districts=[]/agents=[] rule.
+    BUILDING (one per real structure), GOD (the 3 that stand at a real
+    building), HERO (one per real `strategies` row, Prompt 4), and
+    EXPERIMENT (one per real `experiments` row, Prompt 4) are populated.
+    Every other WorldEntityType (TEMPLE/AGENT/ARENA_MATCH/...) has no real
+    backend source yet -- strategy_families and jobs do not exist -- so
+    this function never emits one, matching the districts=[]/agents=[] rule.
+
+    HERO/EXPERIMENT entities have no real per-strategy world placement yet
+    (that render work is separate, later, and not fabricated here) -- they
+    anchor at the Forge/Arena's real location respectively, since that is
+    where a strategy is genuinely generated/compared, not an arbitrary point.
     """
     entities: list[WorldEntity] = []
 
@@ -194,6 +204,54 @@ def build_entities(structures: list[Structure]) -> list[WorldEntity]:
                     evidence_refs=[],
                 ),
             )
+
+    forge_loc = BUILDING_LOCATIONS.get("forge", {})
+    forge_xy = (
+        float(forge_loc.get("x", 0)) + float(forge_loc.get("width", 1)) / 2,
+        float(forge_loc.get("y", 0)) + float(forge_loc.get("height", 1)) / 2,
+    )
+    for strategy in strategies or []:
+        entities.append(
+            WorldEntity(
+                entity_id=f"hero:{strategy['id']}",
+                entity_type=WorldEntityType.HERO,
+                source_entity_id=f"strategy:{strategy['id']}",
+                parent_entity_id=f"family:{strategy['family']}",
+                # Real status, verbatim -- PROMISING/REJECTED, matching
+                # frontend/src/mapping/stateToVisual.ts's StrategyState.
+                state=strategy["status"],
+                health=0.0,
+                activity=0.0,
+                location=EntityLocation(zone="world", x=forge_xy[0], y=forge_xy[1]),
+                metrics={},
+                reasons=[],
+                evidence_refs=[],
+            ),
+        )
+
+    arena_loc = BUILDING_LOCATIONS.get("arena", {})
+    arena_xy = (
+        float(arena_loc.get("x", 0)) + float(arena_loc.get("width", 1)) / 2,
+        float(arena_loc.get("y", 0)) + float(arena_loc.get("height", 1)) / 2,
+    )
+    for experiment in experiments or []:
+        payload = experiment.get("payload") or {}
+        strategy_id = payload.get("strategy_id")
+        entities.append(
+            WorldEntity(
+                entity_id=f"experiment:{experiment['id']}",
+                entity_type=WorldEntityType.EXPERIMENT,
+                source_entity_id=f"experiment:{experiment['id']}",
+                parent_entity_id=f"hero:{strategy_id}" if strategy_id else None,
+                state=experiment["status"],
+                health=0.0,
+                activity=0.0,
+                location=EntityLocation(zone="world", x=arena_xy[0], y=arena_xy[1]),
+                metrics={},
+                reasons=[],
+                evidence_refs=[f"experiment:{experiment['id']}"],
+            ),
+        )
 
     return entities
 
@@ -270,6 +328,31 @@ async def _get_recent_events(session: AsyncSession) -> list[WorldEvent]:
         return []
 
 
+async def _get_strategies(session: AsyncSession) -> list[dict[str, Any]]:
+    """Real `strategies` rows (Prompt 4). Same defensive try/except as
+    every other query here -- the migration adding this table is recent,
+    and this file's own rule is never raise on a missing table."""
+    try:
+        result = await session.execute(
+            text("SELECT id, family, status FROM strategies ORDER BY created_at DESC LIMIT 500"),
+        )
+        return [dict(r._mapping) for r in result]
+    except Exception:
+        await session.rollback()
+        return []
+
+
+async def _get_experiments(session: AsyncSession) -> list[dict[str, Any]]:
+    try:
+        result = await session.execute(
+            text("SELECT id, status, payload FROM experiments ORDER BY created_at DESC LIMIT 500"),
+        )
+        return [dict(r._mapping) for r in result]
+    except Exception:
+        await session.rollback()
+        return []
+
+
 async def build_world_state(session: AsyncSession) -> WorldState:
     """Build the complete WorldState from database state.
 
@@ -305,9 +388,11 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     benchmark_return = (benchmark_value - 1000.0) / 1000.0 * 100
 
     # Districts are per strategy FAMILY (docs/WORLD_MAPPING.md), and the
-    # strategy_families table does not exist until Prompt 4. Pipeline buildings
-    # are `structures`, not districts — conflating them would make the world
-    # claim districts exist when none do. Empty until Prompt 4.
+    # strategy_families table still does not exist (this pass adds
+    # `strategies`, not `strategy_families` -- deliberately out of scope,
+    # see docs/WORLD_MAPPING.md). Pipeline buildings are `structures`, not
+    # districts — conflating them would make the world claim districts
+    # exist when none do.
     districts: list[District] = []
 
     # Agents are per ACTIVE JOB (docs/WORLD_MAPPING.md: agents[].id <- jobs.id),
@@ -329,7 +414,9 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     )
 
     events = await _get_recent_events(session)
-    entities = build_entities(structures)
+    strategies = await _get_strategies(session)
+    experiments = await _get_experiments(session)
+    entities = build_entities(structures, strategies, experiments)
 
     build_progress = {
         "total": len(CONSTRUCTION_MANIFEST),

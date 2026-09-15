@@ -183,6 +183,50 @@ Fields whose source doesn't exist yet are marked with the prompt that will build
 
 ---
 
+## Strategy pipeline (Prompt 4, minimal)
+
+The first real strategy generation + backtest pipeline. Deliberately
+minimal -- see the plan this shipped from for the full reasoning. What's
+real:
+
+- `strategy/spec.py`'s `StrategySpec` -- one deterministic type (SMA
+  crossover), no LLM.
+- `research/generate.py`'s `generate_grid` -- a small, fully-enumerated
+  deterministic parameter grid ("deterministic first" from the repo layout
+  comment).
+- `data/loaders.py`'s `load_point_in_time` -- the first DB -> real
+  `PointInTimeFrame` loader (Law 1's `as_of()` mechanism was already real;
+  nothing had ever read bars back out through it for backtest use before).
+- `backtest/engine.py`'s `run_backtest` -- point-in-time-correct
+  (`as_of(cutoff)` plus a `shift(1)`-lagged signal), deterministic, no
+  Sharpe/PBO/DSR (that needs `cpz-quant`, not installed -- the Oracle,
+  Prompt 5, is a separate dependency decision).
+- `backtest/costs.py` -- Binance's real published taker fee (10 bps) plus
+  a fixed slippage estimate, applied identically to the strategy and the
+  `backtest/benchmark.py` buy-and-hold curve (Law 8).
+- `experiments/runner.py` -- ties it together, INSERT-only into
+  `experiments`/`results`/`decisions`. The ACCEPT/REJECT decision is Law
+  8's own text with zero margin (`strategy_return > benchmark_return`), not
+  an invented threshold. A strategy that clears this is `PROMISING`, never
+  `VALIDATED` -- there is no statistical validation here.
+- New migration `0005`: `strategies` (mutable `status`, not part of Law 6's
+  append-only trigger set) and `benchmark_equity` (upserted, same reasoning).
+- `GET /strategies/`, `GET /strategies/{id}`, `GET /experiments/`,
+  `GET /experiments/{id}`.
+
+**Deliberately not built, and why:** PBO/Deflated Sharpe/purged CV (needs
+`cpz-quant`, a separate dependency decision -- CLAUDE.md: don't
+reimplement these from scratch); a `jobs` table (no consumer renders a
+job-driven agent yet, W3 is still deferred); LLM-based generation (this
+repo's own stated null hypothesis); holdout/Law 3 (Prompt 5).
+
+**Not run yet, by design:** `ohlcv_bars` is empty -- the ccxt ingestion
+code (`python -m prometheus.data.ingestion --backfill`) has never actually
+been executed against a real exchange. Everything above is verified with
+unit tests against fixture data; producing one real experiment is a
+separate, explicit follow-up (it means either a real Binance API call
+against production, or provisioning local Postgres).
+
 ## WorldEntity contract (W0)
 
 `WorldState.entities[]` (`prometheus/world/entities.py`'s `WorldEntity`,
@@ -195,16 +239,16 @@ still feed `/buildings/` and the renderer directly; migrating them onto
 |---|---|---|---|
 | `BUILDING` | One per real `Structure` row (`CONSTRUCTION_MANIFEST`) | Live | `state` = the real `ConstructionPhase` value, verbatim |
 | `GOD` | `construction.GOD_BY_BUILDING_KIND` (3 of 12 imported gods) | Live | `parent_entity_id` = its real building; `state` mirrors the building's phase |
-| `TEMPLE` | `strategy_families` table | Prompt 4 | Empty until then -- same rule as `districts[]` above |
-| `HERO` | `strategies` table | Prompt 4 | Empty; no `StrategySpec` schema exists yet either (see hero-archetype table above) |
-| `AGENT` | `jobs` table | Prompt 4 | Empty -- same rule as `agents[]` above. The static idle-decoration figures in `render/builders.ts` are NOT AGENT entities: they're a rendering detail of a BUILDING's real phase + `agent_roles`, not an individuated job |
-| `EXPERIMENT` | `experiments` table | Prompt 4 | Empty |
-| `ARENA_MATCH` | `experiments` (comparative) | Prompt 4 | Empty |
+| `TEMPLE` | `strategy_families` table | Prompt 4 (deferred) | Deliberately not built in this pass -- see "Strategy pipeline" below. Empty -- same rule as `districts[]` above |
+| `HERO` | `strategies` table | Live | One per real strategy row. `state` = the real, mutable `status` column verbatim (`PROMISING`/`REJECTED` today -- matches `frontend/src/mapping/stateToVisual.ts`'s `StrategyState` exactly). No real per-strategy world placement logic exists yet, so every hero anchors at the Forge's real location (where it was actually generated) rather than an arbitrary point |
+| `AGENT` | `jobs` table | Prompt 4 (deferred) | No consumer renders a job-driven agent yet -- deferred with W3. Empty. The static idle-decoration figures in `render/builders.ts` are NOT AGENT entities: they're a rendering detail of a BUILDING's real phase + `agent_roles`, not an individuated job |
+| `EXPERIMENT` | `experiments` table | Live | One per real experiment row, from the real strategy-pipeline runner. Anchors at the Arena's real location (comparisons happen there) |
+| `ARENA_MATCH` | `experiments` (comparative) | Prompt 6 | Empty -- no comparative (multi-strategy) experiments exist yet, only one-strategy-vs-benchmark |
 | `RESEARCH_SOURCE` | `llm_ingestion` | Prompt 9 | Empty |
 | `PORTFOLIO` | `portfolio` | Prompt 8 | Empty |
 | `ALERT` | `strategy_alerts` | Prompt 10 | Empty |
 | `REGIME` | `regime_classification` | Prompt 5 | Empty |
-| `ARCHIVE_ENTRY` | `results` (retired) | Prompt 4 | Empty |
+| `ARCHIVE_ENTRY` | `results` (retired) | Prompt 4 (deferred) | Empty -- no retirement lifecycle exists yet, only PROMISING/REJECTED |
 
 `source_entity_id` is a real DB row reference where one exists, or the
 canonical code-defined `construction_manifest:<id>` for entities with no DB

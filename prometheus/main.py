@@ -21,8 +21,10 @@ from fastapi.staticfiles import StaticFiles
 
 from prometheus.api.routes import (
     buildings_router,
+    experiments_router,
     health_router,
     scoreboard_router,
+    strategies_router,
     world_router,
 )
 from prometheus.api.routes.world import start_background_updater
@@ -88,6 +90,8 @@ app.include_router(health_router)
 app.include_router(world_router)
 app.include_router(scoreboard_router)
 app.include_router(buildings_router)
+app.include_router(strategies_router)
+app.include_router(experiments_router)
 
 
 @app.get("/api/info", tags=["meta"])

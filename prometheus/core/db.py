@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -87,6 +87,42 @@ class IdCounter(Base):
     # upsert increments and returns in one statement, so the returned value
     # is the id suffix immediately. Column name kept to avoid migration churn.
     next_value: Mapped[int] = mapped_column(sa.BigInteger, default=0)
+
+
+class Strategy(Base):
+    """A strategy's current lifecycle state (PROMISING/REJECTED/... --
+    mirrors frontend/src/mapping/stateToVisual.ts's StrategyState verbatim,
+    never a UI-invented value). Deliberately mutable: migration 0003's
+    append-only trigger names exactly experiments/results/decisions --
+    `status` here is current state, not a history log, so it is not
+    protected by that trigger and may be UPDATEd as a strategy's status
+    changes."""
+
+    __tablename__ = "strategies"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    family: Mapped[str] = mapped_column(sa.String(16))
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class BenchmarkEquity(Base):
+    """The Law 8 buy-and-hold curve. Not append-only (same reasoning as
+    Strategy above) -- a rerun legitimately upserts a date's value rather
+    than accumulating duplicate history for what is a recomputed curve,
+    not an event log."""
+
+    __tablename__ = "benchmark_equity"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(sa.Date)
+    equity: Mapped[float] = mapped_column(sa.Numeric(20, 8, asdecimal=False))
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
 
 
 _engine: AsyncEngine | None = None
