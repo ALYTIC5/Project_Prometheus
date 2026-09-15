@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
 import { useBuildingsQuery, useScoreboardQuery, useWorldStateQuery } from '../data/queries';
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { attachCamera, type CameraHandle } from '../render/camera';
 import { drawBuilding } from '../render/building';
@@ -15,6 +16,9 @@ import { createMonument, type MonumentHandle } from '../render/monument';
 import { drawHoverOutline, drawSelectionOutline, pickBuilding } from '../render/selection';
 import { drawVignette } from '../render/vignette';
 import { loadAtlasTextures } from '../sprites/atlasTextures';
+import { BenchmarkStrip } from './BenchmarkStrip';
+import { SearchPalette } from './SearchPalette';
+import { TruthDrawer } from './TruthDrawer';
 import type { Building, ScoreboardResponse } from '../types';
 
 // A dusk-sky tone, not near-black: at 26% frame occupancy (city fills a
@@ -42,6 +46,10 @@ export default function WorldView() {
   const hoveredRef = useRef<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const debugRef = useRef(false);
+  // The ticker callback below is registered once on mount (empty-deps
+  // effect) -- a ref, not the reducedMotion state value directly, is what
+  // lets it see later prefers-reduced-motion changes.
+  const reducedMotionRef = useRef(false);
 
   // Server state via TanStack Query (WORLD_CONSTITUTION.md's W0.3) -- the
   // one data adapter module is src/data/queries.ts; nothing here calls
@@ -53,13 +61,19 @@ export default function WorldView() {
   const buildings = buildingsQuery.data?.buildings ?? [];
   const scoreboard = scoreboardQuery.data ?? null;
   const world = worldQuery.data ?? null;
+  const entities = world?.entities ?? [];
   const loading = buildingsQuery.isLoading || scoreboardQuery.isLoading || worldQuery.isLoading;
+  const reducedMotion = usePrefersReducedMotion();
 
-  const [selected, setSelected] = useState<Building | null>(null);
+  // A WorldEntity id ("building:library", "god:archive_keeper", ...), not a
+  // plain Building -- the truth drawer and search palette operate on any
+  // real entity, not just buildings the canvas picking can hit.
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [mode, setMode] = useState<'world' | 'truth'>('world');
   const [pixiReady, setPixiReady] = useState(false);
   const [pixiError, setPixiError] = useState<string | null>(null);
   const [fps, setFps] = useState(0);
+  const [liveMessage, setLiveMessage] = useState('');
 
   useEffect(() => {
     buildingsStateRef.current = buildings;
@@ -68,8 +82,23 @@ export default function WorldView() {
     scoreboardStateRef.current = scoreboard;
   }, [scoreboard]);
   useEffect(() => {
-    selectedIdRef.current = selected?.id ?? null;
-  }, [selected]);
+    reducedMotionRef.current = reducedMotion;
+  }, [reducedMotion]);
+  useEffect(() => {
+    // The canvas selection outline/labels only understand a plain building
+    // id -- a GOD (or any future non-building) selection simply has no
+    // canvas outline, which is correct: gods have no footprint of their own.
+    const buildingId = selectedEntityId?.startsWith('building:') ? selectedEntityId.slice('building:'.length) : null;
+    selectedIdRef.current = buildingId;
+  }, [selectedEntityId]);
+
+  // W1.4 accessibility: a visually-hidden live region announcing real world
+  // events in text, alongside the canvas's aria-label -- the canvas is an
+  // enhancement, never the only way to know something happened.
+  useEffect(() => {
+    const latest = world?.events?.[0];
+    if (latest) setLiveMessage(`${latest.type}: ${latest.subject_id}${latest.message ? ` -- ${latest.message}` : ''}`);
+  }, [world?.events]);
 
   // Set up the PixiJS application once.
   useEffect(() => {
@@ -141,26 +170,29 @@ export default function WorldView() {
         });
         app.stage.on('pointertap', (e: PIXI.FederatedPointerEvent) => {
           const id = pickBuilding(e.global, world, buildingsStateRef.current);
-          if (id) {
-            const b = buildingsStateRef.current.find((x) => x.id === id);
-            if (b) setSelected(b);
-          } else {
-            setSelected(null);
-          }
+          setSelectedEntityId(id ? `building:${id}` : null);
         });
 
         let frames = 0;
         let fpsAccum = 0;
         app.ticker.add((ticker) => {
-          const deltaMs = ticker.deltaMS;
+          // W1.4: prefers-reduced-motion freezes idle/pulse animation at a
+          // constant frame instead of animating -- both builders.ts's bob
+          // and selection.ts's pulse are pure functions of elapsed time, so
+          // feeding a constant is sufficient; no changes needed inside them.
+          const reduced = reducedMotionRef.current;
+          const deltaMs = reduced ? 0 : ticker.deltaMS;
+          const elapsed = reduced ? 0 : ticker.lastTime;
           monumentRef.current?.update(scoreboardStateRef.current?.benchmark?.equity ?? 1000, deltaMs);
-          buildersRef.current?.update(ticker.lastTime);
-          redrawOverlays(ticker.lastTime);
+          buildersRef.current?.update(elapsed);
+          redrawOverlays(elapsed);
           redrawLabels();
           buildingsLayer.sortChildren();
 
+          // FPS is a diagnostic, not decorative animation -- always the real
+          // delta, unaffected by prefers-reduced-motion.
           frames++;
-          fpsAccum += deltaMs;
+          fpsAccum += ticker.deltaMS;
           if (fpsAccum >= 1000) {
             setFps(Math.round((frames * 1000) / fpsAccum));
             frames = 0;
@@ -348,7 +380,32 @@ export default function WorldView() {
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh', background: '#0a0a1a' }}>
-      <div ref={hostRef} style={{ width: '100%', height: '100%' }} />
+      <BenchmarkStrip scoreboard={scoreboard} />
+      <SearchPalette
+        entities={entities}
+        onSelect={(entity) => {
+          setSelectedEntityId(entity.entity_id);
+          cameraRef.current?.focusOn(entity.location.x, entity.location.y);
+        }}
+      />
+      <TruthDrawer
+        entityId={selectedEntityId}
+        entities={entities}
+        buildings={buildings}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEntityId(null);
+        }}
+        onFocus={(x, y) => cameraRef.current?.focusOn(x, y)}
+      />
+
+      {/* W1.4: the canvas is an enhancement, never the only path to any
+          action -- an aria-label names what it shows, and this visually-
+          hidden live region announces real world events in text for anyone
+          not looking at (or not able to see) the canvas. */}
+      <div ref={hostRef} style={{ width: '100%', height: '100%' }} role="img" aria-label="Isometric view of Project Prometheus's research pipeline" />
+      <div aria-live="polite" className="sr-only">
+        {liveMessage}
+      </div>
 
       {loading && (
         <div style={{ color: '#aaa', padding: 40, fontFamily: 'monospace', position: 'absolute', top: 0, left: 0 }}>
@@ -368,18 +425,11 @@ export default function WorldView() {
         </div>
       )}
 
-      <div style={{ position: 'absolute', top: 10, left: 10, color: '#eee', fontFamily: 'monospace', pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', top: 44, left: 10, color: '#eee', fontFamily: 'monospace', pointerEvents: 'none' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>Project Prometheus</h1>
         {world && (
           <p style={{ margin: '4px 0' }}>
             Tick: {world.tick} · {new Date(world.generated_at).toLocaleTimeString()}
-          </p>
-        )}
-        {scoreboard && (
-          <p style={{ margin: '4px 0', color: '#F39C12' }}>
-            Your system: {scoreboard.system_value !== null ? `€${scoreboard.system_value.toFixed(0)}` : '€—'}
-            {' | '}Just holding: €{scoreboard.benchmark_value.toFixed(0)}
-            {' | '}Verdict: {scoreboard.verdict}
           </p>
         )}
         {world && (
@@ -387,10 +437,14 @@ export default function WorldView() {
             Build Progress: {world.build_progress.active}/{world.build_progress.total} systems online
           </p>
         )}
-        {pixiReady && <p style={{ margin: '4px 0', color: '#555' }}>{fps} fps · press D for depth overlay</p>}
+        {pixiReady && (
+          <p style={{ margin: '4px 0', color: '#555' }}>
+            {fps} fps · press D for depth overlay · Ctrl/Cmd-K to search
+          </p>
+        )}
       </div>
 
-      <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 8 }}>
+      <div style={{ position: 'absolute', top: 44, right: 10, display: 'flex', gap: 8 }}>
         <button
           onClick={() => cameraRef.current?.reset()}
           style={{ padding: 10, cursor: 'pointer', background: '#333', color: '#fff', border: 'none', borderRadius: 4 }}
@@ -404,41 +458,6 @@ export default function WorldView() {
           Truth View →
         </button>
       </div>
-
-      {selected && (
-        <div
-          style={{
-            position: 'absolute', bottom: 20, left: 20, background: 'rgba(0,0,0,0.85)',
-            color: '#eee', padding: 16, borderRadius: 8, fontFamily: 'monospace', maxWidth: 420,
-          }}
-        >
-          <button
-            onClick={() => setSelected(null)}
-            style={{ float: 'right', cursor: 'pointer', background: 'none', border: 'none', color: '#fff', fontSize: 16 }}
-          >
-            ×
-          </button>
-          <h3 style={{ margin: '0 0 8px', textTransform: 'capitalize' }}>{selected.id}</h3>
-          <p style={{ margin: '4px 0', opacity: 0.8 }}>{selected.description}</p>
-          {selected.phase !== 'active' && selected.prompt !== null && (
-            <p style={{ margin: '8px 0 0', color: '#F39C12' }}>
-              Under Construction — Built in Prompt {selected.prompt}
-            </p>
-          )}
-          {selected.phase === 'active' && (
-            <p style={{ margin: '8px 0 0', color: '#FFD700' }}>ACTIVE</p>
-          )}
-          {selected.phase === 'sealed' && (
-            <p style={{ margin: '8px 0 0', color: '#ff5555' }}>SEALED — sacred, inaccessible by design</p>
-          )}
-          <button
-            onClick={() => cameraRef.current?.focusOn(selected.location.x, selected.location.y)}
-            style={{ marginTop: 10, padding: 6, cursor: 'pointer' }}
-          >
-            Focus camera
-          </button>
-        </div>
-      )}
     </div>
   );
 }

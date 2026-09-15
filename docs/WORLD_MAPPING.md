@@ -217,6 +217,21 @@ state→visual mapping is frontend-only, one file, not yet built (planned:
 Live view: `/entities` (dev route, `frontend/app/entities/page.tsx`) lists
 every populated and every still-empty type straight from `/world/state`.
 
+## Truth layer (W1)
+
+`TruthDrawer.tsx` (right-side Sheet, opens on clicking a building in the
+world) renders content driven by `entity_type`, same real-data-only rule as
+the contract above: BUILDING shows `description`/`phase`/`prompt_built` (all
+real, from `/buildings/`) plus `queue_depth`/verdict from `entities[].metrics`
+(honestly "0"/"not yet evaluated" — no jobs table, no component_registry
+yet); GOD shows its real parent building. Every other type falls back to an
+explicit "no real backend source yet" line rather than empty space.
+`BenchmarkStrip.tsx` is the fixed Law-8 header, straight from the real
+`Scoreboard`. `SearchPalette.tsx` (Cmd/Ctrl-K) searches the same real
+`entities[]` feed and both flies the camera and opens the drawer on
+selection — it will surface HERO/EXPERIMENT/etc automatically once those
+entity types are ever populated, no changes needed here.
+
 ---
 
 ## Character sprites (PixelLab import)

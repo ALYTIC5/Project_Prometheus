@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 /** One QueryClient per browser session, stable across re-renders (useState
  * initializer runs once) -- a module-level singleton would leak state
@@ -9,5 +10,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
  * server-side data fetching, so per-mount is simplest and correct here. */
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient());
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <TooltipProvider>{children}</TooltipProvider>
+    </QueryClientProvider>
+  );
 }
