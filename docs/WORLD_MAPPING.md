@@ -256,6 +256,25 @@ makes their input real.
 | component HARMFUL | `mapComponentVerdictToVisual` | shrine neglected, abandoned | `component_registry.verdict` (Prompt 6) | No |
 | diversification up | `mapDiversificationToAllianceVisual` | alliance bridge between temples | Portfolio return correlation between families (Prompt 8); complementary/redundant thresholds are required function arguments, not defaulted -- no correlation data exists to calibrate against | No |
 
+## Camera and interaction (W4)
+
+`render/camera.ts`'s `focusOn`/`reset` now ease (~600ms, ease-out cubic),
+instant only under `prefers-reduced-motion`. The pre-existing idle camera
+drift (a 2px sine wander after 4s idle) was **removed**, not gated -- once
+WORLD_CONSTITUTION.md's explicit "no constant camera motion" prohibition
+applies, that drift was already a violation, not something to keep behind a
+flag. A one-level back-stack (`getPosition`/`restorePosition`) makes Escape
+return the camera to wherever it was before the click/search that opened the
+drawer -- there is only one real "prior level" today (WORLD; there is no
+DISTRICT level, since districts don't exist). Hover now brightens the
+building ~10% via a `ColorMatrixFilter` (`WorldView.tsx`), alongside the
+pre-existing footprint outline. Picking, the pulsing selection outline, and
+the vertical light shaft were already correct from earlier work (real
+`screenToGrid`-equivalent footprint lookup, never sprite bounding boxes).
+
+Deferred: TEMPLE/HERO/ALERT-specific gestures (click temple, click hero,
+"Watch" hero flythrough, click alert) -- none of those entity types exist yet.
+
 ## Truth layer (W1)
 
 `TruthDrawer.tsx` (right-side Sheet, opens on clicking a building in the

@@ -5,7 +5,7 @@ import * as PIXI from 'pixi.js';
 import { useBuildingsQuery, useScoreboardQuery, useWorldStateQuery } from '../data/queries';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 import { Layer, depthOf, gridToScreen } from '../iso/projection';
-import { attachCamera, type CameraHandle } from '../render/camera';
+import { attachCamera, type CameraHandle, type CameraPosition } from '../render/camera';
 import { drawBuilding } from '../render/building';
 import { createBuilders, type BuildersHandle } from '../render/builders';
 import { createGods } from '../render/gods';
@@ -50,6 +50,10 @@ export default function WorldView() {
   // effect) -- a ref, not the reducedMotion state value directly, is what
   // lets it see later prefers-reduced-motion changes.
   const reducedMotionRef = useRef(false);
+  // W4.2's back-stack: the camera position captured just before each
+  // focus-away, so Escape can animate back to exactly where it was.
+  const cameraHistoryRef = useRef<CameraPosition[]>([]);
+  const buildingContainersRef = useRef(new Map<string, PIXI.Container>());
 
   // Server state via TanStack Query (WORLD_CONSTITUTION.md's W0.3) -- the
   // one data adapter module is src/data/queries.ts; nothing here calls
@@ -150,7 +154,7 @@ export default function WorldView() {
         overlayLayerRef.current = overlayLayer;
         debugLayerRef.current = debugLayer;
 
-        cameraRef.current = attachCamera(app, world);
+        cameraRef.current = attachCamera(app, world, reducedMotionRef);
 
         // Screen-space vignette -- added to app.stage, not `world`, so it
         // stays fixed relative to the viewport instead of panning/zooming
@@ -170,8 +174,26 @@ export default function WorldView() {
         });
         app.stage.on('pointertap', (e: PIXI.FederatedPointerEvent) => {
           const id = pickBuilding(e.global, world, buildingsStateRef.current);
+          // W4.1 "click temple: camera eases closer" -- clicking a building
+          // both opens the drawer and focuses the camera, same as search
+          // (W1.3's "both, always" rule). W4.2's back-stack: capture where
+          // the camera was before moving, so Escape can return to it.
+          if (id) {
+            const b = buildingsStateRef.current.find((x) => x.id === id);
+            if (b && cameraRef.current) {
+              cameraHistoryRef.current.push(cameraRef.current.getPosition());
+              cameraRef.current.focusOn(b.location.x, b.location.y);
+            }
+          }
           setSelectedEntityId(id ? `building:${id}` : null);
         });
+
+        // Hover brighten (~10%), W4.3 -- a ColorMatrixFilter, not a tint
+        // (tint can only darken toward a colour; brightening a mix of real
+        // atlas sprites and procedural Graphics needs a real filter). One
+        // shared instance, reused every frame rather than allocated per-tick.
+        const hoverBrighten = new PIXI.ColorMatrixFilter();
+        hoverBrighten.brightness(1.1, false);
 
         let frames = 0;
         let fpsAccum = 0;
@@ -188,6 +210,11 @@ export default function WorldView() {
           redrawOverlays(elapsed);
           redrawLabels();
           buildingsLayer.sortChildren();
+
+          const hoveredId = hoveredRef.current;
+          buildingContainersRef.current.forEach((container, bid) => {
+            container.filters = bid === hoveredId ? [hoverBrighten] : [];
+          });
 
           // FPS is a diagnostic, not decorative animation -- always the real
           // delta, unaffected by prefers-reduced-motion.
@@ -292,8 +319,13 @@ export default function WorldView() {
 
     layer.removeChildren();
     const nonMonument = buildings.filter((b) => b.kind !== 'monument');
+    buildingContainersRef.current.clear();
     for (const b of nonMonument) {
-      layer.addChild(drawBuilding(b));
+      const container = drawBuilding(b);
+      layer.addChild(container);
+      // Keyed for the ticker's hover-brighten filter (W4.3) -- a plain
+      // per-building lookup, not re-derived from the display tree.
+      buildingContainersRef.current.set(b.id, container);
     }
     // removeChildren() above also detached the monument (if it already
     // existed) -- Pixi's addChild re-parents an already-parented display
@@ -385,7 +417,10 @@ export default function WorldView() {
         entities={entities}
         onSelect={(entity) => {
           setSelectedEntityId(entity.entity_id);
-          cameraRef.current?.focusOn(entity.location.x, entity.location.y);
+          if (cameraRef.current) {
+            cameraHistoryRef.current.push(cameraRef.current.getPosition());
+            cameraRef.current.focusOn(entity.location.x, entity.location.y);
+          }
         }}
       />
       <TruthDrawer
@@ -393,9 +428,19 @@ export default function WorldView() {
         entities={entities}
         buildings={buildings}
         onOpenChange={(open) => {
-          if (!open) setSelectedEntityId(null);
+          if (open) return;
+          setSelectedEntityId(null);
+          // W4.1/W4.2: "Escape ... camera returns to prior level" -- animate
+          // back to wherever the camera was before this focus, if anywhere.
+          const previous = cameraHistoryRef.current.pop();
+          if (previous) cameraRef.current?.restorePosition(previous);
         }}
-        onFocus={(x, y) => cameraRef.current?.focusOn(x, y)}
+        onFocus={(x, y) => {
+          if (cameraRef.current) {
+            cameraHistoryRef.current.push(cameraRef.current.getPosition());
+            cameraRef.current.focusOn(x, y);
+          }
+        }}
       />
 
       {/* W1.4: the canvas is an enhancement, never the only path to any

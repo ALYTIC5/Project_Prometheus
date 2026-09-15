@@ -12,9 +12,15 @@ const CITY_WIDTH = GRID_SIZE * 64;
 const CITY_HEIGHT = GRID_SIZE * 32;
 const FIT_FRACTION = 0.85;
 
-const IDLE_DELAY_MS = 4000;
-const DRIFT_AMPLITUDE_PX = 2;
-const DRIFT_PERIOD_MS = 10000;
+// WORLD_CONSTITUTION.md's W4.2: eased transitions, ~600ms, never instant
+// except under prefers-reduced-motion (an instant cut there instead).
+const FOCUS_DURATION_MS = 600;
+
+export interface CameraPosition {
+  x: number;
+  y: number;
+  scale: number;
+}
 
 export interface CameraHandle {
   /** Detaches all listeners. Call on unmount. */
@@ -22,6 +28,10 @@ export interface CameraHandle {
   reset: () => void;
   focusOn: (gridX: number, gridY: number) => void;
   getZoom: () => number;
+  /** For a back-stack: capture the current transform before focusing away
+   * from it, so Escape can animate back to exactly where the camera was. */
+  getPosition: () => CameraPosition;
+  restorePosition: (position: CameraPosition) => void;
 }
 
 /** A camera is a single transform (x, y, scale) applied to `world` before
@@ -36,7 +46,11 @@ export interface CameraHandle {
  * the real screen size at reset() time, not a fixed constant), and
  * min/max zoom are relative to that computed default rather than absolute
  * numbers, so the clamp scales sensibly across viewport sizes. */
-export function attachCamera(app: PIXI.Application, world: PIXI.Container): CameraHandle {
+export function attachCamera(
+  app: PIXI.Application,
+  world: PIXI.Container,
+  reducedMotionRef: { current: boolean },
+): CameraHandle {
   let defaultZoom = 1;
   let minZoom = 0.5;
   let maxZoom = 3;
@@ -44,9 +58,14 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
   let dragging = false;
   let lastPointer = { x: 0, y: 0 };
 
-  let lastInteraction = performance.now();
-  let driftX = 0;
-  let driftY = 0;
+  // Eased focus/reset animation (W4.2). No idle drift: WORLD_CONSTITUTION.md
+  // prohibits "constant camera motion" outright -- the prior idle-drift
+  // sine wave violated that as soon as the constitution was adopted, so it
+  // is removed here, not just gated behind reduced-motion.
+  let animating = false;
+  let animStart = 0;
+  let animFrom: CameraPosition = { x: 0, y: 0, scale: 1 };
+  let animTo: CameraPosition = { x: 0, y: 0, scale: 1 };
 
   function computeFit(): void {
     defaultZoom = Math.min(
@@ -74,16 +93,10 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
     return closest;
   }
 
-  function clearDrift(): void {
-    world.x -= driftX;
-    world.y -= driftY;
-    driftX = 0;
-    driftY = 0;
-  }
-
-  function noteInteraction(): void {
-    clearDrift();
-    lastInteraction = performance.now();
+  /** A direct manipulation (drag, wheel) cancels any in-flight eased
+   * animation -- the user's hands-on input always wins immediately. */
+  function cancelAnimation(): void {
+    animating = false;
   }
 
   function clamp(): void {
@@ -99,35 +112,54 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
     world.scale.set(scale);
   }
 
+  /** Starts (or, under reduced motion, instantly applies) an eased
+   * transition to the given transform. The sole path every camera movement
+   * that isn't direct drag/wheel manipulation goes through. */
+  function animateTo(toX: number, toY: number, toScale: number): void {
+    if (reducedMotionRef.current) {
+      animating = false;
+      world.x = toX;
+      world.y = toY;
+      scale = toScale;
+      clamp();
+      return;
+    }
+    animFrom = { x: world.x, y: world.y, scale };
+    animTo = { x: toX, y: toY, scale: toScale };
+    animStart = performance.now();
+    animating = true;
+  }
+
   function reset(): void {
     computeFit();
-    scale = defaultZoom;
-    world.x = app.screen.width / 2;
-    world.y = app.screen.height / 2 - 60;
-    clamp();
+    animateTo(app.screen.width / 2, app.screen.height / 2 - 60, defaultZoom);
   }
 
   function focusOn(gridX: number, gridY: number): void {
-    noteInteraction();
     const { x, y } = gridToScreen(gridX, gridY);
-    world.x = app.screen.width / 2 - x * scale;
-    world.y = app.screen.height / 2 - y * scale;
-    clamp();
+    animateTo(app.screen.width / 2 - x * scale, app.screen.height / 2 - y * scale, scale);
   }
 
   function getZoom(): number {
     return scale;
   }
 
+  function getPosition(): CameraPosition {
+    return { x: world.x, y: world.y, scale };
+  }
+
+  function restorePosition(position: CameraPosition): void {
+    animateTo(position.x, position.y, position.scale);
+  }
+
   function onPointerDown(e: PIXI.FederatedPointerEvent): void {
-    noteInteraction();
+    cancelAnimation();
     dragging = true;
     lastPointer = { x: e.global.x, y: e.global.y };
   }
 
   function onPointerMove(e: PIXI.FederatedPointerEvent): void {
     if (!dragging) return;
-    lastInteraction = performance.now();
     world.x += e.global.x - lastPointer.x;
     world.y += e.global.y - lastPointer.y;
     lastPointer = { x: e.global.x, y: e.global.y };
@@ -140,7 +172,7 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
 
   function onWheel(e: WheelEvent): void {
     e.preventDefault();
-    noteInteraction();
+    cancelAnimation();
     const rect = app.canvas.getBoundingClientRect();
     const cursorX = e.clientX - rect.left;
     const cursorY = e.clientY - rect.top;
@@ -154,17 +186,18 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
     clamp();
   }
 
+  // Ease-out cubic -- fast start, settles gently, ~600ms (W4.2). Runs only
+  // while an eased transition is in flight; idle time is genuinely idle
+  // (no drift -- WORLD_CONSTITUTION.md prohibits constant camera motion).
   function onTick(): void {
-    const now = performance.now();
-    if (now - lastInteraction <= IDLE_DELAY_MS) return;
-    const t = (now - lastInteraction - IDLE_DELAY_MS) / 1000;
-    const phase = (t * 2 * Math.PI) / (DRIFT_PERIOD_MS / 1000);
-    const newDriftX = Math.sin(phase) * DRIFT_AMPLITUDE_PX;
-    const newDriftY = Math.cos(phase) * DRIFT_AMPLITUDE_PX * 0.5;
-    world.x += newDriftX - driftX;
-    world.y += newDriftY - driftY;
-    driftX = newDriftX;
-    driftY = newDriftY;
+    if (!animating) return;
+    const t = Math.min(1, (performance.now() - animStart) / FOCUS_DURATION_MS);
+    const eased = 1 - (1 - t) ** 3;
+    world.x = animFrom.x + (animTo.x - animFrom.x) * eased;
+    world.y = animFrom.y + (animTo.y - animFrom.y) * eased;
+    scale = animFrom.scale + (animTo.scale - animFrom.scale) * eased;
+    clamp();
+    if (t >= 1) animating = false;
   }
 
   app.stage.eventMode = 'static';
@@ -176,7 +209,14 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
   app.canvas.addEventListener('wheel', onWheel, { passive: false });
   app.ticker.add(onTick);
 
-  reset();
+  // Initial placement snaps instantly -- the city should simply be there on
+  // load, not fly in from the origin corner. Only user-triggered resets
+  // (the "Reset View" button) ease, like every other camera movement.
+  computeFit();
+  world.x = app.screen.width / 2;
+  world.y = app.screen.height / 2 - 60;
+  scale = defaultZoom;
+  clamp();
 
   function destroy(): void {
     app.stage.off('pointerdown', onPointerDown);
@@ -187,5 +227,5 @@ export function attachCamera(app: PIXI.Application, world: PIXI.Container): Came
     app.ticker.remove(onTick);
   }
 
-  return { destroy, reset, focusOn, getZoom };
+  return { destroy, reset, focusOn, getZoom, getPosition, restorePosition };
 }
