@@ -30,6 +30,7 @@ from prometheus.world.construction import (
 )
 from prometheus.world.entities import (
     Agent,
+    AgentRole,
     BenchmarkMetrics,
     ClimateState,
     ConstructionPhase,
@@ -353,6 +354,54 @@ async def _get_experiments(session: AsyncSession) -> list[dict[str, Any]]:
         return []
 
 
+async def _get_in_flight_agents(session: AsyncSession) -> list[Agent]:
+    """One Agent per claimed `jobs` row (docs/WORLD_MAPPING.md:
+    agents[].id <- jobs.id) -- Prompt 4 fills what was empty in Prompt 1.
+    Same defensive try/except/rollback as every other query here: a
+    missing `jobs` table degrades to no agents, not an error."""
+    try:
+        result = await session.execute(
+            text(
+                "SELECT id, agent_role, current_stage, next_stage, progress_pct, experiment_id "
+                "FROM jobs WHERE status = 'claimed'",
+            ),
+        )
+        agents = []
+        for row in result:
+            try:
+                role = AgentRole(row.agent_role)
+            except ValueError:
+                continue  # an agent_role this build doesn't know -- skip, don't fabricate
+            agents.append(
+                Agent(
+                    id=row.id,
+                    role=role,
+                    from_location=row.current_stage,
+                    to_location=row.next_stage,
+                    progress=row.progress_pct,
+                    experiment_id=row.experiment_id,
+                ),
+            )
+        return agents
+    except Exception:
+        await session.rollback()
+        return []
+
+
+async def _get_pending_depth_by_stage(session: AsyncSession) -> dict[str, int]:
+    try:
+        result = await session.execute(
+            text(
+                "SELECT current_stage, COUNT(*) AS n FROM jobs "
+                "WHERE status = 'pending' GROUP BY current_stage",
+            ),
+        )
+        return {row.current_stage: int(row.n) for row in result}
+    except Exception:
+        await session.rollback()
+        return {}
+
+
 async def build_world_state(session: AsyncSession) -> WorldState:
     """Build the complete WorldState from database state.
 
@@ -360,6 +409,7 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     Never raises on missing tables — gracefully degrades to SCAFFOLDING.
     """
     row_counts = await collect_row_counts(session)
+    pending_by_stage = await _get_pending_depth_by_stage(session)
 
     structures: list[Structure] = []
     for struct_id, manifest in CONSTRUCTION_MANIFEST.items():
@@ -373,8 +423,12 @@ async def build_world_state(session: AsyncSession) -> WorldState:
                 id=struct_id,
                 kind=kind,
                 construction_phase=phase,
+                # load stays 0.0, deliberately: docs/WORLD_MAPPING.md defines
+                # it as queue depth / capacity, and no per-building capacity
+                # exists -- dividing by an invented number would make the
+                # world lie about how "busy" a building is.
                 load=0.0,
-                queue_depth=0,
+                queue_depth=pending_by_stage.get(struct_id, 0),
                 status="active" if phase == ConstructionPhase.ACTIVE else "idle",
                 verdict=None,
                 description=description,
@@ -395,10 +449,10 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     # exist when none do.
     districts: list[District] = []
 
-    # Agents are per ACTIVE JOB (docs/WORLD_MAPPING.md: agents[].id <- jobs.id),
-    # and the jobs table does not exist until Prompt 4. Empty until then; a
-    # fabricated agent would be the world lying about work it is not doing.
-    agents: list[Agent] = []
+    # Agents are per ACTIVE JOB (docs/WORLD_MAPPING.md: agents[].id <- jobs.id).
+    # Real as of Prompt 4's jobs table -- empty exactly when nothing is
+    # actually claimed, never fabricated.
+    agents: list[Agent] = await _get_in_flight_agents(session)
 
     # No strategy has ever paper traded (that's Prompt 8 / the `harbour`
     # building). There is no real system_value to report and nothing to

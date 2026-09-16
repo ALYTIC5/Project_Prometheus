@@ -50,12 +50,12 @@ Fields whose source doesn't exist yet are marked with the prompt that will build
 
 | WorldState Field | Source | Status | Notes |
 |---|---|---|---|
-| `agents[].id` | `jobs.id` | Prompt 4 | `JOB-YYYYMMDD-NNN` |
-| `agents[].role` | `jobs.agent_role` | Prompt 4 | builder/scribe/engineer/... |
-| `agents[].from_location` | `jobs.current_stage` | Prompt 4 | Building name |
-| `agents[].to_location` | `jobs.next_stage` | Prompt 4 | Building name |
-| `agents[].progress` | `jobs.progress_pct` | Prompt 4 | 0.0-1.0 |
-| `agents[].experiment_id` | `jobs.experiment_id` | Prompt 4 | FK to experiments |
+| `agents[].id` | `jobs.id` | Live | `JOB-YYYYMMDD-NNN` |
+| `agents[].role` | `jobs.agent_role` | Live | builder/scribe/engineer/...; only claimed jobs (status='claimed') appear |
+| `agents[].from_location` | `jobs.current_stage` | Live | Building name |
+| `agents[].to_location` | `jobs.next_stage` | Live | Building name |
+| `agents[].progress` | `jobs.progress_pct` | Live | 0.0-1.0 |
+| `agents[].experiment_id` | `jobs.experiment_id` | Live | FK to experiments |
 
 ---
 
@@ -66,8 +66,8 @@ Fields whose source doesn't exist yet are marked with the prompt that will build
 | `structures[].id` | `construction_manifest` key | Live | library, forge, oracle, etc. |
 | `structures[].kind` | `construction_manifest.kind` | Live | |
 | `structures[].construction_phase` | Derived from `activates_on` row counts | Live | SCAFFOLDING → ACTIVE when table has rows |
-| `structures[].load` | `jobs` queue depth / capacity | Prompt 4 | |
-| `structures[].queue_depth` | `jobs` pending count for that building | Prompt 4 | |
+| `structures[].load` | `jobs` queue depth / capacity | Live (fixed 0.0) | No per-building capacity exists; dividing depth by an invented capacity would make the world lie about how "busy" a building is. Revisit once a capacity concept exists. |
+| `structures[].queue_depth` | `jobs` pending count for that building (`current_stage`) | Live | Real as of Prompt 4's jobs table |
 | `structures[].status` | Derived from phase | Live | idle/active/degraded |
 | `structures[].verdict` | `component_registry.verdict` | Prompt 6 | UNPROVEN/VALUABLE/NEUTRAL/HARMFUL |
 | `structures[].description` | `construction_manifest.description` | Live | |
