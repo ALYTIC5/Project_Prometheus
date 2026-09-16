@@ -33,6 +33,13 @@ class BacktestResult:
     total_return_pct: float
     max_drawdown_pct: float
     turnover: float
+    # gross_return_pct: the same curve with apply_cost() never subtracted.
+    # total_costs: the currency sum apply_cost() actually charged. Together
+    # they are what experiments.failure's TRANSACTION_COST_FAILURE checks
+    # -- gross positive, net negative -- which total_return_pct alone
+    # cannot distinguish from a strategy that was never profitable.
+    gross_return_pct: float
+    total_costs: float
 
 
 def _sma_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
@@ -67,17 +74,22 @@ def run_backtest(
     )
 
     equity = STARTING_CAPITAL
+    gross_equity = STARTING_CAPITAL
     peak = STARTING_CAPITAL
     max_drawdown = 0.0
     turnover = 0.0
+    total_costs = 0.0
     curve: list[tuple[str, float]] = []
 
     for row in signaled.iter_rows(named=True):
         position_change = row["_position_change"] or 0.0
         if position_change:
-            equity -= apply_cost(equity * position_change)
+            cost = apply_cost(equity * position_change)
+            equity -= cost
+            total_costs += cost
             turnover += position_change
         equity *= 1 + row["position"] * row["_bar_return"]
+        gross_equity *= 1 + row["position"] * row["_bar_return"]
         peak = max(peak, equity)
         if peak:
             max_drawdown = max(max_drawdown, (peak - equity) / peak)
@@ -88,4 +100,6 @@ def run_backtest(
         total_return_pct=(equity - STARTING_CAPITAL) / STARTING_CAPITAL * 100,
         max_drawdown_pct=max_drawdown * 100,
         turnover=turnover,
+        gross_return_pct=(gross_equity - STARTING_CAPITAL) / STARTING_CAPITAL * 100,
+        total_costs=total_costs,
     )
