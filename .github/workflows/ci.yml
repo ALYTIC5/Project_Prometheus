@@ -16,15 +16,51 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: mypy prometheus/core/
-      # Exit code 5 is pytest's EXIT_NOTESTSCOLLECTED. There are no non-law
-      # tests outside tests/laws/ yet, so 5 is the correct state right now
-      # and must not fail the job. Any other non-zero code still does.
-      - name: Run non-law tests
-        run: |
-          set +e
-          pytest tests/ -v --ignore=tests/laws
-          code=$?
-          if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then exit "$code"; fi
+      # `db`-marked tests need the Postgres service the db-tests job below
+      # provides; this job has none, so they're excluded rather than left
+      # to fail. Non-law, non-db tests are real and collected now, so a
+      # plain nonzero exit fails the job -- no EXIT_NOTESTSCOLLECTED
+      # allowance left to carry forward.
+      - name: Run non-law, non-db tests
+        run: pytest tests/ -v --ignore=tests/laws -m "not db"
+
+  db-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: prometheus
+          POSTGRES_PASSWORD: prometheus
+          POSTGRES_DB: prometheus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
+      TEST_DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
+      MAX_POSITION_PCT: "11"
+      MAX_GROSS_EXPOSURE_PCT: "22"
+      MAX_LEVERAGE: "3"
+      MAX_DAILY_LOSS_PCT: "4"
+      MAX_DRAWDOWN_PCT: "15"
+      KILL_SWITCH: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: alembic upgrade head
+      # A marker, not -k: a new db-marked test added later is picked up
+      # automatically instead of silently skipping because someone forgot
+      # to update a -k expression here.
+      - name: Run db-marked tests
+        run: pytest tests/ -v -m db
 
   laws:
     runs-on: ubuntu-latest

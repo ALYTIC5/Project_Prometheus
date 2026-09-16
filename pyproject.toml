@@ -82,4 +82,5 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "laws: immutable law tests, see tests/laws/",
+    "db: requires TEST_DATABASE_URL (a real Postgres) -- run by the db-tests CI job",
 ]
