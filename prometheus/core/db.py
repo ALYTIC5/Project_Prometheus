@@ -36,6 +36,13 @@ class Base(DeclarativeBase):
 
 
 class Experiment(Base):
+    """Migration 0006 adds the lineage/reproducibility columns below, all
+    nullable -- migration 0003's trigger forbids UPDATE, so rows written
+    before 0006 can never be backfilled and read as lineage roots
+    (parent_experiment_id IS NULL), which is true of them. New writes
+    populate every column; see prometheus.experiments.runner.run_one.
+    """
+
     __tablename__ = "experiments"
 
     id: Mapped[str] = mapped_column(primary_key=True)
@@ -44,6 +51,17 @@ class Experiment(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=func.now()
     )
+    parent_experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id"), nullable=True
+    )
+    strategy_id: Mapped[str | None] = mapped_column(ForeignKey("strategies.id"), nullable=True)
+    data_version_hash: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    code_sha: Mapped[str | None] = mapped_column(sa.String(40), nullable=True)
+    config_hash: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    seed: Mapped[int | None] = mapped_column(sa.BigInteger, nullable=True)
+    compute_cost: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    hypothesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    change_set: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
 
 class Result(Base):
@@ -121,6 +139,25 @@ class BenchmarkEquity(Base):
     date: Mapped[date] = mapped_column(sa.Date)
     equity: Mapped[float] = mapped_column(sa.Numeric(20, 8, asdecimal=False))
     created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ConfigSnapshot(Base):
+    """One row per distinct content of a tracked config file (deduplicated
+    by the (path, content_hash) unique index, migration 0006) -- the
+    substrate experiments.violations.UNIVERSE_CHANGED_AFTER_RESULTS needs
+    to tell "the universe changed" from "we re-ran ingestion unchanged".
+    Not trigger-protected: a snapshot table's job is deduplicated presence,
+    not an event log.
+    """
+
+    __tablename__ = "config_snapshots"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    path: Mapped[str] = mapped_column(sa.String(255))
+    content_hash: Mapped[str] = mapped_column(sa.String(64))
+    recorded_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=func.now()
     )
 

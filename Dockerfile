@@ -47,9 +47,16 @@ RUN pip install -e .
 # --- Production stage ---
 FROM python:3.11-slim AS production
 
+# Railway sets RAILWAY_GIT_COMMIT_SHA at runtime already; GIT_SHA is the
+# build-arg fallback for other hosts. prometheus.core.provenance.code_sha()
+# reads one of the two because the container has no .git directory to
+# `git rev-parse` against -- see its docstring.
+ARG GIT_SHA=""
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8000 \
+    GIT_SHA=${GIT_SHA}
 
 WORKDIR /app
 
