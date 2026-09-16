@@ -87,12 +87,24 @@ USER prometheus
 
 EXPOSE 8000
 
+# RUN_MODE=worker skips the HTTP check entirely -- prometheus/worker.py is
+# a one-shot script with no server to curl, and a persistent-service
+# healthcheck failing repeatedly against it would make Railway treat a
+# successful cron run as unhealthy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health/')"
+  CMD python -c "import os, sys, urllib.request; sys.exit(0) if os.environ.get('RUN_MODE') == 'worker' else urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health/')"
 
 # Railway assigns PORT dynamically at runtime -- shell form so it actually
 # expands, unlike exec-form CMD's hardcoded "8000". Migrations run as the
 # release step on every deploy, per PROMPTS.md PROMPT 1 Part D ("Alembic
 # migrations run on deploy via a release command") -- never destructive,
 # alembic upgrade only ever moves forward.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn prometheus.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+#
+# RUN_MODE=worker (PROMPTS.md PROMPT 7's scheduled worker, on a Railway
+# Cron Schedule) runs prometheus/worker.py once and exits, instead of the
+# default always-on API server -- same env-var-branch pattern the
+# frontend build already uses for NEXT_PUBLIC_UI_MODE, chosen because a
+# Railway "Custom Start Command" override did not reliably take effect
+# for this service in practice (still ran the default CMD); branching
+# inside the one CMD both services share is what actually worked.
+CMD ["sh", "-c", "alembic upgrade head && if [ \"$RUN_MODE\" = \"worker\" ]; then exec python -m prometheus.worker; else exec uvicorn prometheus.main:app --host 0.0.0.0 --port ${PORT:-8000}; fi"]
