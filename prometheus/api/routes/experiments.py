@@ -15,8 +15,18 @@ from prometheus.core.db import get_session_factory
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
 _SELECT_ALL = text(
-    "SELECT id, status, payload, hypothesis, parent_experiment_id, created_at "
-    "FROM experiments ORDER BY created_at DESC LIMIT 200"
+    """
+    SELECT e.id, e.status, e.payload, e.hypothesis, e.parent_experiment_id, e.created_at,
+           latest_decision.decision
+      FROM experiments e
+      LEFT JOIN LATERAL (
+          SELECT decision FROM decisions
+           WHERE experiment_id = e.id
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1
+      ) latest_decision ON true
+     ORDER BY e.created_at DESC LIMIT 200
+    """
 )
 _SELECT_ONE = text(
     "SELECT id, status, payload, hypothesis, parent_experiment_id, created_at "
@@ -42,6 +52,11 @@ async def list_experiments() -> dict[str, Any]:
                 "hypothesis": r.hypothesis,
                 "parent_experiment_id": r.parent_experiment_id,
                 "created_at": r.created_at.isoformat(),
+                # The latest decision only -- Law 6 means an experiment can
+                # carry more than one (a correction supersedes rather than
+                # replaces), same "latest wins" rule as
+                # experiments.lineage's latest_result fragment.
+                "decision": r.decision,
             }
             for r in result
         ]
