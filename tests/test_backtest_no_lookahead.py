@@ -17,7 +17,9 @@ from prometheus.strategy.spec import StrategySpec
 _SYMBOL = "BTC/USDT"
 _START = datetime(2023, 1, 1, tzinfo=UTC)
 _N_BARS = 300
-_SPEC = StrategySpec(symbol=_SYMBOL, timeframe="1d", fast_window=5, slow_window=20)
+_SPEC = StrategySpec(
+    symbol=_SYMBOL, timeframe="1d", fast_window=5, slow_window=20, expected_horizon=20
+)
 
 
 def _bars(n: int, rng: random.Random, shock_last: float | None = None) -> list[dict]:

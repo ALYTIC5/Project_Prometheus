@@ -28,6 +28,12 @@ def generate_grid(symbol: str, timeframe: str, family: str = "MOMENTUM") -> list
                     timeframe=timeframe,
                     fast_window=fast,
                     slow_window=slow,
+                    # The strategy's own already-chosen slow window IS its
+                    # horizon claim -- an SMA crossover's signal is only
+                    # meant to matter over roughly that many bars. Not an
+                    # arbitrary number: it's read from the spec's own
+                    # parameters, not invented separately from them.
+                    expected_horizon=slow,
                 )
             )
     return specs
