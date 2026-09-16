@@ -5,6 +5,15 @@ through this one function, so the two can never drift apart.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
+# The type any pluggable cost function must satisfy -- notional in, cost
+# out, same currency units. backtest/benchmark.py's compute_benchmark_curve
+# takes one of these as a parameter (defaulting to apply_cost below) so a
+# real per-venue model can be swapped in later without changing its
+# signature.
+CostModel = Callable[[float], float]
+
 # Binance spot taker fee schedule (binance.com/en/fee/schedule), the
 # regular-tier rate with no BNB discount applied -- the conservative case,
 # and a real published number, not tuned to make any strategy look better.

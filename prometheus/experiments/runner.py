@@ -151,8 +151,9 @@ async def run_one(
         raise
     compute_cost = time.perf_counter() - started
 
-    benchmark_curve = compute_benchmark_curve(pit, spec.symbol, end)
-    await record_benchmark_curve(session, benchmark_curve)
+    benchmark_result = compute_benchmark_curve(pit, [spec.symbol], end)
+    await record_benchmark_curve(session, benchmark_result.equity_curve)
+    benchmark_curve = benchmark_result.equity_curve
     benchmark_return_pct = (
         (benchmark_curve[-1][1] - benchmark_curve[0][1]) / benchmark_curve[0][1] * 100
         if len(benchmark_curve) >= 2

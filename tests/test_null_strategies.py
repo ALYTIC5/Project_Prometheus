@@ -66,11 +66,13 @@ def test_benchmark_pays_exactly_one_entry_cost_when_price_never_moves() -> None:
     rows = _flat_price_bars(30)
     pit = PointInTimeFrame(pl.DataFrame(rows))
 
-    curve = compute_benchmark_curve(pit, _SYMBOL, rows[-1]["available_at"])
+    result = compute_benchmark_curve(pit, [_SYMBOL], rows[-1]["available_at"])
 
     entry_cost = apply_cost(STARTING_CAPITAL)
     expected_equity = STARTING_CAPITAL - entry_cost
-    assert all(equity == expected_equity for _, equity in curve)
+    assert all(equity == expected_equity for _, equity in result.equity_curve)
+    assert result.final_value == expected_equity
+    assert result.max_drawdown_pct == 0.0
 
 
 def test_a_strategy_tied_with_the_benchmark_does_not_beat_it() -> None:
