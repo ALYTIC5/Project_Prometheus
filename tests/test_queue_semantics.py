@@ -19,6 +19,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import text
@@ -129,6 +130,45 @@ async def test_enqueue_is_idempotent_by_key(factory: async_sessionmaker[AsyncSes
         second_id = await _enqueue_test_job(session, idempotency_key=key)
         await session.commit()
     assert first_id == second_id
+
+
+async def test_duplicate_enqueue_does_not_burn_a_job_id_sequence_slot(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Real production bug, found from an actual crash log: next_job_id()
+    burns a slot in id_counters' per-day sequence (capped at 999) on
+    every call, insert-or-not. worker.py calls enqueue_grid() every
+    30-minute cycle regardless of whether that grid was already
+    enqueued -- with next_job_id() called unconditionally, every no-op
+    re-enqueue of an already-existing grid still consumed a slot, and
+    the daily sequence exhausted within hours in production
+    (IdSequenceExhausted), crashing the worker before it ever reached
+    validate_grid. enqueue() now checks for an existing idempotency_key
+    BEFORE calling next_job_id() -- this proves that check actually
+    skips id generation for the duplicate, not just that it returns the
+    same id (which test_enqueue_is_idempotent_by_key already covers)."""
+    key = f"idem-{uuid.uuid4().hex}"
+    scope = f"job:{datetime.now(UTC):%Y%m%d}"
+    async with factory() as session:
+        await _enqueue_test_job(session, idempotency_key=key)
+        await session.commit()
+
+        counter_after_first = (
+            await session.execute(
+                text("SELECT next_value FROM id_counters WHERE scope = :scope"), {"scope": scope}
+            )
+        ).scalar_one()
+
+        await _enqueue_test_job(session, idempotency_key=key)
+        await session.commit()
+
+        counter_after_duplicate = (
+            await session.execute(
+                text("SELECT next_value FROM id_counters WHERE scope = :scope"), {"scope": scope}
+            )
+        ).scalar_one()
+
+    assert counter_after_duplicate == counter_after_first
 
 
 async def test_claim_skips_locked_row_and_returns_the_other_job(

@@ -108,7 +108,24 @@ async def enqueue(
     data_version_hash || code_sha || seed) -- CLAUDE.md's own
     reproducibility tuple, so "same inputs" and "same job" are the same
     predicate. Not enforced here; callers own it.
+
+    Checks for an existing row BEFORE calling next_job_id() -- next_job_id
+    burns a real slot in id_counters' per-day sequence (capped at 999)
+    every time it's called, insert-or-not. worker.py calls enqueue_grid()
+    unconditionally every 30-minute cycle regardless of whether that
+    grid was already enqueued in an earlier cycle; generating a job id
+    for every one of those no-op re-enqueues exhausted the daily sequence
+    within hours in production and crashed the worker
+    (IdSequenceExhausted) before it ever reached validate_grid -- a real
+    bug, found from the actual crash log, not anticipated in advance.
     """
+    existing = await session.execute(
+        _SELECT_BY_IDEMPOTENCY_KEY, {"idempotency_key": idempotency_key}
+    )
+    existing_id = existing.scalar_one_or_none()
+    if existing_id is not None:
+        return str(existing_id)
+
     job_id = await next_job_id()
     result = await session.execute(
         _INSERT_JOB,
@@ -131,6 +148,11 @@ async def enqueue(
     inserted_id = result.scalar_one_or_none()
     if inserted_id is not None:
         return str(inserted_id)
+    # Lost a race against a concurrent enqueue of the identical
+    # idempotency_key between the SELECT above and this INSERT -- the id
+    # just generated is simply discarded (a job id not attached to any
+    # persisted row is not a promise to anyone) and the winner's row is
+    # what's returned.
     existing = await session.execute(
         _SELECT_BY_IDEMPOTENCY_KEY, {"idempotency_key": idempotency_key}
     )
