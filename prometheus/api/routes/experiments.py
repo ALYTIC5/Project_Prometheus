@@ -15,9 +15,13 @@ from prometheus.core.db import get_session_factory
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
 _SELECT_ALL = text(
-    "SELECT id, status, payload, created_at FROM experiments ORDER BY created_at DESC LIMIT 200"
+    "SELECT id, status, payload, hypothesis, parent_experiment_id, created_at "
+    "FROM experiments ORDER BY created_at DESC LIMIT 200"
 )
-_SELECT_ONE = text("SELECT id, status, payload, created_at FROM experiments WHERE id = :id")
+_SELECT_ONE = text(
+    "SELECT id, status, payload, hypothesis, parent_experiment_id, created_at "
+    "FROM experiments WHERE id = :id"
+)
 _SELECT_RESULTS = text(
     "SELECT payload, created_at FROM results WHERE experiment_id = :id ORDER BY created_at DESC"
 )
@@ -35,6 +39,8 @@ async def list_experiments() -> dict[str, Any]:
                 "id": r.id,
                 "status": r.status,
                 "payload": r.payload,
+                "hypothesis": r.hypothesis,
+                "parent_experiment_id": r.parent_experiment_id,
                 "created_at": r.created_at.isoformat(),
             }
             for r in result
@@ -60,6 +66,8 @@ async def get_experiment(experiment_id: str) -> dict[str, Any]:
         "id": exp.id,
         "status": exp.status,
         "payload": exp.payload,
+        "hypothesis": exp.hypothesis,
+        "parent_experiment_id": exp.parent_experiment_id,
         "created_at": exp.created_at.isoformat(),
         "results": results,
         "decisions": decisions,

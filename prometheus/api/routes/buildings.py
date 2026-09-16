@@ -19,13 +19,16 @@ from prometheus.world.construction import (
     CONSTRUCTION_MANIFEST,
 )
 from prometheus.world.entities import ConstructionPhase
-from prometheus.world.projection import get_construction_phases
+from prometheus.world.projection import collect_row_counts, get_construction_phases
 
 router = APIRouter(prefix="/buildings", tags=["buildings"])
 
 
-def _building_payload(building_id: str, phase: ConstructionPhase) -> dict[str, Any]:
+def _building_payload(
+    building_id: str, phase: ConstructionPhase, row_counts: dict[str, int]
+) -> dict[str, Any]:
     manifest = CONSTRUCTION_MANIFEST.get(building_id, {})
+    activates_on = manifest.get("activates_on", [])
     return {
         "id": building_id,
         "kind": manifest.get("kind", building_id),
@@ -35,7 +38,11 @@ def _building_payload(building_id: str, phase: ConstructionPhase) -> dict[str, A
         "location": BUILDING_LOCATIONS.get(building_id, {}),
         "color": BUILDING_COLORS.get(building_id, "#CCCCCC"),
         "agent_roles": manifest.get("agent_roles", []),
-        "activates_on": manifest.get("activates_on", []),
+        "activates_on": activates_on,
+        # Sum across every activation table -- determine_phase's own rule
+        # is "any() has rows", so a building with more than one table
+        # reports a total here rather than picking one arbitrarily.
+        "row_count": sum(row_counts.get(table, 0) for table in activates_on),
     }
 
 
@@ -44,9 +51,10 @@ async def get_buildings() -> dict[str, Any]:
     """Get all buildings with their real construction status."""
     async with get_session_factory()() as session:
         phases = await get_construction_phases(session)
+        row_counts = await collect_row_counts(session)
 
     buildings = [
-        _building_payload(bid, phases.get(bid, ConstructionPhase.PLANNED))
+        _building_payload(bid, phases.get(bid, ConstructionPhase.PLANNED), row_counts)
         for bid in BUILDING_ORDER
     ]
     return {"buildings": buildings, "total": len(buildings)}
@@ -60,5 +68,8 @@ async def get_building(building_id: str) -> dict[str, Any]:
 
     async with get_session_factory()() as session:
         phases = await get_construction_phases(session)
+        row_counts = await collect_row_counts(session)
 
-    return _building_payload(building_id, phases.get(building_id, ConstructionPhase.PLANNED))
+    return _building_payload(
+        building_id, phases.get(building_id, ConstructionPhase.PLANNED), row_counts
+    )

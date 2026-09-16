@@ -73,6 +73,10 @@ async def get_entity_drilldown(entity_type: str, entity_id: str) -> dict[str, An
             # be worse than reporting nothing.
             "sharpe": 0.0,
             "max_drawdown": 0.0,
+            # The full curve get_benchmark_curve() already computed above --
+            # the dashboard's equity chart needs the series, not just the
+            # latest point.
+            "curve": curve,
         }
 
     return {"error": f"Unknown entity type: {entity_type}", "id": entity_id}
