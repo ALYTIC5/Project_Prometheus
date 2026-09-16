@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -40,6 +42,7 @@ from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
 from prometheus.experiments.failure import classify_exception, classify_result
+from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.generate import generate_grid
 from prometheus.strategy.spec import StrategySpec
@@ -210,15 +213,127 @@ async def run_one(
     return experiment_id
 
 
-async def _run_grid(symbol: str, timeframe: str, family: str, days: int) -> list[str]:
+_RUN_BACKTEST_KIND = "run_backtest"
+
+
+async def enqueue_grid(
+    symbol: str,
+    timeframe: str,
+    family: str,
+    days: int,
+    *,
+    priority: int,
+    expected_information_value: float,
+    estimated_cost: float,
+    max_attempts: int,
+) -> list[str]:
+    """Enqueues one job per StrategySpec in the deterministic grid.
+    idempotency_key = sha256(kind, spec.config_hash(), days) -- re-running
+    enqueue_grid for an unchanged grid re-enqueues nothing (queue.enqueue's
+    ON CONFLICT DO NOTHING), rather than duplicating work already queued
+    or already run."""
     specs = generate_grid(symbol, timeframe, family)
-    end = datetime.now(UTC)
-    start = end - timedelta(days=days)
-    experiment_ids = []
+    job_ids = []
     async with get_session() as session:
         for spec in specs:
-            experiment_ids.append(await run_one(session, spec, start, end))
+            idempotency_key = hashlib.sha256(
+                f"{_RUN_BACKTEST_KIND}|{spec.config_hash()}|{days}".encode()
+            ).hexdigest()
+            job_ids.append(
+                await enqueue(
+                    session,
+                    kind=_RUN_BACKTEST_KIND,
+                    payload={"spec": spec.model_dump(), "days": days},
+                    idempotency_key=idempotency_key,
+                    priority=priority,
+                    expected_information_value=expected_information_value,
+                    estimated_cost=estimated_cost,
+                    max_attempts=max_attempts,
+                    agent_role="engineer",
+                    current_stage="forge",
+                    next_stage="arena",
+                )
+            )
+        await session.commit()
+    return job_ids
+
+
+async def _run_job(job: Job) -> str:
+    """Executes one claimed job's payload against real data -- the only
+    kind this worker understands is run_backtest. A separate session from
+    the one claim() used: see queue.claim's docstring on why the claiming
+    transaction must already be committed before work starts."""
+    if job.kind != _RUN_BACKTEST_KIND:
+        raise ValueError(f"unknown job kind: {job.kind!r}")
+    spec = StrategySpec.model_validate(job.payload["spec"])
+    days = job.payload["days"]
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+    async with get_session() as session:
+        return await run_one(session, spec, start, end)
+
+
+async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = None) -> list[str]:
+    """Claims and runs jobs until the queue has none runnable or max_jobs
+    is reached (None = drain fully -- the scheduled-worker cron use case,
+    PROMPTS.md PROMPT 7 adds the schedule that calls this). Each claim is
+    committed in its own transaction before _run_job does any work, per
+    queue.claim's documented rule."""
+    resolved_worker_id = worker_id or f"runner-{uuid.uuid4().hex[:12]}"
+    experiment_ids: list[str] = []
+    ran = 0
+    while max_jobs is None or ran < max_jobs:
+        async with get_session() as session:
+            job = await claim(session, worker_id=resolved_worker_id)
+            await session.commit()
+        if job is None:
+            break
+        ran += 1
+        try:
+            experiment_id = await _run_job(job)
+        except Exception as exc:
+            async with get_session() as session:
+                await fail(session, job_id=job.id, worker_id=resolved_worker_id, error=str(exc))
+                await session.commit()
+            continue
+        async with get_session() as session:
+            await succeed(
+                session,
+                job_id=job.id,
+                worker_id=resolved_worker_id,
+                experiment_id=experiment_id,
+            )
+            await session.commit()
+        experiment_ids.append(experiment_id)
     return experiment_ids
+
+
+async def _run_grid(
+    symbol: str,
+    timeframe: str,
+    family: str,
+    days: int,
+    *,
+    priority: int,
+    expected_information_value: float,
+    estimated_cost: float,
+    max_attempts: int,
+) -> list[str]:
+    """Enqueue-then-drain: the same end-to-end effect the old direct-call
+    version had, now going through the queue so an interrupted run leaves
+    real, resumable jobs instead of silently losing whatever hadn't run
+    yet."""
+    await enqueue_grid(
+        symbol,
+        timeframe,
+        family,
+        days,
+        priority=priority,
+        expected_information_value=expected_information_value,
+        estimated_cost=estimated_cost,
+        max_attempts=max_attempts,
+    )
+    return await drain_queue()
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -232,13 +347,32 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--timeframe", default="1d")
     parser.add_argument("--family", default="MOMENTUM")
     parser.add_argument("--days", type=int, default=800)
+    # Queue bookkeeping for this CLI's own jobs, not validation thresholds --
+    # with one job kind in the system there is nothing yet to prioritise
+    # these against. max_attempts=3 matches nothing external; it is simply
+    # this command's own choice of how many times to retry itself.
+    parser.add_argument("--priority", type=int, default=0)
+    parser.add_argument("--expected-information-value", type=float, default=0.0)
+    parser.add_argument("--estimated-cost", type=float, default=0.0)
+    parser.add_argument("--max-attempts", type=int, default=3)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     if args.generate:
-        ids = asyncio.run(_run_grid(args.symbol, args.timeframe, args.family, args.days))
+        ids = asyncio.run(
+            _run_grid(
+                args.symbol,
+                args.timeframe,
+                args.family,
+                args.days,
+                priority=args.priority,
+                expected_information_value=args.expected_information_value,
+                estimated_cost=args.estimated_cost,
+                max_attempts=args.max_attempts,
+            )
+        )
         print(f"ran {len(ids)} experiments: {ids}")
     else:
         raise SystemExit("nothing to do — pass --generate")
