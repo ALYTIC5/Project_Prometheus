@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
@@ -55,6 +55,50 @@ class RiskLimits(BaseSettings):
 
 
 RISK_LIMITS = RiskLimits()  # raises at import time if env is incomplete
+
+
+class QueueSettings(BaseSettings):
+    """Timing for prometheus.experiments.queue -- heartbeat cadence, stale-
+    claim reaping, and retry backoff. Every field is required with no
+    default (CLAUDE.md: "inventing numeric thresholds is how the previous
+    blueprint went wrong"), unlike RiskLimits this is NOT instantiated at
+    import time -- core.config must stay importable with no queue env set,
+    matching core.db.get_engine()'s lazy-DATABASE_URL precedent. Call
+    get_queue_settings() (prometheus/experiments/queue.py) instead of
+    constructing this directly.
+    """
+
+    model_config = SettingsConfigDict(frozen=True, extra="forbid")
+
+    JOB_HEARTBEAT_INTERVAL_SECONDS: float
+    JOB_HEARTBEAT_TIMEOUT_SECONDS: float
+    JOB_BACKOFF_BASE_SECONDS: float
+    JOB_BACKOFF_MAX_SECONDS: float
+
+    @field_validator(
+        "JOB_HEARTBEAT_INTERVAL_SECONDS",
+        "JOB_HEARTBEAT_TIMEOUT_SECONDS",
+        "JOB_BACKOFF_BASE_SECONDS",
+        "JOB_BACKOFF_MAX_SECONDS",
+    )
+    @classmethod
+    def _must_be_positive(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("queue setting must be > 0")
+        return value
+
+    @model_validator(mode="after")
+    def _timeout_exceeds_interval(self) -> QueueSettings:
+        # A derived relation, not an invented constant: a stale-claim
+        # timeout at or below the heartbeat interval would reap workers
+        # that are heartbeating normally.
+        if self.JOB_HEARTBEAT_TIMEOUT_SECONDS <= self.JOB_HEARTBEAT_INTERVAL_SECONDS:
+            raise ValueError(
+                "JOB_HEARTBEAT_TIMEOUT_SECONDS must exceed JOB_HEARTBEAT_INTERVAL_SECONDS"
+            )
+        if self.JOB_BACKOFF_MAX_SECONDS < self.JOB_BACKOFF_BASE_SECONDS:
+            raise ValueError("JOB_BACKOFF_MAX_SECONDS must be >= JOB_BACKOFF_BASE_SECONDS")
+        return self
 
 
 class ResearchPolicy(BaseModel):

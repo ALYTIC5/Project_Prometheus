@@ -19,7 +19,7 @@ only the ownership of the transaction is.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import text
 
@@ -27,6 +27,7 @@ from prometheus.core.db import get_engine
 
 EXPERIMENT_ID_RE = re.compile(r"^EXP-\d{4}-\d{6}$")
 STRATEGY_ID_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}-\d{3}$")
+JOB_ID_RE = re.compile(r"^JOB-\d{8}-\d{3}$")
 _FAMILY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 
 _UPSERT_COUNTER = text(
@@ -67,3 +68,20 @@ async def next_strategy_id(family: str) -> str:
     if n > 999:
         raise IdSequenceExhausted(f"strategy id sequence exhausted for family {family}")
     return f"{family}-{n:03d}"
+
+
+async def next_job_id(day: date | None = None) -> str:
+    """JOB-YYYYMMDD-NNN, per docs/WORLD_MAPPING.md's reservation of the
+    jobs table. Scoped per-day rather than per-year like experiments: a
+    scheduled worker draining the queue every 30 minutes (PROMPTS.md
+    PROMPT 7) can plausibly emit thousands of jobs a day, and 999 headroom
+    per year would be exhausted in hours.
+    """
+    resolved_day = day if day is not None else datetime.now(UTC).date()
+    scope = f"job:{resolved_day:%Y%m%d}"
+    async with get_engine().begin() as conn:
+        result = await conn.execute(_UPSERT_COUNTER, {"scope": scope})
+        n: int = result.scalar_one()
+    if n > 999:
+        raise IdSequenceExhausted(f"job id sequence exhausted for {resolved_day:%Y%m%d}")
+    return f"JOB-{resolved_day:%Y%m%d}-{n:03d}"
