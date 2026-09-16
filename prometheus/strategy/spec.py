@@ -1,8 +1,18 @@
-"""One concrete, fully-parameterized strategy type: SMA crossover.
+"""Three concrete, fully-parameterized strategy families: SMA crossover
+(momentum), Bollinger mean-reversion, and Donchian-channel volatility
+breakout -- the "classic templates" PROMPT 6 names as the baseline every
+future component must beat. All three are cited, standard technical
+constructions, not invented formulas.
 
 Deterministic, no free text, no LLM -- CLAUDE.md's own stated null
 hypothesis is that LLM-generated research loses to static baselines until
-proven otherwise, so the first strategy type here is not an LLM's output.
+proven otherwise, so the first strategy types here are not an LLM's output.
+
+Carry (PROMPT 6's fourth named template) is deliberately NOT built: it
+needs futures funding-rate or spot-futures basis data, and this project's
+ccxt pipeline is spot-OHLCV only -- no futures ingestion exists anywhere
+in prometheus/data/. Building it would mean fabricating a signal from
+data that doesn't exist. See docs/DEFERRED.md.
 
 Generalized (PROMPT 3) with the fields that have real, non-decorative
 content today: parent_id (spec-level lineage -- which spec this was
@@ -10,6 +20,16 @@ mutated from; distinct from experiments.parent_experiment_id, which
 already tracks *experiment* lineage), description, source (provenance),
 and expected_horizon (required -- real input to Prompt 5's
 validation/decay.py, not decoration).
+
+Generalized again (PROMPT 6) with per-family optional parameter fields
+rather than a discriminated union of spec types -- same shape fast_window/
+slow_window already had, just widened, so config_hash(), the DB column
+shape, and every existing call site typed against a single StrategySpec
+stay unchanged. A model_validator enforces that a spec only ever carries
+the parameters its own family actually uses -- MOMENTUM's
+lookback_window/band_multiplier/breakout_window/exit_window all stay
+None, and so on for each family -- so "this field is set" always means
+"this family reads it," never decorative always-None scaffolding.
 
 Deliberately NOT added: strategy_id (stays a DB-assigned id from
 core.ids.next_strategy_id, generated at persistence time -- inside the
@@ -28,7 +48,26 @@ from __future__ import annotations
 import hashlib
 import json
 
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, model_validator
+
+FAMILY_MOMENTUM = "MOMENTUM"
+FAMILY_BOLLINGER = "BOLLINGER"
+FAMILY_VOL_BREAKOUT = "VOL_BREAKOUT"
+FAMILIES = (FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT)
+
+# Each family's own parameter fields -- the set a spec of that family MUST
+# have set, with every other family's fields left None. Enforced by
+# _params_match_family below, not left to convention: a spec claiming two
+# families' parameters at once (or none) is a real construction error, not
+# something the engine should silently guess about.
+_FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
+    FAMILY_MOMENTUM: ("fast_window", "slow_window"),
+    FAMILY_BOLLINGER: ("lookback_window", "band_multiplier"),
+    FAMILY_VOL_BREAKOUT: ("breakout_window", "exit_window"),
+}
+_ALL_PARAM_FIELDS = tuple(
+    field for fields in _FAMILY_PARAMS.values() for field in fields
+)
 
 # The fields that determine backtest behavior -- what config_hash()
 # identifies. Deliberately excludes parent_id/description/source/
@@ -36,18 +75,32 @@ from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 # mutations from different parents that land on the same executable
 # parameters ARE the same strategy for dedup purposes ("this fingerprint
 # prevents rediscovering the same strategy forever") -- hashing the whole
-# model would break that the moment lineage or wording differs.
-_IDENTITY_FIELDS = ("family", "symbol", "timeframe", "fast_window", "slow_window")
+# model would break that the moment lineage or wording differs. Widened
+# (PROMPT 6) to every family's param fields -- a None for a field this
+# spec's family doesn't use still serializes consistently, so two MOMENTUM
+# specs keep hashing identically to each other and never collide with a
+# BOLLINGER spec (different family string, different field set populated).
+_IDENTITY_FIELDS = ("family", "symbol", "timeframe", *_ALL_PARAM_FIELDS)
 
 
 class StrategySpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    family: str = "MOMENTUM"
+    family: str = FAMILY_MOMENTUM
     symbol: str
     timeframe: str
-    fast_window: int
-    slow_window: int
+
+    # MOMENTUM (SMA crossover).
+    fast_window: int | None = None
+    slow_window: int | None = None
+    # BOLLINGER (mean ± band_multiplier * std over lookback_window --
+    # John Bollinger's own standard construction, not an invented one).
+    lookback_window: int | None = None
+    band_multiplier: float | None = None
+    # VOL_BREAKOUT (Donchian channel, the Turtle Trading convention: a
+    # longer entry window, a shorter exit window).
+    breakout_window: int | None = None
+    exit_window: int | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -59,22 +112,38 @@ class StrategySpec(BaseModel):
     description: str = ""
     source: str = "deterministic_grid"
 
-    @field_validator("slow_window")
-    @classmethod
-    def _slow_after_fast(cls, value: int, info: ValidationInfo) -> int:
-        fast = info.data.get("fast_window")
-        if fast is not None and value <= fast:
+    @model_validator(mode="after")
+    def _params_match_family(self) -> StrategySpec:
+        if self.family not in _FAMILY_PARAMS:
+            raise ValueError(f"unknown family: {self.family!r}")
+        required = _FAMILY_PARAMS[self.family]
+        missing = [f for f in required if getattr(self, f) is None]
+        if missing:
+            raise ValueError(f"family {self.family!r} requires {missing}")
+        foreign = [
+            f
+            for f in _ALL_PARAM_FIELDS
+            if f not in required and getattr(self, f) is not None
+        ]
+        if foreign:
+            raise ValueError(f"family {self.family!r} must not set {foreign}")
+        if self.family == FAMILY_MOMENTUM and self.slow_window <= self.fast_window:  # type: ignore[operator]
             raise ValueError("slow_window must be greater than fast_window")
-        return value
+        if self.family == FAMILY_VOL_BREAKOUT and self.exit_window >= self.breakout_window:  # type: ignore[operator]
+            raise ValueError("exit_window must be less than breakout_window")
+        return self
 
     @property
     def parameters(self) -> dict[str, float]:
         """A generic, family-agnostic view of this spec's tunable
-        parameters -- computed from fast_window/slow_window, not a
-        separately stored field, so there is nothing to desync. Prompt 7's
+        parameters -- the family's own populated fields, not a separately
+        stored dict, so there is nothing to desync. Prompt 7's
         complexity-counting code can call this without knowing this
         family's specific field names."""
-        return {"fast_window": float(self.fast_window), "slow_window": float(self.slow_window)}
+        return {
+            field: float(getattr(self, field))
+            for field in _FAMILY_PARAMS[self.family]
+        }
 
     def config_hash(self) -> str:
         """Deterministic identity for this exact spec's BEHAVIOR (see

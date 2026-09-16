@@ -358,6 +358,22 @@ async def _get_experiments(session: AsyncSession) -> list[dict[str, Any]]:
         return []
 
 
+async def _get_component_registry(session: AsyncSession) -> list[dict[str, Any]]:
+    """Real `component_registry` rows (PROMPT 6). Same defensive
+    try/except/rollback as every other query here."""
+    try:
+        result = await session.execute(
+            text(
+                "SELECT component, version, verdict, n_experiments, mean_oos_improvement "
+                "FROM component_registry ORDER BY updated_at DESC LIMIT 100",
+            ),
+        )
+        return [dict(r._mapping) for r in result]
+    except Exception:
+        await session.rollback()
+        return []
+
+
 async def _get_in_flight_agents(session: AsyncSession) -> list[Agent]:
     """One Agent per claimed `jobs` row (docs/WORLD_MAPPING.md:
     agents[].id <- jobs.id) -- Prompt 4 fills what was empty in Prompt 1.
@@ -414,6 +430,13 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     """
     row_counts = await collect_row_counts(session)
     pending_by_stage = await _get_pending_depth_by_stage(session)
+    component_registry = await _get_component_registry(session)
+    # ORDER BY updated_at DESC means row 0 is the most recently evaluated
+    # component -- initially that's the baseline itself (the only row
+    # there is), exactly matching PROMPTS.md's "Initially it shows only
+    # the baseline registration"; it naturally becomes whatever component
+    # was last ablated once a real second one exists (Prompt 7/9).
+    temple_verdict = component_registry[0]["verdict"] if component_registry else None
 
     structures: list[Structure] = []
     for struct_id, manifest in CONSTRUCTION_MANIFEST.items():
@@ -434,7 +457,7 @@ async def build_world_state(session: AsyncSession) -> WorldState:
                 load=0.0,
                 queue_depth=pending_by_stage.get(struct_id, 0),
                 status="active" if phase == ConstructionPhase.ACTIVE else "idle",
-                verdict=None,
+                verdict=temple_verdict if kind == "temple" else None,
                 description=description,
                 prompt_built=prompt_num,
             ),

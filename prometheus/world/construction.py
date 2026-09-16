@@ -85,7 +85,12 @@ CONSTRUCTION_MANIFEST: dict[str, dict[str, Any]] = {
     },
     "temple": {
         "prompt": 6,
-        "activates_on": ["ablation"],
+        # Migration 0011 names the real table `component_registry`,
+        # matching the frontend's own already-written contract
+        # (frontend/src/mapping/stateToVisual.ts's ComponentVerdict) --
+        # "ablation" here used to be a placeholder string with no table
+        # behind it.
+        "activates_on": ["component_registry"],
         "agent_roles": ["scholar"],
         "description": "Meta-learning and component registry",
         "kind": "temple",

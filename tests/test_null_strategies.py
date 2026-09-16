@@ -31,7 +31,7 @@ import polars as pl
 
 from prometheus.backtest.benchmark import compute_benchmark_curve
 from prometheus.backtest.costs import apply_cost
-from prometheus.backtest.engine import STARTING_CAPITAL, run_backtest
+from prometheus.backtest.engine import STARTING_CAPITAL, run_backtest, run_backtest_from_positions
 from prometheus.core.seeds import rng_for
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import StrategySpec
@@ -92,26 +92,15 @@ def _random_walk_bars(n: int, rng: random.Random) -> list[dict]:
 
 
 def _run_positions(bars: pl.DataFrame, positions: list[float]) -> float:
-    """Mirrors backtest.engine.run_backtest's own accounting exactly
-    (STARTING_CAPITAL, cost on position CHANGE via apply_cost, bar_return
-    via pct_change) but takes an explicit position series instead of
-    deriving one via SMA crossover -- the null suite needs positions it
-    controls directly (coin-flip, turnover-matched-random), not ones an
-    indicator would produce. Duplicated from engine.py deliberately: that
-    function's public contract is (StrategySpec, cutoff), not a raw
-    position array.
-    """
-    df = bars.with_columns(pl.Series("position", positions)).with_columns(
-        pl.col("close").pct_change().fill_null(0.0).alias("_bar_return"),
-        pl.col("position").diff().fill_null(pl.col("position")).abs().alias("_position_change"),
-    )
-    equity = STARTING_CAPITAL
-    for row in df.iter_rows(named=True):
-        position_change = row["_position_change"] or 0.0
-        if position_change:
-            equity -= apply_cost(equity * position_change)
-        equity *= 1 + row["position"] * row["_bar_return"]
-    return (equity - STARTING_CAPITAL) / STARTING_CAPITAL * 100
+    """The null suite needs positions it controls directly (coin-flip,
+    turnover-matched-random), not ones an indicator would produce --
+    engine.run_backtest_from_positions (PROMPT 6) is exactly that seam,
+    promoted out of run_backtest's own loop so this suite, the overfit-
+    acceptance test, and experiments/ablation.py all share one copy of
+    the accounting instead of three near-identical ones."""
+    pit = PointInTimeFrame(bars)
+    result = run_backtest_from_positions(pit, _SYMBOL, positions, bars["available_at"][-1])
+    return result.total_return_pct
 
 
 def _turnover_matched_positions(n_bars: int, n_transitions: int, rng: random.Random) -> list[float]:

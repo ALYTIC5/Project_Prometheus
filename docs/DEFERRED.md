@@ -170,3 +170,84 @@ and update the entry's status when it does.
   cpz-quant entry has the full finding). **Trigger:** none expected;
   revisit only if a future cpz-quant release actually ships the
   computation cpz-ai's proprietary SDK currently reserves.
+
+## PROMPT 6 (ablation harness, the Temple of Knowledge)
+
+- **Carry template not built** — PROMPTS.md names four classic baseline
+  templates (momentum crossover, Bollinger mean-reversion, volatility
+  breakout, carry); only the first three are real. Carry needs futures
+  funding-rate or spot-futures basis data, and this project's ccxt
+  pipeline is spot-OHLCV only — confirmed by reading
+  `config/universe.yaml` and every file under `prometheus/data/`, no
+  futures ingestion exists anywhere. Building it would mean fabricating
+  a signal from data that doesn't exist. **Trigger:** a real futures/
+  funding-rate ingestion pipeline, which nothing in this project's
+  current scope adds.
+- **Interaction testing has no real second component to combine yet** —
+  `experiments/ablation.py`'s `pairwise_interactions`/
+  `triple_interactions` are real, tested machinery (composition,
+  aggregation), exercised in `tests/test_ablation_interactions.py` with
+  synthetic no-op component functions. Today only two components are
+  ever registered: the deterministic grid baseline (zero trials,
+  UNPROVEN by definition — it has nothing to be ablated against) and the
+  placebo (NEUTRAL, the harness's own calibration proof). There is
+  nothing real for the interaction functions to combine. **Trigger:**
+  Prompt 7's evolution loop or Prompt 9's LLM layer registering a real
+  second component — the moment one exists, pairwise/triple testing
+  against it is a `run_ablation`-style call away, not a rebuild.
+- **Ablation trials are cross-sectional (across symbols/params), not
+  time-based walk-forward OOS** — each trial is a different real
+  (symbol, spec) pair from the baseline grid, run once over the full
+  window; generalization across the universe is this pass's
+  out-of-sample dimension. This is the same limitation already logged
+  under PROMPT 5: `validation/splits.py`'s `derive_folds` is real and
+  tested but not wired into a per-fold re-backtest loop. Ablation
+  inherits that gap rather than reintroducing a new one. **Trigger:**
+  same as PROMPT 5's entry — a dedicated pass with budget for the added
+  per-cycle compute of re-running every trial across multiple time folds.
+- **`component_registry.failure_rate` is per-batch, not cumulative** —
+  `ablation_trials` only ever stores trials that succeeded (a
+  `ValueError`, e.g. insufficient bars for a spec's warm-up, is counted
+  and never inserted), so a lifetime cumulative failure rate would need
+  a separate attempted-trial counter this pass doesn't add. The
+  registry's `failure_rate` column reflects only the most recent
+  `run_ablation` batch. **Trigger:** if failure-rate trending over time
+  turns out to matter once Prompt 7/9 run ablation batches routinely;
+  a small addition (an attempts counter table) at that point, not a
+  redesign.
+- **Ablation batches are not wired into `worker.py`'s scheduled cycle**
+  — `experiments/ablation.py`'s functions are real and tested (including
+  a real DB-verified run in `tests/test_ablation_placebo.py`), but
+  nothing calls `run_ablation`/`register_baseline` from the production
+  worker cron yet, so `component_registry` stays empty in production
+  until manually invoked once (same verification step Prompt 5 used:
+  `railway ssh` + a one-off script, then confirmed via `/buildings/`).
+  **Trigger:** deliberate — there is exactly one real component
+  (baseline + placebo) to register today; wiring a recurring cron call
+  makes sense once Prompt 7/9 give the worker something to actually
+  re-evaluate on a schedule, not before.
+- **Open research question, found while building the placebo acceptance
+  test, not resolved: does a randomized position path carry a real cost
+  relative to a structured one at matched exposure AND matched
+  turnover?** Two genuinely different seed-driven "neutral" placebo
+  designs were built and both reliably registered HARMFUL against real
+  synthetic data (not statistical noise — stable across repeated
+  independent draws): (1) independently coin-flipping ~5% of bars (adds
+  real round-trip turnover, a real transaction-cost drag — understood,
+  not mysterious), and (2) a true random permutation of the baseline's
+  own position values (exact same total exposure time AND, since it's a
+  permutation, arguably comparable turnover statistics) — this one's
+  bias is NOT fully explained. The leading hypothesis is that a
+  structured (trend-following/mean-reverting) position path compounds
+  differently than a randomly-shuffled one with the identical exposure
+  count, on any SPECIFIC finite realized price series, independent of
+  drift or turnover — but this was not run down to a confirmed
+  mechanism; `placebo_component` (ablation.py) shipped as a literal
+  zero-variance no-op instead (a valid, defensible reading of PROMPTS.md's
+  "changes only the seed", and the only version that is neutral by
+  construction rather than merely observed-neutral-so-far). **Trigger:**
+  genuinely curious follow-up, or relevant if a future real component
+  (Prompt 7's evolution, Prompt 9's LLM layer) turns out to primarily
+  work by changing WHEN trades happen rather than HOW MANY or how
+  exposed — the ablation harness would need a placebo actually proven
+  neutral against that specific kind of perturbation, not this one.

@@ -284,6 +284,65 @@ class ValidationResult(Base):
     )
 
 
+class AblationTrial(Base):
+    """One paired A/B trial (component enabled vs disabled, same symbol/
+    spec/seed/costs) -- migration 0011. INSERT-only by convention, same
+    precedent as ResearchViolation: a measurement record, not a decision
+    history, so not added to Law 6's append-only trigger set."""
+
+    __tablename__ = "ablation_trials"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    component: Mapped[str] = mapped_column(sa.String(64))
+    version: Mapped[str] = mapped_column(sa.String(32))
+    symbol: Mapped[str] = mapped_column(sa.String(32))
+    config_hash: Mapped[str] = mapped_column(sa.String(64))
+    seed: Mapped[int] = mapped_column(sa.BigInteger)
+    enabled_return_pct: Mapped[float] = mapped_column(sa.Float)
+    disabled_return_pct: Mapped[float] = mapped_column(sa.Float)
+    enabled_sharpe: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    disabled_sharpe: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    enabled_total_costs: Mapped[float] = mapped_column(sa.Float)
+    disabled_total_costs: Mapped[float] = mapped_column(sa.Float)
+    compute_cost_delta: Mapped[float] = mapped_column(sa.Float)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ComponentRegistry(Base):
+    """Current aggregate state per (component, version) -- recomputed
+    from AblationTrial rows after every batch, not hand-maintained. Same
+    mutability exemption as Strategy.status/Job (current state, not a
+    log). Table name matches the frontend's already-written contract
+    (stateToVisual.ts's ComponentVerdict) and world/construction.py's
+    temple manifest entry."""
+
+    __tablename__ = "component_registry"
+    __table_args__ = (sa.UniqueConstraint("component", "version"),)
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    component: Mapped[str] = mapped_column(sa.String(64))
+    version: Mapped[str] = mapped_column(sa.String(32))
+    families_affected: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    n_experiments: Mapped[int] = mapped_column(sa.Integer, default=0)
+    mean_oos_improvement: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    median_oos_improvement: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    worst_oos_improvement: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    best_oos_improvement: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    ci_low: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    ci_high: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    metric: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+    mean_cost_delta: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    mean_compute_cost_delta: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    failure_rate: Mapped[float] = mapped_column(sa.Float, default=0.0)
+    verdict: Mapped[str] = mapped_column(sa.String(16), default="UNPROVEN")
+    disabled: Mapped[bool] = mapped_column(sa.Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 _holdout_engine: AsyncEngine | None = None
