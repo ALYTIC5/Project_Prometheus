@@ -150,6 +150,14 @@ async def run_one(
                 change_set=change_set,
             )
         )
+        # Flush before adding Decision -- matches the success path below.
+        # Without this, the Experiment row isn't guaranteed visible to the
+        # Decision insert's FK check within the same flush; caught for
+        # real running this worker against Postgres (ForeignKeyViolation
+        # on decisions.experiment_id), not by any offline test, since
+        # nothing before this exercised the insufficient-data path against
+        # a real database.
+        await session.flush()
         session.add(
             Decision(
                 experiment_id=experiment_id,
