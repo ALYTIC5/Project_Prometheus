@@ -20,6 +20,11 @@ ENV NEXT_PUBLIC_API_URL=""
 # frontend/src/sprites/registry.ts) so local dev and tests aren't coupled
 # to the art assets, per PROMPTS.md's SPRITE_SET=placeholder|production flag.
 ENV NEXT_PUBLIC_SPRITE_SET="production"
+# PROMPT S: plain dashboard by default. Switching to the isometric world is
+# a rebuild with this set to "world" -- the static export (output:'export')
+# means this is a build-time choice, not a runtime toggle, same as
+# NEXT_PUBLIC_SPRITE_SET above.
+ENV NEXT_PUBLIC_UI_MODE="plain"
 RUN npm run build
 
 # --- Python builder stage ---

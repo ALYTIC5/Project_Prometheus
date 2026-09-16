@@ -13,9 +13,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // process.env directly (not a client component) so Next.js still inlines
   // NEXT_PUBLIC_SPRITE_SET as a build-time constant.
   const spriteSet = process.env.NEXT_PUBLIC_SPRITE_SET ?? 'placeholder';
+  // PROMPT S: the world's fixed dark canvas + overflow:hidden fights a
+  // scrolling plain dashboard. Same server-component env read as above.
+  const uiMode = process.env.NEXT_PUBLIC_UI_MODE ?? 'plain';
+  const bodyStyle =
+    uiMode === 'world'
+      ? { margin: 0, background: '#0a0a1a', overflow: 'hidden' as const }
+      : { margin: 0 };
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: '#0a0a1a', overflow: 'hidden' }}>
+      <body style={bodyStyle}>
         <script
           // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: `window.__SPRITE_SET__ = ${JSON.stringify(spriteSet)};` }}

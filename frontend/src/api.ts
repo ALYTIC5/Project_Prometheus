@@ -1,4 +1,14 @@
-import type { Building, ScoreboardResponse, WorldState } from './types';
+import type {
+  BenchmarkCurvePoint,
+  BuildingWithCount,
+  ExperimentDetail,
+  ExperimentRow,
+  QueueStatus,
+  ScoreboardResponse,
+  StrategyRow,
+  ViolationRow,
+  WorldState,
+} from './types';
 
 // Empty string is a deliberate, valid value (production: frontend and API
 // share one origin, so relative paths like "/world/state" are correct) --
@@ -11,7 +21,7 @@ export async function fetchWorldState(): Promise<WorldState> {
   return res.json();
 }
 
-export async function fetchBuildings(): Promise<{ buildings: Building[]; total: number }> {
+export async function fetchBuildings(): Promise<{ buildings: BuildingWithCount[]; total: number }> {
   const res = await fetch(`${API_BASE}/buildings/`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Buildings fetch failed: ${res.status}`);
   return res.json();
@@ -20,6 +30,45 @@ export async function fetchBuildings(): Promise<{ buildings: Building[]; total: 
 export async function fetchScoreboard(): Promise<ScoreboardResponse> {
   const res = await fetch(`${API_BASE}/scoreboard/`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Scoreboard fetch failed: ${res.status}`);
+  return res.json();
+}
+
+// --- PROMPT S: plain dashboard endpoints ------------------------------
+
+export async function fetchBenchmarkCurve(): Promise<BenchmarkCurvePoint[]> {
+  const res = await fetch(`${API_BASE}/world/drilldown/benchmark/current`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Benchmark curve fetch failed: ${res.status}`);
+  const body = (await res.json()) as { curve: BenchmarkCurvePoint[] };
+  return body.curve;
+}
+
+export async function fetchStrategies(): Promise<{ strategies: StrategyRow[]; total: number }> {
+  const res = await fetch(`${API_BASE}/strategies/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Strategies fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchExperiments(): Promise<{ experiments: ExperimentRow[]; total: number }> {
+  const res = await fetch(`${API_BASE}/experiments/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Experiments fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchExperimentDetail(experimentId: string): Promise<ExperimentDetail> {
+  const res = await fetch(`${API_BASE}/experiments/${experimentId}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Experiment detail fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchQueueStatus(): Promise<QueueStatus> {
+  const res = await fetch(`${API_BASE}/queue/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Queue status fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchViolations(): Promise<{ violations: ViolationRow[]; total: number }> {
+  const res = await fetch(`${API_BASE}/violations/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Violations fetch failed: ${res.status}`);
   return res.json();
 }
 

@@ -11,33 +11,101 @@
  * is honestly ONE tier (5s, matching the polling this replaces) rather than
  * fragmenting into cadences with no real justification. Revisit per-tier
  * cadences once Prompt 4+ produces data that actually warrants them.
+ *
+ * PROMPT S: every hook takes an optional intervalMs override instead of
+ * forking this module for the plain dashboard, which polls at its own
+ * documented 10s. The world view's call sites are unchanged (still 5s).
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchBuildings, fetchScoreboard, fetchWorldState } from '../api';
+import {
+  fetchBenchmarkCurve,
+  fetchBuildings,
+  fetchExperimentDetail,
+  fetchExperiments,
+  fetchQueueStatus,
+  fetchScoreboard,
+  fetchStrategies,
+  fetchViolations,
+  fetchWorldState,
+} from '../api';
 
 const POLL_INTERVAL_MS = 5000;
 
-export function useWorldStateQuery() {
+// Each hook takes an optional override -- the world view's call sites pass
+// nothing (unchanged 5s behavior); the plain dashboard (PROMPT S) passes
+// 10000, its own documented cadence, without forking this module.
+export function useWorldStateQuery(intervalMs: number = POLL_INTERVAL_MS) {
   return useQuery({
     queryKey: ['world-state'],
     queryFn: fetchWorldState,
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: intervalMs,
   });
 }
 
-export function useBuildingsQuery() {
+export function useBuildingsQuery(intervalMs: number = POLL_INTERVAL_MS) {
   return useQuery({
     queryKey: ['buildings'],
     queryFn: fetchBuildings,
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: intervalMs,
   });
 }
 
-export function useScoreboardQuery() {
+export function useScoreboardQuery(intervalMs: number = POLL_INTERVAL_MS) {
   return useQuery({
     queryKey: ['scoreboard'],
     queryFn: fetchScoreboard,
-    refetchInterval: POLL_INTERVAL_MS,
+    refetchInterval: intervalMs,
+  });
+}
+
+// --- PROMPT S: plain dashboard hooks ---------------------------------
+
+export function useBenchmarkCurveQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['benchmark-curve'],
+    queryFn: fetchBenchmarkCurve,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useStrategiesQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['strategies'],
+    queryFn: fetchStrategies,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useExperimentsQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['experiments'],
+    queryFn: fetchExperiments,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useQueueQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['queue'],
+    queryFn: fetchQueueStatus,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useViolationsQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['violations'],
+    queryFn: fetchViolations,
+    refetchInterval: intervalMs,
+  });
+}
+
+// On-demand, not polled -- fetched only when a row is expanded.
+export function useExperimentDetailQuery(experimentId: string | null) {
+  return useQuery({
+    queryKey: ['experiment-detail', experimentId],
+    queryFn: () => fetchExperimentDetail(experimentId as string),
+    enabled: experimentId !== null,
   });
 }
