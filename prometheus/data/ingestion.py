@@ -14,11 +14,13 @@ from typing import Any, Protocol
 import polars as pl
 import sqlalchemy as sa
 import yaml
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.core.db import get_session
 from prometheus.data.quality import run_quality_checks
+from prometheus.data.universe import sync_from_yaml
 from prometheus.data.versioning import record_data_version
 
 _TIMEFRAMES = ("1d", "4h")
@@ -35,13 +37,17 @@ _SELECT_BARS_FOR_VERSIONING = text(
     """
 ).bindparams(sa.bindparam("symbols", expanding=True))
 
+# bindparams(type_=JSONB): a raw text() query has no column type to adapt
+# a dict bind value against, and asyncpg raises DataError without it --
+# same fix as experiments.queue's _INSERT_JOB / experiments.violations'
+# _INSERT_VIOLATION.
 _INSERT_RAW = text(
     """
     INSERT INTO raw_ingest (source, symbol, timeframe, payload, status)
     VALUES (:source, :symbol, :timeframe, :payload, 'pending')
     RETURNING id
     """
-)
+).bindparams(bindparam("payload", type_=JSONB))
 
 _INSERT_BAR = text(
     """
@@ -57,7 +63,7 @@ _INSERT_BAR = text(
 
 _UPDATE_RAW_STATUS = text(
     "UPDATE raw_ingest SET status = :status, quality_issues = :quality_issues WHERE id = :id"
-)
+).bindparams(bindparam("quality_issues", type_=JSONB))
 
 
 class ExchangeClient(Protocol):
@@ -187,6 +193,13 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
     since = datetime.now(UTC) - timedelta(days=days)
 
     async with get_session() as session:
+        # Law 2's real mechanism: universe_membership must actually hold
+        # config/universe.yaml's rows, including delisted ones, or as_of()
+        # has nothing to reconstruct from. Runs first so a quality
+        # quarantine further down never skips it.
+        await sync_from_yaml(session)
+        await session.commit()
+
         for symbol in symbols:
             for timeframe in _TIMEFRAMES:
                 await ingest_symbol(session, exchange, symbol, timeframe, since)
@@ -200,6 +213,11 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
         # some bars pre-existed from an earlier run).
         frame = await _load_bars_for_versioning(session, symbols, since)
         if frame.height:
+            # record_data_version only adds+flushes (a helper committing a
+            # caller's session is not its call to make, same rule core.
+            # config.load_research_policy documents) -- this is the last
+            # write in the function, so it owns the commit that makes the
+            # row durable rather than rolled back when the session closes.
             await record_data_version(
                 session,
                 frame,
@@ -207,6 +225,7 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
                 date_range_end=datetime.now(UTC).date(),
                 source_versions={"binance": "ccxt/" + ccxt.__version__},
             )
+            await session.commit()
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

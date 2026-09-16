@@ -7,6 +7,13 @@ Requires a live Postgres with migrations applied and config/universe.yaml
 seeded into universe_membership. Skipped (not xfail — missing
 infrastructure, not missing code) when TEST_DATABASE_URL isn't set, same
 pattern as tests/laws/test_history_append_only.py from PROMPT 0.
+
+Seeding goes through data.universe.sync_from_yaml() -- not a hand-rolled
+INSERT -- for two reasons: it's the real production path (PROMPT 2), and
+its upsert-on-(symbol, exchange, listed_at) is what makes this fixture
+safe to run repeatedly against a database another test (or this test
+itself, on a prior run) already seeded, now that migration 0009's unique
+constraint exists. A bare INSERT here would collide with it.
 """
 from __future__ import annotations
 
@@ -15,11 +22,9 @@ from collections.abc import AsyncIterator
 from datetime import date
 
 import pytest
-import yaml
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from prometheus.data.universe import as_of
+from prometheus.data.universe import as_of, sync_from_yaml
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_DATABASE_URL"),
@@ -28,26 +33,14 @@ pytestmark = pytest.mark.skipif(
 
 _UNIVERSE_YAML = "config/universe.yaml"
 
-_INSERT_MEMBERSHIP = text(
-    """
-    INSERT INTO universe_membership (symbol, exchange, listed_at, delisted_at)
-    VALUES (:symbol, :exchange, :listed_at, :delisted_at)
-    """
-)
-
 
 @pytest.fixture()
 async def seeded_session() -> AsyncIterator[AsyncSession]:
     engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
-    with open(_UNIVERSE_YAML, encoding="utf-8") as f:
-        symbols = yaml.safe_load(f)["symbols"]
-
-    async with engine.begin() as conn:
-        for row in symbols:
-            await conn.execute(_INSERT_MEMBERSHIP, row)
-
     factory = async_sessionmaker(engine)
     async with factory() as session:
+        await sync_from_yaml(session, _UNIVERSE_YAML)
+        await session.commit()
         yield session
     await engine.dispose()
 
