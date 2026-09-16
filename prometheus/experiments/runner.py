@@ -11,12 +11,23 @@ tuning -- "if a strategy cannot beat this after costs, it is not an edge."
 There is no PBO/DSR validation here (the Oracle, Prompt 5); a strategy
 that clears this bar is PROMISING, not VALIDATED -- exactly the distinction
 frontend/src/mapping/stateToVisual.ts's StrategyState already encodes.
+
+migration 0006's reproducibility columns (data_version_hash, code_sha,
+config_hash, seed, compute_cost) are populated on every Experiment here,
+not left for a later backfill -- Law 6 means they never could be
+backfilled. compute_cost is wall-clock seconds spent inside run_backtest,
+a real measured quantity; there is no dollar-cost meter wired up yet
+(that is infra/LLM cost tracking, out of this prompt's scope), so this
+column is honest about being a time proxy, not a fabricated currency
+figure.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,20 +36,69 @@ from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchm
 from prometheus.backtest.engine import run_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, get_session
 from prometheus.core.ids import next_experiment_id, next_strategy_id
+from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
+from prometheus.experiments.failure import classify_exception, classify_result
 from prometheus.research.generate import generate_grid
 from prometheus.strategy.spec import StrategySpec
 
 _UPDATE_STRATEGY_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
 
 
-async def run_one(session: AsyncSession, spec: StrategySpec, start: datetime, end: datetime) -> str:
+def _build_experiment(
+    *,
+    experiment_id: str,
+    strategy_id: str,
+    spec: StrategySpec,
+    seed: int,
+    resolved_code_sha: str,
+    data_version_hash: str,
+    compute_cost: float,
+    parent_experiment_id: str | None,
+    hypothesis: str | None,
+    change_set: dict[str, Any] | None,
+) -> Experiment:
+    return Experiment(
+        id=experiment_id,
+        status="completed",
+        payload={"strategy_id": strategy_id, "config_hash": spec.config_hash(), "seed": seed},
+        parent_experiment_id=parent_experiment_id,
+        strategy_id=strategy_id,
+        data_version_hash=data_version_hash,
+        code_sha=resolved_code_sha,
+        config_hash=spec.config_hash(),
+        seed=seed,
+        compute_cost=compute_cost,
+        hypothesis=hypothesis,
+        change_set=change_set,
+    )
+
+
+async def run_one(
+    session: AsyncSession,
+    spec: StrategySpec,
+    start: datetime,
+    end: datetime,
+    *,
+    parent_experiment_id: str | None = None,
+    hypothesis: str | None = None,
+    change_set: dict[str, Any] | None = None,
+) -> str:
     """Runs one strategy through the full pipeline against real data in
-    [start, end]. Returns the experiment id. Raises if there isn't enough
-    real data yet -- never fabricates a result."""
-    pit = await load_point_in_time(session, [spec.symbol], spec.timeframe, start, end)
+    [start, end]. Returns the experiment id. `parent_experiment_id`/
+    `hypothesis`/`change_set` are optional -- omitted, an experiment is a
+    lineage root, same as every experiment written before migration 0006
+    existed.
+
+    Raises (never fabricates a result) if there isn't enough real data;
+    the failure is still recorded, classified INSUFFICIENT_DATA, before
+    re-raising -- see the except block below."""
+    pit, data_version_hash = await load_point_in_time(
+        session, [spec.symbol], spec.timeframe, start, end
+    )
     seed = derive_seed(spec.symbol, spec.timeframe, spec.config_hash())
+    resolved_code_sha = code_sha()
 
     strategy_id = await next_strategy_id(spec.family)
     session.add(
@@ -46,7 +106,42 @@ async def run_one(session: AsyncSession, spec: StrategySpec, start: datetime, en
     )
     await session.flush()
 
-    strategy_result = run_backtest(pit, spec, end)
+    experiment_id = await next_experiment_id()
+    started = time.perf_counter()
+    try:
+        strategy_result = run_backtest(pit, spec, end)
+    except ValueError as exc:
+        session.add(
+            _build_experiment(
+                experiment_id=experiment_id,
+                strategy_id=strategy_id,
+                spec=spec,
+                seed=seed,
+                resolved_code_sha=resolved_code_sha,
+                data_version_hash=data_version_hash,
+                compute_cost=time.perf_counter() - started,
+                parent_experiment_id=parent_experiment_id,
+                hypothesis=hypothesis,
+                change_set=change_set,
+            )
+        )
+        session.add(
+            Decision(
+                experiment_id=experiment_id,
+                decision={
+                    "decision": "REJECT",
+                    "reason": "insufficient_data",
+                    "reason_codes": [classify_exception(exc).value],
+                },
+            )
+        )
+        await session.execute(
+            _UPDATE_STRATEGY_STATUS, {"status": "REJECTED", "id": strategy_id}
+        )
+        await session.commit()
+        raise
+    compute_cost = time.perf_counter() - started
+
     benchmark_curve = compute_benchmark_curve(pit, spec.symbol, end)
     await record_benchmark_curve(session, benchmark_curve)
     benchmark_return_pct = (
@@ -55,13 +150,20 @@ async def run_one(session: AsyncSession, spec: StrategySpec, start: datetime, en
         else 0.0
     )
     beats_benchmark = strategy_result.total_return_pct > benchmark_return_pct
+    reason_codes = classify_result(strategy_result, benchmark_return_pct=benchmark_return_pct)
 
-    experiment_id = await next_experiment_id()
     session.add(
-        Experiment(
-            id=experiment_id,
-            status="completed",
-            payload={"strategy_id": strategy_id, "config_hash": spec.config_hash(), "seed": seed},
+        _build_experiment(
+            experiment_id=experiment_id,
+            strategy_id=strategy_id,
+            spec=spec,
+            seed=seed,
+            resolved_code_sha=resolved_code_sha,
+            data_version_hash=data_version_hash,
+            compute_cost=compute_cost,
+            parent_experiment_id=parent_experiment_id,
+            hypothesis=hypothesis,
+            change_set=change_set,
         )
     )
     await session.flush()
@@ -73,6 +175,8 @@ async def run_one(session: AsyncSession, spec: StrategySpec, start: datetime, en
                 "total_return_pct": strategy_result.total_return_pct,
                 "max_drawdown_pct": strategy_result.max_drawdown_pct,
                 "turnover": strategy_result.turnover,
+                "gross_return_pct": strategy_result.gross_return_pct,
+                "total_costs": strategy_result.total_costs,
                 "benchmark_return_pct": benchmark_return_pct,
             },
         )
@@ -87,6 +191,7 @@ async def run_one(session: AsyncSession, spec: StrategySpec, start: datetime, en
                     if beats_benchmark
                     else "does_not_beat_benchmark_net_of_costs"
                 ),
+                "reason_codes": [mode.value for mode in reason_codes],
             },
         )
     )

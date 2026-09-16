@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.data.schema import PointInTimeFrame
+from prometheus.data.versioning import compute_content_hash
 
 _SELECT_BARS = text(
     """
@@ -45,10 +46,15 @@ async def load_point_in_time(
     timeframe: str,
     start: datetime,
     end: datetime,
-) -> PointInTimeFrame:
+) -> tuple[PointInTimeFrame, str]:
     """Real bars from `ohlcv_bars` in [start, end], wrapped so the only way
     to read them back out is PointInTimeFrame.as_of() -- same discipline
-    every other feature/backtest code path is held to."""
+    every other feature/backtest code path is held to. The second element
+    is data.versioning.compute_content_hash() over the exact rows loaded --
+    reused rather than recomputed differently, so an experiment's recorded
+    data_version_hash matches what ingestion would have hashed for the
+    identical rows -- for core.db.Experiment.data_version_hash
+    (migration 0006)."""
     result = await session.execute(
         _SELECT_BARS, {"symbols": symbols, "timeframe": timeframe, "start": start, "end": end}
     )
@@ -67,4 +73,4 @@ async def load_point_in_time(
         },
         schema=_FRAME_SCHEMA,
     )
-    return PointInTimeFrame(frame)
+    return PointInTimeFrame(frame), compute_content_hash(frame)
