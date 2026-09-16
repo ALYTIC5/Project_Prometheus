@@ -35,6 +35,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchmark_curve
+from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
 from prometheus.backtest.engine import run_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, get_session
 from prometheus.core.ids import next_experiment_id, next_strategy_id
@@ -100,8 +101,14 @@ async def run_one(
     the failure is still recorded, classified INSUFFICIENT_DATA, before
     re-raising -- see the except block below."""
     # Substrate for violations.detect_universe_changed_after_results --
-    # a no-op row if the file's content hash was already recorded.
+    # a no-op row if the file's content hash was already recorded. Same
+    # treatment for costs.yaml -- substrate for a future
+    # COST_CONFIG_LOOSENED detector (docs/DEFERRED.md), not implemented
+    # here.
     await record_config_snapshot(session, _UNIVERSE_CONFIG_PATH)
+    await record_config_snapshot(session, DEFAULT_COST_CONFIG_PATH)
+    cost_config, cost_config_hash = load_cost_config()
+    cost_model = make_cost_model(cost_config)
 
     pit, data_version_hash = await load_point_in_time(
         session, [spec.symbol], spec.timeframe, start, end
@@ -117,8 +124,17 @@ async def run_one(
 
     experiment_id = await next_experiment_id()
     started = time.perf_counter()
+    # Computed before run_backtest so it can be passed in and reused --
+    # run_backtest computes its own benchmark_result internally by default
+    # (Law 8: every BacktestResult carries a real vs_benchmark, not just
+    # usually-true-because-the-caller-remembered-to), but runner.py also
+    # needs the raw curve to record for the world view, so passing it in
+    # avoids computing it twice.
+    benchmark_result = compute_benchmark_curve(pit, [spec.symbol], end, cost_model=cost_model)
     try:
-        strategy_result = run_backtest(pit, spec, end)
+        strategy_result = run_backtest(
+            pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
+        )
     except ValueError as exc:
         session.add(
             _build_experiment(
@@ -151,7 +167,6 @@ async def run_one(
         raise
     compute_cost = time.perf_counter() - started
 
-    benchmark_result = compute_benchmark_curve(pit, [spec.symbol], end)
     await record_benchmark_curve(session, benchmark_result.equity_curve)
     benchmark_curve = benchmark_result.equity_curve
     benchmark_return_pct = (
@@ -188,6 +203,14 @@ async def run_one(
                 "gross_return_pct": strategy_result.gross_return_pct,
                 "total_costs": strategy_result.total_costs,
                 "benchmark_return_pct": benchmark_return_pct,
+                "cost_config_hash": cost_config_hash,
+                "vs_benchmark": {
+                    "excess_return": strategy_result.vs_benchmark.excess_return,
+                    "periods_underperforming_pct": (
+                        strategy_result.vs_benchmark.periods_underperforming_pct
+                    ),
+                    "max_relative_drawdown": strategy_result.vs_benchmark.max_relative_drawdown,
+                },
             },
         )
     )

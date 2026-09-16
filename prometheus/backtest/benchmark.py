@@ -10,6 +10,17 @@ one just for the benchmark would contradict that and need re-deriving once
 cpz-quant lands in Prompt 5. max_drawdown_pct IS included -- it's
 arithmetic (the same peak-to-trough walk run_backtest already does), not
 a statistical estimator, so there's nothing to defer.
+
+VsBenchmark (PROMPT 3) is the honest subset of what PROMPTS.md asks for:
+excess_return, periods_underperforming_pct, max_relative_drawdown are all
+plain arithmetic over the two equity curves. excess_sharpe is NOT included
+(same Sharpe precedent above). information_ratio/tracking_error are ALSO
+deliberately not included here -- computing them correctly needs the
+strategy curve (keyed per-bar, any timeframe) and the benchmark curve
+(keyed per-date, coarser) aligned onto a shared period grid; doing that
+carelessly late in an implementation pass is exactly how a subtle bug
+gets into money-math code, so it's deferred to a dedicated pass rather
+than rushed (see docs/DEFERRED.md).
 """
 from __future__ import annotations
 
@@ -39,6 +50,62 @@ class BenchmarkResult:
     equity_curve: list[tuple[date, float]]
     max_drawdown_pct: float
     final_value: float
+
+
+@dataclass(frozen=True)
+class VsBenchmark:
+    excess_return: float
+    periods_underperforming_pct: float
+    max_relative_drawdown: float
+
+
+def compute_vs_benchmark(
+    strategy_curve: tuple[tuple[str, float], ...],
+    strategy_max_drawdown_pct: float,
+    benchmark: BenchmarkResult,
+) -> VsBenchmark:
+    """Law 8's own comparison, as a structured object every BacktestResult
+    carries (see engine.py's run_backtest) rather than something runner.py
+    recomputes ad hoc. Aligned at DATE granularity -- the benchmark
+    curve's own resolution -- so a strategy on a sub-daily timeframe has
+    its last-observation-per-date compared against the benchmark's one
+    point per date. Coarser than per-bar, but honest about what it's
+    comparing rather than silently misaligned.
+    """
+    strategy_return_pct = (
+        (strategy_curve[-1][1] - STARTING_CAPITAL) / STARTING_CAPITAL * 100
+        if strategy_curve
+        else 0.0
+    )
+    benchmark_return_pct = (benchmark.final_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100
+    excess_return = strategy_return_pct - benchmark_return_pct
+
+    strategy_by_date: dict[date, float] = {}
+    for iso_ts, equity in strategy_curve:
+        strategy_by_date[datetime.fromisoformat(iso_ts).date()] = equity
+    benchmark_by_date = dict(benchmark.equity_curve)
+
+    shared_dates = sorted(set(strategy_by_date) & set(benchmark_by_date))
+    underperforming = 0
+    compared = 0
+    for i in range(1, len(shared_dates)):
+        prev_date, curr_date = shared_dates[i - 1], shared_dates[i]
+        prev_s, curr_s = strategy_by_date[prev_date], strategy_by_date[curr_date]
+        prev_b, curr_b = benchmark_by_date[prev_date], benchmark_by_date[curr_date]
+        if not prev_s or not prev_b:
+            continue
+        s_ret = (curr_s - prev_s) / prev_s
+        b_ret = (curr_b - prev_b) / prev_b
+        compared += 1
+        if s_ret < b_ret:
+            underperforming += 1
+    periods_underperforming_pct = (underperforming / compared * 100) if compared else 0.0
+
+    return VsBenchmark(
+        excess_return=excess_return,
+        periods_underperforming_pct=periods_underperforming_pct,
+        max_relative_drawdown=strategy_max_drawdown_pct - benchmark.max_drawdown_pct,
+    )
 
 
 def compute_benchmark_curve(

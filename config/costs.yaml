@@ -1,0 +1,16 @@
+# Cost model, versioned (see prometheus/backtest/costs.py:load_cost_config).
+# Same two real numbers this project has always used -- externalized here,
+# not changed. Content hash recorded via config_snapshots on every
+# experiment run (experiments/runner.py), same mechanism universe.yaml
+# already uses.
+schema_version: 1
+
+# Binance spot taker fee schedule (binance.com/en/fee/schedule), the
+# regular-tier rate with no BNB discount applied -- the conservative case,
+# and a real published number, not tuned to make any strategy look better.
+taker_fee_bps: 10.0
+
+# A conservative fixed slippage estimate for the crypto-majors universe
+# this project trades (config/universe.yaml) -- real-world-shaped, not a
+# number chosen to flatter or penalise any particular strategy.
+slippage_bps: 5.0
