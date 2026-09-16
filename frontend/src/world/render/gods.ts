@@ -3,7 +3,7 @@ import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { getAtlasFrame } from '../sprites/atlasTextures';
 import { directionIndexFor } from '../sprites/direction';
 import { resolveCharacterSprite } from '../sprites/registry';
-import type { Building } from '../types';
+import type { Building } from '../../types';
 
 // prometheus/world/construction.py's BUILDING_LOCATIONS -- see builders.ts.
 const MONUMENT_GRID = { x: 13, y: 13 };

@@ -1,6 +1,6 @@
 import * as PIXI from 'pixi.js';
 import { gridToScreen } from '../iso/projection';
-import type { Building, BuildingLocation } from '../types';
+import type { Building, BuildingLocation } from '../../types';
 
 /** Screen->grid picking must go through the camera's actual inverse
  * transform, not a hand-rolled one -- Pixi's Container.toLocal() already

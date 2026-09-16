@@ -4,7 +4,7 @@ import { PALETTE } from '../sprites/palette';
 import { directionIndexFor } from '../sprites/direction';
 import { getAtlasFrame } from '../sprites/atlasTextures';
 import { hashString, resolveAgentSprite, type AgentRole } from '../sprites/registry';
-import type { Building } from '../types';
+import type { Building } from '../../types';
 
 const MAX_BUILDERS = 12;
 const SCALE = 3;

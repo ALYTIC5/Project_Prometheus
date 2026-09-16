@@ -3,7 +3,7 @@ import { gridToScreen, TILE_HEIGHT, TILE_WIDTH } from '../iso/projection';
 import { getAtlasFrame } from '../sprites/atlasTextures';
 import { hashString, isProduction, resolveTerrainSprite } from '../sprites/registry';
 import { PALETTE } from '../sprites/palette';
-import type { Building } from '../types';
+import type { Building } from '../../types';
 
 /** Matches the backend's hand-authored layout grid
  * (prometheus/world/construction.py). */

@@ -3,7 +3,7 @@ import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { PALETTE } from '../sprites/palette';
 import { hashString } from '../sprites/registry';
 import { GRID_SIZE, WATER_MAX_X, PLAZA_RADIUS, computeRoadTiles, isInsideAnyFootprint } from './ground';
-import type { Building } from '../types';
+import type { Building } from '../../types';
 
 // Tree line thickness at the island edge, and how close to the Underworld
 // building's centre counts as "the Underworld quarter" for the bare/dead

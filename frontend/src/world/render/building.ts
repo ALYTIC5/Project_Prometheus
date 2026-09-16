@@ -12,7 +12,7 @@ import {
   type AtlasSpec,
   type ConstructionPhase,
 } from '../sprites/registry';
-import type { Building } from '../types';
+import type { Building } from '../../types';
 
 /** Darkens (or lightens, for negative values) a colour toward black/white,
  * with a small warm (+) or cool (-) hue nudge -- `warmth` shifts the

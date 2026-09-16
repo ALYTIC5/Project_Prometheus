@@ -1,4 +1,4 @@
-import manifest from '../../src/sprites/manifest.production.json';
+import manifest from '../../src/world/sprites/manifest.production.json';
 
 export const metadata = {
   title: 'Sprite Roster — Project Prometheus',
