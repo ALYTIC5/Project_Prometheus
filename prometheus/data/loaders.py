@@ -27,7 +27,13 @@ _SELECT_BARS = text(
     """
 ).bindparams(sa.bindparam("symbols", expanding=True))
 
-_FRAME_SCHEMA = {
+# Public: prometheus.validation.holdout reuses this exact schema for
+# holdout reads rather than keeping a second literal copy that could
+# drift from this one. Explicitly typed (not left to inference) because
+# prometheus.validation is mypy-strict and this dict is defined in a
+# non-strict module -- an untyped/widened inference here would surface
+# as a spurious error only at the strict import site, not here.
+POINT_IN_TIME_FRAME_SCHEMA: dict[str, pl.PolarsDataType] = {
     "symbol": pl.Utf8,
     "timeframe": pl.Utf8,
     "event_time": pl.Datetime("us", "UTC"),
@@ -71,6 +77,6 @@ async def load_point_in_time(
             "close": [float(r["close"]) for r in rows],
             "volume": [float(r["volume"]) for r in rows],
         },
-        schema=_FRAME_SCHEMA,
+        schema=POINT_IN_TIME_FRAME_SCHEMA,
     )
     return PointInTimeFrame(frame), compute_content_hash(frame)

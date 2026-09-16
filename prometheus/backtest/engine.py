@@ -2,9 +2,11 @@
 against one symbol.
 
 No Sharpe, no PBO, no Deflated Sharpe here -- that is the Oracle's job
-(Prompt 5) and needs cpz-quant, which is not installed (CLAUDE.md: do not
-reimplement PBO/DSR from scratch). This produces total return, max
-drawdown, and turnover only.
+(validation/, PROMPT 5) and consumes THIS module's output (the equity
+curve, and signal_for()'s raw position series) rather than computing
+those stats inline; CLAUDE.md's "do not reimplement PBO/DSR from scratch"
+is a reason to keep them out of the hot backtest loop, not a reason they
+can never exist. This produces total return, max drawdown, and turnover.
 
 No look-ahead, two layers deep: `PointInTimeFrame.as_of(cutoff)` already
 excludes any bar not yet knowable by `cutoff` (Law 1's own mechanism,
@@ -72,6 +74,19 @@ def _sma_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
     )
 
 
+def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
+    """Public seam validation/metrics.py's information-coefficient
+    calculation needs: IC is a property of the SIGNAL (does it predict
+    forward returns), not of an executed, cost-bearing backtest, so it
+    reads the `position` column directly rather than differencing
+    BacktestResult's equity curve. Dispatches on spec.family the same way
+    a second strategy family would need to; today there is exactly one.
+    """
+    if spec.family != "MOMENTUM":
+        raise ValueError(f"no signal generator for family {spec.family!r}")
+    return _sma_signal(bars, spec.fast_window, spec.slow_window)
+
+
 def run_backtest(
     pit: PointInTimeFrame,
     spec: StrategySpec,
@@ -88,7 +103,7 @@ def run_backtest(
             f"need >= {min_bars}, have {bars.height}"
         )
 
-    signaled = _sma_signal(bars, spec.fast_window, spec.slow_window).with_columns(
+    signaled = signal_for(bars, spec).with_columns(
         pl.col("close").pct_change().fill_null(0.0).alias("_bar_return"),
         pl.col("position").diff().fill_null(pl.col("position")).abs().alias("_position_change"),
     )

@@ -288,12 +288,16 @@ async def get_construction_phases(session: AsyncSession) -> dict[str, Constructi
 
 
 async def get_benchmark_curve(session: AsyncSession) -> list[dict[str, Any]]:
-    """The €1,000 buy-and-hold equity curve. Empty until Prompt 2 fills it."""
+    """The €1,000 buy-and-hold equity curve. `benchmark_equity`'s column
+    is `date` (migration 0005), not `available_at` -- this query named the
+    wrong column and silently returned [] via the except branch below on
+    every real deploy since Prompt 2 shipped, producing a flat
+    `benchmark_value` on /scoreboard/. Found and fixed as part of
+    PROMPT 5 (docs/DEFERRED.md)."""
     try:
         result = await session.execute(
             text(
-                "SELECT available_at, equity FROM benchmark_equity "
-                "ORDER BY available_at LIMIT 1000",
+                "SELECT date, equity FROM benchmark_equity ORDER BY date LIMIT 1000",
             ),
         )
         rows = result.fetchall()

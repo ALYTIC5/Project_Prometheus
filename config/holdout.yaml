@@ -1,0 +1,16 @@
+# Law 3: "the final test slice is physically separated." Versioned the
+# same way costs.yaml/universe.yaml are (record_config_snapshot), so a
+# change to this file is itself an auditable event.
+schema_version: 1
+
+# Forward-looking, not a carved-out fraction of existing history: a bar
+# is holdout if its event_time is at or after this date. This is the
+# purest definition of out-of-sample -- data that did not exist when
+# every strategy so far was designed -- and needs no invented "reserve
+# the last N%" number. It starts empty and fills as the worker ingests.
+holdout_start: 2026-09-16
+
+declared_reason: >
+  PROMPT 5 (validation and falsification). Frozen the day the holdout
+  enforcement mechanism (prometheus/validation/holdout.py, migration 0010)
+  first shipped -- no strategy has seen anything at or after this date.

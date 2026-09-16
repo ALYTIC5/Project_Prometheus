@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import (
 
 from prometheus.core.db import Decision, Experiment, Result
 from prometheus.experiments.violations import (
+    detect_holdout_repeated_access,
     detect_threshold_changed_while_pending,
     detect_universe_changed_after_results,
     record_config_snapshot,
@@ -38,17 +39,6 @@ from prometheus.experiments.violations import (
 # not imported, to avoid this test depending on violations.py's private
 # module constant.
 _UNIVERSE_CONFIG_PATH = "config/universe.yaml"
-
-
-@pytest.mark.xfail(
-    reason=(
-        "no holdout_access_log table -- validation/holdout.py not implemented yet, "
-        "PROMPTS.md PROMPT 5 (validation and falsification)"
-    ),
-    strict=True,
-)
-def test_holdout_repeated_access_detected() -> None:
-    raise NotImplementedError("validation/holdout.py not implemented yet — PROMPT 5")
 
 
 @pytest.mark.xfail(
@@ -219,3 +209,35 @@ async def test_detect_universe_changed_after_results(
     flagged_ids = {f["experiment_id"] for f in findings}
     assert before_id in flagged_ids
     assert after_id not in flagged_ids
+
+
+@pytest.mark.db
+@requires_db
+async def test_holdout_repeated_access_detected(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """validation.holdout.access_holdout() itself can never produce two
+    GRANTED rows for the same fingerprint -- it denies the second attempt
+    before recording it as granted. This detector is the independent
+    aggregate check over the same table (see violations.py's module
+    docstring), so it's tested by writing directly to holdout_access_log,
+    simulating exactly the bypass scenario the detector exists to catch."""
+    fingerprint = f"test-fp-{uuid.uuid4().hex[:16]}"
+    clean_fingerprint = f"test-fp-{uuid.uuid4().hex[:16]}"
+
+    async with factory() as session:
+        for fp in (fingerprint, fingerprint, clean_fingerprint):
+            await session.execute(
+                text(
+                    "INSERT INTO holdout_access_log (strategy_fingerprint, granted, detail) "
+                    "VALUES (:fp, true, '{}'::jsonb)"
+                ),
+                {"fp": fp},
+            )
+        await session.commit()
+
+        findings = await detect_holdout_repeated_access(session)
+
+    flagged = {f["strategy_fingerprint"] for f in findings}
+    assert fingerprint in flagged
+    assert clean_fingerprint not in flagged

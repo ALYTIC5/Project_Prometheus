@@ -31,13 +31,16 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import numpy as np
+import polars as pl
+from cpz_quant.certification.overfitting import probability_of_backtest_overfitting
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchmark_curve
 from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
 from prometheus.backtest.engine import run_backtest
-from prometheus.core.db import Decision, Experiment, Result, Strategy, get_session
+from prometheus.core.db import Decision, Experiment, Result, Strategy, ValidationResult, get_session
 from prometheus.core.ids import next_experiment_id, next_strategy_id
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
@@ -47,6 +50,12 @@ from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.generate import generate_grid
 from prometheus.strategy.spec import StrategySpec
+from prometheus.validation.decay import compute_decay
+from prometheus.validation.decision import Evidence, decide
+from prometheus.validation.metrics import compute_metrics
+from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
+from prometheus.validation.regime import classify_current_regime, regime_breakdown
+from prometheus.validation.scoring import ScoreInputs
 
 _UPDATE_STRATEGY_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
 _UNIVERSE_CONFIG_PATH = "config/universe.yaml"
@@ -218,6 +227,7 @@ async def run_one(
                         strategy_result.vs_benchmark.periods_underperforming_pct
                     ),
                     "max_relative_drawdown": strategy_result.vs_benchmark.max_relative_drawdown,
+                    "excess_sharpe": strategy_result.vs_benchmark.excess_sharpe,
                 },
             },
         )
@@ -243,6 +253,257 @@ async def run_one(
     )
     await session.commit()
     return experiment_id
+
+
+_SELECT_LATEST_EXPERIMENT_FOR_SPEC = text(
+    "SELECT id, strategy_id FROM experiments WHERE config_hash = :config_hash "
+    "ORDER BY created_at DESC LIMIT 1"
+)
+_SELECT_LATEST_VERDICT_FOR_FINGERPRINT = text(
+    "SELECT verdict FROM validation_results WHERE strategy_fingerprint = :fp "
+    "ORDER BY created_at DESC LIMIT 1"
+)
+
+
+def _pbo_n_splits(t_observations: int) -> int | None:
+    """Largest even split count <= cpz-quant's own default (16) such that
+    T >= n_splits*2 -- probability_of_backtest_overfitting's own
+    requirement, not an invented number. None when even 2 splits (the
+    smallest CSCV can do anything with) don't fit T."""
+    n_splits = min(16, t_observations // 2)
+    if n_splits % 2 != 0:
+        n_splits -= 1
+    return n_splits if n_splits >= 2 else None
+
+
+async def validate_grid(
+    session: AsyncSession, symbol: str, timeframe: str, family: str, days: int
+) -> list[str]:
+    """Re-evaluates the deterministic grid's already-run specs (each has
+    an `experiments` row from run_one, found by config_hash -- this
+    function creates no new Experiment/Strategy, it re-scores existing
+    ones as more data accumulates, matching Law 7's "evidence
+    requirements tighten as count grows") against real PBO, Deflated
+    Sharpe, decay, and regime evidence, and writes one validation_results
+    row per spec -- the table migration 0010's manifest names as what
+    flips the Oracle from SCAFFOLDING to ACTIVE.
+
+    Equity curves are re-derived fresh via run_backtest (pure and
+    deterministic -- same data/config/seed always reproduces the same
+    curve) rather than read back from Result.payload, which only ever
+    stored summary stats, never the per-bar curve PBO's CSCV needs.
+    Specs are aligned on the most recent `min(len(curve))` bars across
+    the batch -- grid entries with a larger slow_window need more warm-up
+    bars and so produce a shorter curve; the common recent tail is what
+    every spec in the batch can be compared over.
+
+    Returns the list of experiment_ids that received a fresh verdict.
+    """
+    specs = generate_grid(symbol, timeframe, family)
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+
+    cost_config, _cost_config_hash = load_cost_config()
+    cost_model = make_cost_model(cost_config)
+    pit, _data_version_hash = await load_point_in_time(session, [symbol], timeframe, start, end)
+    benchmark_result = compute_benchmark_curve(pit, [symbol], end, cost_model=cost_model)
+    bars = pit.as_of(end).filter(pl.col("symbol") == symbol).sort("available_at")
+
+    per_spec: list[tuple[StrategySpec, Any]] = []
+    for spec in specs:
+        try:
+            result = run_backtest(
+                pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
+            )
+        except ValueError:
+            continue  # not enough bars yet for this spec's slow_window
+        per_spec.append((spec, result))
+
+    if not per_spec:
+        return []
+
+    # PBO is a property of the SELECTION among trials, not of any one
+    # trial -- one value applies to every spec in this batch.
+    min_len = min(len(result.equity_curve) for _, result in per_spec)
+    n_splits = _pbo_n_splits(min_len - 1)  # -1: differencing loses one point
+    pbo_value: float | None = None
+    if n_splits is not None and len(per_spec) >= 2:
+        returns_columns = []
+        for _, result in per_spec:
+            equities = [equity for _, equity in result.equity_curve[-min_len:]]
+            returns_columns.append(
+                [equities[i] / equities[i - 1] - 1 for i in range(1, len(equities))]
+            )
+        returns_matrix = np.array(returns_columns).T  # T x N
+        pbo_result = probability_of_backtest_overfitting(returns_matrix, n_splits=n_splits)
+        pbo_value = pbo_result.pbo
+
+    # Filtered together, not two parallel lists kept in sync by
+    # convention: a metrics failure for one spec (e.g. a fold split that
+    # isn't viable for its particular expected_horizon/bar-count
+    # combination) must drop that spec, not silently misalign `per_spec`
+    # against `per_spec_metrics` or crash the whole batch -- both are
+    # real failure modes caught by actually running this against real
+    # data, not by any offline test.
+    trial_sharpes: list[float] = []
+    validated_specs: list[tuple[StrategySpec, Any, Any]] = []
+    for spec, result in per_spec:
+        try:
+            validation_metrics = compute_metrics(result.equity_curve, result.turnover, bars, spec)
+        except Exception as exc:
+            print(f"validate_grid: metrics failed for {spec.config_hash()}: {exc!r}")
+            continue
+        validated_specs.append((spec, result, validation_metrics))
+        if validation_metrics.risk is not None and validation_metrics.risk.sharpe is not None:
+            trial_sharpes.append(validation_metrics.risk.sharpe)
+
+    # >= this batch's own size: the cumulative corpus count can lag a
+    # freshly-introduced symbol's own first grid (COUNT(*) over `results`
+    # doesn't yet include this cycle's own in-flight specs).
+    n_trials_for_deflation = max(await trials_to_date(session), len(per_spec))
+    current_regime = classify_current_regime(bars)
+
+    experiment_ids: list[str] = []
+    for spec, result, validation_metrics in validated_specs:
+        row = (
+            await session.execute(
+                _SELECT_LATEST_EXPERIMENT_FOR_SPEC, {"config_hash": spec.config_hash()}
+            )
+        ).first()
+        if row is None:
+            continue  # run_one hasn't recorded this spec yet -- next cycle
+        experiment_id, strategy_id = row.id, row.strategy_id
+
+        try:
+            await _validate_one_spec(
+                session,
+                spec=spec,
+                result=result,
+                validation_metrics=validation_metrics,
+                bars=bars,
+                experiment_id=experiment_id,
+                strategy_id=strategy_id,
+                pbo_value=pbo_value,
+                trial_sharpes=trial_sharpes,
+                n_trials_for_deflation=n_trials_for_deflation,
+                current_regime=current_regime,
+            )
+        except Exception as exc:
+            # One spec's validation failing (e.g. a degenerate fold split
+            # on very short history) must not take the rest of the batch
+            # down with it; the
+            # worker's own drain_queue applies the identical isolation
+            # rule per job via fail(), this is the same principle applied
+            # per spec inside one validation pass.
+            print(f"validate_grid: skipping {spec.config_hash()}: {exc!r}")
+            continue
+        experiment_ids.append(experiment_id)
+
+    await session.commit()
+    return experiment_ids
+
+
+async def _validate_one_spec(
+    session: AsyncSession,
+    *,
+    spec: StrategySpec,
+    result: Any,
+    validation_metrics: Any,
+    bars: pl.DataFrame,
+    experiment_id: str,
+    strategy_id: str | None,
+    pbo_value: float | None,
+    trial_sharpes: list[float],
+    n_trials_for_deflation: int,
+    current_regime: str,
+) -> None:
+    decay_profile = compute_decay(bars, spec)
+    strategy_equity_values = [equity for _, equity in result.equity_curve]
+
+    risk = validation_metrics.risk
+    dsr_value = None
+    if risk is not None and risk.sharpe is not None and len(strategy_equity_values) >= 2:
+        skewness = risk.skew if risk.skew is not None else 0.0
+        excess_kurtosis = risk.excess_kurtosis if risk.excess_kurtosis is not None else 0.0
+        dsr_result = deflated_sharpe_ratio(
+            trial_sharpes_for_variance=trial_sharpes,
+            this_trial_sharpe=risk.sharpe,
+            n_trials_for_deflation=n_trials_for_deflation,
+            n_observations=len(strategy_equity_values),
+            skewness=skewness,
+            kurtosis=excess_kurtosis + 3.0,
+        )
+        dsr_value = dsr_result.deflated_sharpe
+
+    regime_result = regime_breakdown(strategy_equity_values)
+    consistent_across_regimes = (
+        regime_result.consistent_across_regimes if regime_result is not None else None
+    )
+
+    score_inputs = ScoreInputs(
+        excess_return=result.vs_benchmark.excess_return,
+        excess_sharpe=result.vs_benchmark.excess_sharpe,
+        pbo=pbo_value,
+        deflated_sharpe=dsr_value,
+        has_power_at_claimed_horizon=decay_profile.has_power_at_claimed_horizon,
+    )
+
+    prior = (
+        await session.execute(_SELECT_LATEST_VERDICT_FOR_FINGERPRINT, {"fp": spec.config_hash()})
+    ).first()
+    evidence = Evidence(
+        score_inputs=score_inputs,
+        turnover=result.turnover,
+        consistent_across_regimes=consistent_across_regimes,
+        previous_verdict=prior.verdict if prior is not None else None,
+    )
+    decision_result = decide(evidence)
+
+    metrics_payload = {
+        "risk": risk.to_dict() if risk is not None else None,
+        "turnover": validation_metrics.turnover,
+        "hit_rate": validation_metrics.hit_rate,
+        "information_coefficient": validation_metrics.information_coefficient,
+        "icir": validation_metrics.icir,
+        "decay": {
+            "ic_by_horizon": decay_profile.ic_by_horizon,
+            "claimed_horizon": decay_profile.claimed_horizon,
+            "claimed_horizon_ic": decay_profile.claimed_horizon_ic,
+            "claimed_horizon_p_value": decay_profile.claimed_horizon_p_value,
+            "has_power_at_claimed_horizon": decay_profile.has_power_at_claimed_horizon,
+        },
+        "regime": {
+            "current": current_regime,
+            "consistent_across_regimes": consistent_across_regimes,
+        },
+        "excess_return": result.vs_benchmark.excess_return,
+        "excess_sharpe": result.vs_benchmark.excess_sharpe,
+    }
+
+    session.add(
+        ValidationResult(
+            experiment_id=experiment_id,
+            strategy_fingerprint=spec.config_hash(),
+            verdict=decision_result.verdict.value,
+            score=decision_result.score,
+            reason_codes=decision_result.reason_codes,
+            pbo=pbo_value,
+            deflated_sharpe=dsr_value,
+            metrics=metrics_payload,
+        )
+    )
+    session.add(
+        Decision(
+            experiment_id=experiment_id,
+            decision={
+                "decision": decision_result.verdict.value,
+                "reason": "validation",
+                "reason_codes": decision_result.reason_codes,
+            },
+        )
+    )
+    if strategy_id is not None and decision_result.verdict.value == "PROMOTE":
+        await session.execute(_UPDATE_STRATEGY_STATUS, {"status": "VALIDATED", "id": strategy_id})
 
 
 _RUN_BACKTEST_KIND = "run_backtest"

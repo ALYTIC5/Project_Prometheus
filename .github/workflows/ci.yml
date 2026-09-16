@@ -15,7 +15,7 @@ jobs:
           python-version: "3.11"
       - run: pip install -e ".[dev]"
       - run: ruff check .
-      - run: mypy prometheus/core/
+      - run: mypy prometheus/core/ prometheus/validation/
       # `db`-marked tests need the Postgres service the db-tests job below
       # provides; this job has none, so they're excluded rather than left
       # to fail. Non-law, non-db tests are real and collected now, so a
@@ -43,6 +43,13 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
       TEST_DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
+      # migration 0010's restricted holdout role (prometheus/validation/
+      # holdout.py). Same postgres service/user as above -- the CI
+      # postgres image's bootstrap user is a real superuser, same as
+      # Railway's, so CREATE ROLE works identically here.
+      HOLDOUT_DB_ROLE: prometheus_holdout
+      HOLDOUT_DB_PASSWORD: ci-holdout-password
+      HOLDOUT_DATABASE_URL: postgresql+asyncpg://prometheus_holdout:ci-holdout-password@localhost:5432/prometheus_test
       MAX_POSITION_PCT: "11"
       MAX_GROSS_EXPOSURE_PCT: "22"
       MAX_LEVERAGE: "3"
@@ -81,6 +88,12 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
       TEST_DATABASE_URL: postgresql+asyncpg://prometheus:prometheus@localhost:5432/prometheus_test
+      # Law 3 (tests/laws/test_holdout_sacred.py) needs a real, separate
+      # login role to prove it's genuinely restricted -- see migration
+      # 0010's docstring.
+      HOLDOUT_DB_ROLE: prometheus_holdout
+      HOLDOUT_DB_PASSWORD: ci-holdout-password
+      HOLDOUT_DATABASE_URL: postgresql+asyncpg://prometheus_holdout:ci-holdout-password@localhost:5432/prometheus_test
       MAX_POSITION_PCT: "11"
       MAX_GROSS_EXPOSURE_PCT: "22"
       MAX_LEVERAGE: "3"

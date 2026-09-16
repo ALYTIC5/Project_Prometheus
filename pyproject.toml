@@ -19,6 +19,14 @@ dependencies = [
     "ccxt==4.5.77",
     "fastapi==0.115.0",
     "uvicorn==0.30.6",
+    # cpz-quant needs both; see docs/DEPENDENCIES.md for the real cost
+    # accounting (scipy is genuinely new weight in the production image).
+    # 2.4.6 is the newest numpy that still supports requires-python's
+    # floor (py3.11) -- 2.5.x requires python>=3.12 and breaks CI. Also
+    # satisfies scipy==1.16.3's own "numpy<2.6,>=1.25.2" bound.
+    "numpy==2.4.6",
+    "scipy==1.16.3",
+    "cpz-quant==1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -27,9 +35,6 @@ dependencies = [
 # main dependencies and out of the production container.
 art = [
     "pillow==12.3.0",
-    # 2.4.6 is the newest numpy that still supports requires-python's
-    # floor (py3.11) -- 2.5.x requires python>=3.12 and breaks CI.
-    "numpy==2.4.6",
 ]
 dev = [
     "ruff==0.6.9",
@@ -74,6 +79,12 @@ strict = true
 # than a blanket ignore_missing_imports.
 [[tool.mypy.overrides]]
 module = ["ccxt"]
+ignore_missing_imports = true
+
+# scipy ships no py.typed marker either; prometheus.validation.metrics
+# imports scipy.stats.spearmanr directly (real correlation + p-value).
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

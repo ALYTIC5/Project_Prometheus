@@ -41,7 +41,13 @@ def run_migrations_online() -> None:
     configuration["sqlalchemy.url"] = _sync_database_url()
     connectable = engine_from_config(configuration, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # include_schemas: migration 0010 adds a `holdout` schema (raw DDL,
+        # not an autogenerate target today, since every migration here is
+        # hand-written) -- set so a future autogenerate run sees it instead
+        # of proposing to drop it as unknown.
+        context.configure(
+            connection=connection, target_metadata=target_metadata, include_schemas=True
+        )
         with context.begin_transaction():
             context.run_migrations()
 

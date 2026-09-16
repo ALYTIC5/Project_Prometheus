@@ -7,7 +7,12 @@ Each cycle: (1) an idempotent ingestion catch-up for a short recent
 window, (2) enqueues the deterministic grid for every symbol in the real
 universe (idempotent by config_hash+days -- a symbol's grid runs ONCE,
 not every cycle, see experiments.runner.enqueue_grid), (3) drains
-whatever's pending.
+whatever's pending, (4) re-validates every symbol's grid against real
+PBO/DSR/decay/regime evidence (PROMPT 5's Oracle) -- unlike (2), this
+step is NOT idempotent-by-design: it deliberately re-scores existing
+experiments every cycle, since more accumulated data and a larger
+cumulative trial count (validation.multiple_testing.trials_to_date) can
+change a verdict even when nothing about the strategy itself changed.
 
 What this does NOT do, and why: it does not generate new strategies each
 cycle -- research/mutations.py (Prompt 7's evolution loop) doesn't exist
@@ -23,7 +28,7 @@ import asyncio
 from prometheus.core.db import get_session
 from prometheus.data.ingestion import backfill, load_universe_symbols
 from prometheus.experiments.queue import get_queue_settings, reap_stale_claims
-from prometheus.experiments.runner import drain_queue, enqueue_grid
+from prometheus.experiments.runner import drain_queue, enqueue_grid, validate_grid
 
 # Same window as the grid's own lookback, not a short "catch-up" one --
 # ingestion.ingest_symbol makes exactly ONE fetch_ohlcv(..., limit=1000)
@@ -56,7 +61,8 @@ async def run_once() -> list[str]:
 
     await backfill(_INGEST_CATCHUP_DAYS)
 
-    for symbol in load_universe_symbols():
+    symbols = load_universe_symbols()
+    for symbol in symbols:
         await enqueue_grid(
             symbol,
             _TIMEFRAME,
@@ -68,12 +74,27 @@ async def run_once() -> list[str]:
             max_attempts=3,
         )
 
-    return await drain_queue()
+    ran = await drain_queue()
+
+    # The Oracle (PROMPTS.md PROMPT 5): re-scores every symbol's grid
+    # against real PBO/DSR/decay/regime evidence and writes
+    # validation_results -- the table that flips the Oracle from
+    # SCAFFOLDING to ACTIVE. Runs after drain_queue so a symbol's grid
+    # introduced THIS cycle already has real `experiments` rows to attach
+    # a verdict to, not just on the cycle after.
+    validated: list[str] = []
+    async with get_session() as session:
+        for symbol in symbols:
+            validated.extend(
+                await validate_grid(session, symbol, _TIMEFRAME, _FAMILY, _GRID_LOOKBACK_DAYS)
+            )
+
+    return ran + validated
 
 
 def main() -> None:
     ran = asyncio.run(run_once())
-    print(f"worker: drained {len(ran)} experiment(s): {ran}")
+    print(f"worker: drained/validated {len(ran)} experiment(s): {ran}")
 
 
 if __name__ == "__main__":

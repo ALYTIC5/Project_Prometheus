@@ -3,24 +3,22 @@ window per symbol, held flat, the SAME cost model any strategy backtest
 uses -- Law 8's explicit requirement that the benchmark never gets an
 unfair cost advantage.
 
-No Sharpe here, deliberately -- backtest/engine.py's own docstring already
-establishes "no Sharpe/PBO/DSR anywhere, that's cpz-quant's job" as this
-codebase's precedent (CLAUDE.md forbids hand-rolling it), and computing
-one just for the benchmark would contradict that and need re-deriving once
-cpz-quant lands in Prompt 5. max_drawdown_pct IS included -- it's
-arithmetic (the same peak-to-trough walk run_backtest already does), not
-a statistical estimator, so there's nothing to defer.
+max_drawdown_pct is arithmetic (the same peak-to-trough walk run_backtest
+already does), not a statistical estimator, so it was never deferred.
 
-VsBenchmark (PROMPT 3) is the honest subset of what PROMPTS.md asks for:
-excess_return, periods_underperforming_pct, max_relative_drawdown are all
-plain arithmetic over the two equity curves. excess_sharpe is NOT included
-(same Sharpe precedent above). information_ratio/tracking_error are ALSO
-deliberately not included here -- computing them correctly needs the
-strategy curve (keyed per-bar, any timeframe) and the benchmark curve
-(keyed per-date, coarser) aligned onto a shared period grid; doing that
-carelessly late in an implementation pass is exactly how a subtle bug
-gets into money-math code, so it's deferred to a dedicated pass rather
-than rushed (see docs/DEFERRED.md).
+VsBenchmark: excess_return, periods_underperforming_pct,
+max_relative_drawdown are plain arithmetic over the two equity curves.
+excess_sharpe (PROMPT 5) uses cpz-quant's compute_risk_analytics --
+CLAUDE.md forbids hand-rolling Sharpe, and now that cpz-quant is actually
+installed there is no reason left to defer it (docs/DEFERRED.md's old
+entry for this is resolved). It is Optional: compute_risk_analytics
+returns None below 30 aligned observations, and an honestly-absent excess
+Sharpe on a short window beats a fabricated one. information_ratio/
+tracking_error are STILL deliberately not included -- computing them
+correctly needs the strategy curve (keyed per-bar, any timeframe) and the
+benchmark curve (keyed per-date, coarser) aligned onto a shared period
+grid, and cpz-quant doesn't do that alignment for us either; still
+deferred to a dedicated pass rather than rushed (see docs/DEFERRED.md).
 """
 from __future__ import annotations
 
@@ -28,6 +26,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 import polars as pl
+from cpz_quant.certification.analytics import compute_risk_analytics
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +56,9 @@ class VsBenchmark:
     excess_return: float
     periods_underperforming_pct: float
     max_relative_drawdown: float
+    # None below cpz-quant's own 30-observation floor -- honestly absent,
+    # not a fabricated 0.0, on a strategy that hasn't run long enough yet.
+    excess_sharpe: float | None
 
 
 def compute_vs_benchmark(
@@ -101,10 +103,24 @@ def compute_vs_benchmark(
             underperforming += 1
     periods_underperforming_pct = (underperforming / compared * 100) if compared else 0.0
 
+    strategy_series = [strategy_by_date[d] for d in shared_dates]
+    benchmark_series = [benchmark_by_date[d] for d in shared_dates]
+    strategy_analytics = compute_risk_analytics(strategy_series)
+    benchmark_analytics = compute_risk_analytics(benchmark_series)
+    excess_sharpe = (
+        strategy_analytics.sharpe - benchmark_analytics.sharpe
+        if strategy_analytics
+        and benchmark_analytics
+        and strategy_analytics.sharpe is not None
+        and benchmark_analytics.sharpe is not None
+        else None
+    )
+
     return VsBenchmark(
         excess_return=excess_return,
         periods_underperforming_pct=periods_underperforming_pct,
         max_relative_drawdown=strategy_max_drawdown_pct - benchmark.max_drawdown_pct,
+        excess_sharpe=excess_sharpe,
     )
 
 

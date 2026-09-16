@@ -242,8 +242,52 @@ class ResearchViolation(Base):
     )
 
 
+class HoldoutAccessLog(Base):
+    """Law 3's audit trail: one row per attempted access to the holdout
+    vault, granted or not. Covered by Law 6's append-only trigger
+    (migration 0010) -- an audit log that can be edited after the fact is
+    not an audit log."""
+
+    __tablename__ = "holdout_access_log"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id"), nullable=True
+    )
+    strategy_fingerprint: Mapped[str] = mapped_column(sa.String(64))
+    granted: Mapped[bool] = mapped_column(sa.Boolean)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    accessed_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ValidationResult(Base):
+    """One verdict per validated strategy. Row COUNT here is what flips
+    the Oracle from SCAFFOLDING to ACTIVE (world/construction.py's
+    manifest already names this table as oracle.activates_on) -- no
+    world/projection.py change needed for that half of PROMPT 5."""
+
+    __tablename__ = "validation_results"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id"))
+    strategy_fingerprint: Mapped[str] = mapped_column(sa.String(64))
+    verdict: Mapped[str] = mapped_column(sa.String(32))
+    score: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    reason_codes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    pbo: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    deflated_sharpe: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_holdout_engine: AsyncEngine | None = None
+_holdout_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -268,4 +312,31 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
     async with get_session_factory()() as session:
+        yield session
+
+
+def get_holdout_engine() -> AsyncEngine:
+    """Same lazy pattern as get_engine(), a genuinely separate engine bound
+    to HOLDOUT_DATABASE_URL -- the restricted, non-superuser role migration
+    0010 creates. prometheus.validation.holdout.access_holdout() is the
+    only caller; nothing else in the codebase should ever need this."""
+    global _holdout_engine
+    if _holdout_engine is None:
+        holdout_url = os.environ["HOLDOUT_DATABASE_URL"]
+        _holdout_engine = create_async_engine(holdout_url, pool_pre_ping=True)
+    return _holdout_engine
+
+
+def get_holdout_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _holdout_session_factory
+    if _holdout_session_factory is None:
+        _holdout_session_factory = async_sessionmaker(
+            get_holdout_engine(), expire_on_commit=False
+        )
+    return _holdout_session_factory
+
+
+@asynccontextmanager
+async def get_holdout_session() -> AsyncIterator[AsyncSession]:
+    async with get_holdout_session_factory()() as session:
         yield session

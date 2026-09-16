@@ -109,3 +109,64 @@ and update the entry's status when it does.
   function itself is still not written; `xfail(strict=True)` stub
   unchanged. **Trigger:** whoever picks up Law 7 detection completeness
   next — this one now only needs the query, not new infrastructure.
+
+## PROMPT 5 (validation and falsification)
+
+- **Holdout role vs. app superuser (Law 3's real limit)** — migration
+  0010 creates a genuinely restricted, non-superuser `HOLDOUT_DB_ROLE`,
+  SELECT-only on the `holdout` schema, and `validation/holdout.py`'s
+  `access_holdout()` is the only application code path that ever
+  authenticates as it. But Railway provisions this app's OWN database
+  user (`prometheus`) as a Postgres SUPERUSER, which bypasses every
+  GRANT/REVOKE — confirmed by querying `pg_roles` against the live
+  deployment before writing the migration, not assumed. So today's real
+  guarantee is: the restricted role is genuinely restricted, and
+  `access_holdout()` is the only place that uses it. What is NOT true:
+  nothing stops a *different*, buggy code path from using the app's own
+  superuser DATABASE_URL to query `holdout.ohlcv_bars` directly — Postgres
+  itself cannot prevent that for a superuser connection. **Trigger:**
+  migrating the app's own DATABASE_URL off superuser to a real
+  least-privilege role — a separate, higher-risk infra change touching
+  the credential both live Railway services authenticate with today; the
+  user explicitly chose not to do this in the same pass as this plan's
+  own risk/benefit tradeoff.
+- **`validation/splits.py`'s `derive_folds` not wired into a per-spec
+  walk-forward re-backtest loop** — the function itself is real, tested,
+  and used for real (metrics.py's `information_coefficient_ratio` slices
+  IC per fold to compute ICIR). What PROMPTS.md's fuller framing implies
+  — re-running `run_backtest` on each fold's held-out TEST window to get
+  genuinely repeated out-of-sample performance draws per spec, not just
+  per-fold IC — is not built. That would multiply `validate_grid`'s
+  compute cost by the fold count per spec and needs its own careful
+  design (mapping bar-index folds back to real timestamps for
+  `load_point_in_time`). **Trigger:** if PBO/DSR alone prove insufficient
+  evidence in practice, or a dedicated pass has budget for the added
+  per-cycle compute.
+- **`validation/regime.py`'s `classify_current_regime` not wired into
+  `world/projection.py`'s `ClimateState`** — deliberate PROMPT 5 scope
+  decision (user chose "validation layer + Oracle ACTIVE, climate after"
+  over "everything including live climate"). The function is real,
+  tested, and returns the exact 7-value uppercase enum
+  `frontend/src/mapping/stateToVisual.ts` already expects — wiring it in
+  is purely a `projection.py` change (call it inside `build_world_state`,
+  where `row_counts`/`benchmark_curve` are already in scope) plus removing
+  `ClimateState()`'s hardcoded empty default. **Trigger:** a focused
+  follow-up pass, per the plan approved for this prompt.
+- **`Verdict.RETIRE` structurally unreachable today** — `decision.py`'s
+  `decide()` only returns RETIRE when `evidence.previous_verdict ==
+  "PROMOTE"` and the strategy has since fallen WORSE_THAN_HOLDING. No
+  strategy has ever been PROMOTEd yet (this is the first pass validation
+  has ever run), so this branch is real code with no current caller that
+  reaches it — same "empty exactly when nothing is actually claimed,
+  never fabricated" rule `world/projection.py` already documents
+  elsewhere. **Trigger:** nothing to do; it activates itself the first
+  time a real PROMOTE later regresses.
+- **DSR/PSR: hand-rolled, not cpz-quant** — not really a deferral (the
+  work is done, see `validation/multiple_testing.py`), but recorded here
+  too since it's the one place PROMPT 5's own text ("use cpz-quant for
+  ... Deflated Sharpe") is not literally followed. cpz-quant 1.1.0's OSS
+  package does not compute DSR/PSR at all — verified by reading its
+  source before writing any code against it (`docs/DEPENDENCIES.md`'s
+  cpz-quant entry has the full finding). **Trigger:** none expected;
+  revisit only if a future cpz-quant release actually ships the
+  computation cpz-ai's proprietary SDK currently reserves.

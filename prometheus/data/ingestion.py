@@ -23,9 +23,15 @@ from prometheus.core.db import get_session
 from prometheus.data.quality import run_quality_checks
 from prometheus.data.universe import sync_from_yaml
 from prometheus.data.versioning import record_data_version
+from prometheus.validation.holdout import load_holdout_config
 
 _TIMEFRAMES = ("1d", "4h")
 _INGESTION_LAG = timedelta(minutes=5)
+
+# Loaded once at import: the holdout freeze date does not change mid-process,
+# and every other versioned-config load in this repo (costs.py's apply_cost,
+# for instance) is bound once at import time the same way.
+_HOLDOUT_CONFIG, _HOLDOUT_CONFIG_HASH = load_holdout_config()
 
 # `expanding=True` lets SQLAlchemy safely bind a Python list against an
 # IN clause — the plain-string `ANY(:symbols)` form does not reliably
@@ -59,6 +65,21 @@ _INSERT_BAR = text(
         (:symbol, :timeframe, :event_time, :available_at, now(), :source, :revision,
          :open, :high, :low, :close, :volume)
     ON CONFLICT ON CONSTRAINT uq_ohlcv_bar_revision DO NOTHING
+    """
+)
+
+# Law 3: a bar at or after config/holdout.yaml's holdout_start never lands
+# in the main ohlcv_bars table at all -- it is physically separated at
+# ingestion time, not filtered out later by feature code's discipline.
+_INSERT_HOLDOUT_BAR = text(
+    """
+    INSERT INTO holdout.ohlcv_bars
+        (symbol, timeframe, event_time, available_at, ingested_at, source, revision,
+         open, high, low, close, volume)
+    VALUES
+        (:symbol, :timeframe, :event_time, :available_at, now(), :source, :revision,
+         :open, :high, :low, :close, :volume)
+    ON CONFLICT ON CONSTRAINT uq_holdout_ohlcv_bar_revision DO NOTHING
     """
 )
 
@@ -155,8 +176,12 @@ async def ingest_symbol(
         await session.commit()
         return
 
+    holdout_cutoff = datetime.combine(_HOLDOUT_CONFIG.holdout_start, datetime.min.time(), UTC)
     for bar in bars:
-        await session.execute(_INSERT_BAR, bar)
+        if bar["event_time"] >= holdout_cutoff:
+            await session.execute(_INSERT_HOLDOUT_BAR, bar)
+        else:
+            await session.execute(_INSERT_BAR, bar)
     await session.execute(
         _UPDATE_RAW_STATUS, {"status": "normalized", "quality_issues": None, "id": raw_id}
     )
@@ -199,6 +224,13 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
         # has nothing to reconstruct from. Runs first so a quality
         # quarantine further down never skips it.
         await sync_from_yaml(session)
+        # Same versioned-config treatment costs.yaml/universe.yaml get --
+        # a change to holdout_start is itself an auditable config_snapshots
+        # row, not a silent shift in what "holdout" means.
+        from prometheus.experiments.violations import record_config_snapshot
+        from prometheus.validation.holdout import DEFAULT_HOLDOUT_CONFIG_PATH
+
+        await record_config_snapshot(session, DEFAULT_HOLDOUT_CONFIG_PATH)
         await session.commit()
 
         for symbol in symbols:

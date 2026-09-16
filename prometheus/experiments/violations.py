@@ -3,8 +3,7 @@ experiment that re-evaluates it across the entire historical experiment
 corpus. Changing a threshold while a strategy is pending is a
 RESEARCH_VIOLATION."
 
-Of the four violation types PROMPTS.md names for PROMPT 4, two have real
-substrate today and two do not:
+Of the four violation types PROMPTS.md names, three now have real substrate:
 
 - THRESHOLD_CHANGED_WHILE_PENDING is real: config.ResearchPolicy loads are
   versioned into policy_versions on every load (core/config.py), so "a
@@ -13,17 +12,20 @@ substrate today and two do not:
   config_snapshots table: record_config_snapshot(), called from
   experiments.runner.run_one, gives universe.yaml the same versioned-load
   treatment ResearchPolicy already has.
-- HOLDOUT_REPEATED_ACCESS has no substrate -- there is no holdout_access_
-  log table (that is validation/holdout.py, PROMPTS.md PROMPT 5).
-- COST_CONFIG_LOOSENED has no substrate -- backtest/costs.py is hardcoded
-  module constants, not a versioned config/costs.yaml (PROMPTS.md PROMPT 3
-  specified one; it was never built).
-
-Detecting the second two today would mean querying a table that doesn't
-exist or comparing versions of a file that isn't versioned -- fabricating
-a signal is worse than reporting none, so both are declared as enum
-members with no detector function, matching tests/laws/test_holdout_
-sacred.py's existing xfail(strict=True) pattern for the same gap.
+- HOLDOUT_REPEATED_ACCESS is real as of migration 0010's
+  holdout_access_log table (PROMPT 5): validation.holdout.access_holdout()
+  records every attempt and calls record_violations() itself, inline, the
+  moment it denies a second access -- detect_holdout_repeated_access()
+  below is a second, independent check over the same table (an aggregate
+  scan, not the deny-time write), catching anomalies inline recording
+  would miss if it were ever bypassed.
+- COST_CONFIG_LOOSENED still has no substrate -- backtest/costs.py's
+  config/costs.yaml is versioned via config_snapshots (same mechanism as
+  universe.yaml), but no detector compares "did the loosest bound get
+  looser" across snapshots yet. Declared as an enum member with no
+  detector function, matching tests/laws/test_holdout_sacred.py's
+  original xfail(strict=True) pattern for the same kind of gap
+  (docs/DEFERRED.md).
 """
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ _UNIVERSE_CONFIG_PATH = "config/universe.yaml"
 class ResearchViolation(str, Enum):
     THRESHOLD_CHANGED_WHILE_PENDING = "THRESHOLD_CHANGED_WHILE_PENDING"
     UNIVERSE_CHANGED_AFTER_RESULTS = "UNIVERSE_CHANGED_AFTER_RESULTS"
-    HOLDOUT_REPEATED_ACCESS = "HOLDOUT_REPEATED_ACCESS"  # no detector -- see module docstring
+    HOLDOUT_REPEATED_ACCESS = "HOLDOUT_REPEATED_ACCESS"
     COST_CONFIG_LOOSENED = "COST_CONFIG_LOOSENED"  # no detector -- see module docstring
 
 
@@ -128,6 +130,37 @@ async def detect_universe_changed_after_results(
             "experiment_id": row.experiment_id,
             "result_created_at": row.result_created_at,
             "latest_snapshot_at": row.recorded_at,
+        }
+        for row in result
+    ]
+
+
+_DETECT_HOLDOUT_REPEATED_ACCESS = text(
+    """
+    SELECT strategy_fingerprint, COUNT(*) AS grant_count, MIN(accessed_at) AS first_access
+      FROM holdout_access_log
+     WHERE granted = true
+     GROUP BY strategy_fingerprint
+    HAVING COUNT(*) > 1
+     ORDER BY MIN(accessed_at)
+    """
+)
+
+
+async def detect_holdout_repeated_access(session: AsyncSession) -> list[dict[str, Any]]:
+    """Every strategy fingerprint with more than one GRANTED holdout
+    access. validation.holdout.access_holdout() should make this
+    structurally impossible (it denies the second attempt before it can
+    be recorded as granted) -- this is the independent aggregate check
+    over the same table, not a duplicate of that inline enforcement, so a
+    future bug that bypasses access_holdout() and writes to
+    holdout_access_log directly still gets caught by a scan."""
+    result = await session.execute(_DETECT_HOLDOUT_REPEATED_ACCESS)
+    return [
+        {
+            "strategy_fingerprint": row.strategy_fingerprint,
+            "grant_count": row.grant_count,
+            "first_access": row.first_access,
         }
         for row in result
     ]
