@@ -4,6 +4,7 @@ INSERT ... ON CONFLICT DO NOTHING against ohlcv_bars' unique
 duplicates. Rate-limit aware via ccxt's own throttling. Writes raw
 responses to raw_ingest before any normalisation.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -119,7 +120,7 @@ async def ingest_symbol(
     symbol: str,
     timeframe: str,
     since: datetime,
-    source: str = "binance",
+    source: str = "binanceus",
 ) -> None:
     since_ms = int(since.timestamp() * 1000)
     raw_rows = exchange.fetch_ohlcv(symbol, timeframe, since=since_ms, limit=1000)
@@ -187,7 +188,7 @@ async def _load_bars_for_versioning(
 async def backfill(days: int, symbols: list[str] | None = None) -> None:
     import ccxt
 
-    exchange = ccxt.binance()
+    exchange = ccxt.binanceus()
     exchange.enableRateLimit = True
     symbols = symbols or load_universe_symbols()
     since = datetime.now(UTC) - timedelta(days=days)
@@ -223,7 +224,7 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
                 frame,
                 date_range_start=since.date(),
                 date_range_end=datetime.now(UTC).date(),
-                source_versions={"binance": "ccxt/" + ccxt.__version__},
+                source_versions={"binanceus": "ccxt/" + ccxt.__version__},
             )
             await session.commit()
 
