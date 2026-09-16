@@ -162,6 +162,65 @@ class ConfigSnapshot(Base):
     )
 
 
+class Job(Base):
+    """Deliberately mutable -- same exemption Strategy and BenchmarkEquity
+    document above. status/attempts/progress_pct/claimed_by/heartbeat_at
+    are current execution state, not a history log, so migration 0007
+    does NOT add this table to migration 0003's append-only trigger set.
+    The permanent record of a job that exhausted retries is
+    JobDeadLetter, which prometheus.experiments.queue never UPDATEs.
+    """
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(sa.String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(sa.String(64))
+    status: Mapped[str] = mapped_column(sa.String(16), default="pending")
+    priority: Mapped[int] = mapped_column(sa.Integer)
+    expected_information_value: Mapped[float] = mapped_column(sa.Float)
+    estimated_cost: Mapped[float] = mapped_column(sa.Float)
+    attempts: Mapped[int] = mapped_column(sa.Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(sa.Integer)
+    run_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+    claimed_by: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    agent_role: Mapped[str] = mapped_column(sa.String(16))
+    current_stage: Mapped[str] = mapped_column(sa.String(16))
+    next_stage: Mapped[str] = mapped_column(sa.String(16))
+    progress_pct: Mapped[float] = mapped_column(sa.Float, default=0.0)
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id"), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class JobDeadLetter(Base):
+    __tablename__ = "jobs_dead_letter"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(sa.String(24))
+    kind: Mapped[str] = mapped_column(sa.String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    idempotency_key: Mapped[str] = mapped_column(sa.String(64))
+    attempts: Mapped[int] = mapped_column(sa.Integer)
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id"), nullable=True
+    )
+    last_error: Mapped[str] = mapped_column(Text)
+    died_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
