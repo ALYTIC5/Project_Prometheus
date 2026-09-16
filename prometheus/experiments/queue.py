@@ -24,7 +24,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.core.config import QueueSettings
@@ -61,6 +62,10 @@ class JobOutcome(str, Enum):
     NOT_CLAIMED = "NOT_CLAIMED"  # this worker no longer owns the job; no-op
 
 
+# asyncpg needs an explicit JSONB bind type for a raw text() query --
+# unlike the ORM path (core.db.Job etc.), a bare :payload bound to a dict
+# has no column type to adapt against and asyncpg raises DataError.
+# bindparams(type_=JSONB) is what carries that type through.
 _INSERT_JOB = text(
     """
     INSERT INTO jobs (
@@ -76,7 +81,7 @@ _INSERT_JOB = text(
     ON CONFLICT (idempotency_key) DO NOTHING
     RETURNING id
     """
-)
+).bindparams(bindparam("payload", type_=JSONB))
 _SELECT_BY_IDEMPOTENCY_KEY = text("SELECT id FROM jobs WHERE idempotency_key = :idempotency_key")
 
 

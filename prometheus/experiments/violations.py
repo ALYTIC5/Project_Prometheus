@@ -32,7 +32,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _UNIVERSE_CONFIG_PATH = "config/universe.yaml"
@@ -132,12 +133,15 @@ async def detect_universe_changed_after_results(
     ]
 
 
+# bindparams(type_=JSONB): a raw text() query has no column type to adapt
+# a dict bind value against, and asyncpg raises DataError without it --
+# same reasoning as experiments.queue's _INSERT_JOB.
 _INSERT_VIOLATION = text(
     """
     INSERT INTO research_violations (violation_type, experiment_id, detail)
     VALUES (:violation_type, :experiment_id, :detail)
     """
-)
+).bindparams(bindparam("detail", type_=JSONB))
 
 
 async def record_violations(
