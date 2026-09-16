@@ -40,10 +40,12 @@ from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
 from prometheus.experiments.failure import classify_exception, classify_result
+from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.generate import generate_grid
 from prometheus.strategy.spec import StrategySpec
 
 _UPDATE_STRATEGY_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
+_UNIVERSE_CONFIG_PATH = "config/universe.yaml"
 
 
 def _build_experiment(
@@ -94,6 +96,10 @@ async def run_one(
     Raises (never fabricates a result) if there isn't enough real data;
     the failure is still recorded, classified INSUFFICIENT_DATA, before
     re-raising -- see the except block below."""
+    # Substrate for violations.detect_universe_changed_after_results --
+    # a no-op row if the file's content hash was already recorded.
+    await record_config_snapshot(session, _UNIVERSE_CONFIG_PATH)
+
     pit, data_version_hash = await load_point_in_time(
         session, [spec.symbol], spec.timeframe, start, end
     )

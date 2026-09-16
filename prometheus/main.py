@@ -25,6 +25,7 @@ from prometheus.api.routes import (
     health_router,
     scoreboard_router,
     strategies_router,
+    violations_router,
     world_router,
 )
 from prometheus.api.routes.world import start_background_updater
@@ -92,6 +93,7 @@ app.include_router(scoreboard_router)
 app.include_router(buildings_router)
 app.include_router(strategies_router)
 app.include_router(experiments_router)
+app.include_router(violations_router)
 
 
 @app.get("/api/info", tags=["meta"])

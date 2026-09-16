@@ -221,6 +221,27 @@ class JobDeadLetter(Base):
     )
 
 
+class ResearchViolation(Base):
+    """A Law 7 finding. INSERT-only by convention -- experiments.violations
+    never UPDATEs or DELETEs a row here -- but not added to migration
+    0003's trigger set, which names exactly experiments/results/decisions;
+    see migration 0008 for why extending that list quietly would itself
+    be the kind of thing Law 7 is suspicious of.
+    """
+
+    __tablename__ = "research_violations"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    violation_type: Mapped[str] = mapped_column(sa.String(64))
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id"), nullable=True
+    )
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    detected_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
