@@ -160,6 +160,23 @@ class PopulationFixture:
 async def population(session_factory: async_sessionmaker[AsyncSession]) -> PopulationFixture:
     ids: dict[str, str] = {}
     experiment_year = next(_TEST_EXPERIMENT_YEAR)
+    # Same collision class as the experiment year above, one layer down:
+    # every test's "validated_high" scores exactly 0.9, "champion" exactly
+    # 0.5, etc. -- identical literals across every independent test
+    # function using this fixture. select_for_cross_breeding's real query
+    # (research/population.py) is `ORDER BY ls.score DESC` with no
+    # secondary tiebreak, so once two different tests' same-family rows
+    # tie exactly, which one sorts first is Postgres's arbitrary choice,
+    # not this test's own fixture rows -- a real assertion failure CI
+    # caught (`assert a.strategy_id == population.ids["validated_high"]`
+    # got an EARLIER test's MOMENTUM row instead of this test's own).
+    # A monotonically increasing per-test epsilon, tiny enough to never
+    # change intended relative ordering WITHIN one test's own five scores
+    # (0.9/0.8/0.5/0.3/0.1 are ~1e5 times further apart than this), makes
+    # each test's own rows strictly outscore every earlier test's
+    # identical nominal scores -- exactly what "this test's own fixture
+    # rows are the top scorers" already assumed.
+    score_offset = (experiment_year - 9000) * 1e-6
     async with session_factory() as session:
 
         async def insert(
@@ -188,7 +205,7 @@ async def population(session_factory: async_sessionmaker[AsyncSession]) -> Popul
                         experiment_id=experiment_id,
                         strategy_fingerprint=spec.config_hash(),
                         verdict="PROMOTE",
-                        score=score,
+                        score=score + score_offset,
                     )
                 )
                 await session.flush()
