@@ -47,6 +47,7 @@ export function ExperimentsSection() {
     <Section
       storageKey="experiments"
       title={`Experiments (${data?.total ?? 0})`}
+      description="Arena: every backtest run, its lineage (parent experiment, hypothesis, change_set)."
       isEmpty={!isLoading && experiments.length === 0}
       emptyLabel="Arena — no experiment has run yet (experiments/runner.py)"
     >

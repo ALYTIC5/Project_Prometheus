@@ -19,7 +19,11 @@ export function SystemsTable() {
   const buildings = data?.buildings ?? [];
 
   return (
-    <Section storageKey="systems" title={`Systems (${data?.total ?? 0}/12)`}>
+    <Section
+      storageKey="systems"
+      title={`Systems (${data?.total ?? 0}/12)`}
+      description="World construction: which of the 12 backend systems are built and online right now."
+    >
       {isLoading ? (
         <p className="py-2 font-mono text-sm text-muted-foreground">Loading…</p>
       ) : (

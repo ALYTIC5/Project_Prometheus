@@ -10,6 +10,7 @@ export function CostsSection() {
     <Section
       storageKey="costs"
       title="Costs"
+      description="Watchtower: Railway hosting usage + LLM API spend, weighed against benchmark excess."
       isEmpty
       emptyLabel="Watchtower — Railway usage estimate + LLM spend vs. benchmark excess — built in Prompt 10"
     >

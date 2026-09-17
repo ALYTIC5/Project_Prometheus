@@ -7,6 +7,10 @@ interface SectionProps {
    * S.3: "Sections are collapsible and the state persists in localStorage." */
   storageKey: string;
   title: string;
+  /** One-line explanation of what this section shows and where its data
+   * comes from -- rendered under the title, visible even collapsed, so
+   * the dashboard is legible without opening every section first. */
+  description?: string;
   /** When true, renders the honest "Awaiting: <emptyLabel>" message
    * instead of children -- S.3: "Empty sections show 'Awaiting: <system>
    * — built in Prompt N' rather than hiding. Seeing what's missing is the
@@ -36,7 +40,14 @@ function writeCollapsed(key: string, collapsed: boolean): void {
 /** One collapsible section. Every SECTION in the dashboard spec is this
  * wrapper plus a body -- title, live status, collapse persistence, and
  * the empty-state message are handled once here, not per section. */
-export function Section({ storageKey, title, isEmpty, emptyLabel, children }: SectionProps) {
+export function Section({
+  storageKey,
+  title,
+  description,
+  isEmpty,
+  emptyLabel,
+  children,
+}: SectionProps) {
   const [collapsed, setCollapsed] = useState(() => readCollapsed(storageKey));
 
   function toggle(): void {
@@ -53,9 +64,18 @@ export function Section({ storageKey, title, isEmpty, emptyLabel, children }: Se
         type="button"
         onClick={toggle}
         aria-expanded={!collapsed}
-        className="flex w-full items-center justify-between px-4 py-2 text-left font-mono text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        className="flex w-full items-center justify-between px-4 py-2 text-left hover:text-foreground"
       >
-        <span>{title}</span>
+        <span>
+          <span className="block font-mono text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            {title}
+          </span>
+          {description && (
+            <span className="mt-0.5 block font-mono text-[11px] font-normal normal-case text-muted-foreground/70">
+              {description}
+            </span>
+          )}
+        </span>
         <span aria-hidden="true">{collapsed ? '+' : '−'}</span>
       </button>
       {!collapsed && (

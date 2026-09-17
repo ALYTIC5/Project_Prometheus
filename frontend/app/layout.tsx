@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       ? { margin: 0, background: '#0a0a1a', overflow: 'hidden' as const }
       : { margin: 0 };
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body style={bodyStyle}>
         <script
           // eslint-disable-next-line react/no-danger

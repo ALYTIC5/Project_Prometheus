@@ -19,6 +19,7 @@ export function BenchmarkChart() {
     <Section
       storageKey="benchmark"
       title="Benchmark"
+      description="Monument: system equity vs. a €1,000 buy-and-hold, same cost model (Law 8)."
       isEmpty={!isLoading && points.length === 0}
       emptyLabel="Library — real historical curve lands in Prompt 2 (currently today's point only)"
     >

@@ -13,6 +13,7 @@ export function DataSection() {
     <Section
       storageKey="data"
       title="Data"
+      description="Library: point-in-time OHLCV ingestion status, bar counts, data_version, quality checks."
       isEmpty
       emptyLabel="Library — ingest timestamps, bar counts, data_version, quality checks — built in Prompt 2"
     >

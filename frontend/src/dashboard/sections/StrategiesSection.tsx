@@ -22,6 +22,7 @@ export function StrategiesSection() {
     <Section
       storageKey="strategies"
       title={`Strategies (${data?.total ?? 0})`}
+      description="Forge: every strategy ever generated, its family, and current lifecycle status."
       isEmpty={!isLoading && strategies.length === 0}
       emptyLabel="Forge — no strategy has run yet (research/generate.py --generate, or Prompt 7's evolution loop)"
     >

@@ -19,7 +19,11 @@ export function LawsSection({ world, isLoading }: LawsSectionProps) {
   const laws = world?.laws ?? [];
 
   return (
-    <Section storageKey="laws" title="Laws">
+    <Section
+      storageKey="laws"
+      title="Laws"
+      description="Watchtower: live pass/fail status of every immutable law in tests/laws/."
+    >
       {isLoading ? (
         <p className="py-2 font-mono text-sm text-muted-foreground">Loading…</p>
       ) : (

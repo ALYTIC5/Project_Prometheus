@@ -24,6 +24,7 @@ export function QueueSection() {
     <Section
       storageKey="queue"
       title="Queue"
+      description="Arena: pending/claimed/failed jobs waiting for the worker's next drain cycle."
       isEmpty={isEmpty}
       emptyLabel="Arena — no job has ever been enqueued (experiments/queue.py)"
     >
