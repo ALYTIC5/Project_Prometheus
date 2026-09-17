@@ -6,6 +6,7 @@ from __future__ import annotations
 from prometheus.validation.multiple_testing import (
     deflated_sharpe_ratio,
     expected_max_sharpe,
+    minimum_track_record_length,
     probabilistic_sharpe_ratio,
 )
 
@@ -81,3 +82,51 @@ def test_deflated_sharpe_none_with_no_trial_history() -> None:
     )
     assert result.deflated_sharpe is None
     assert result.expected_max_sharpe_null is None
+
+
+def test_minimum_track_record_length_positive_case() -> None:
+    # SR_hat well above benchmark, mild negative skew, near-Gaussian
+    # kurtosis -- a finite, small required track record.
+    n = minimum_track_record_length(
+        sharpe_hat=1.5,
+        benchmark_sharpe=0.0,
+        skewness=-0.2,
+        kurtosis=3.2,
+        confidence=0.95,
+    )
+    assert n is not None
+    assert n >= 2
+
+
+def test_minimum_track_record_length_zero_edge_returns_none() -> None:
+    # sharpe_hat == benchmark_sharpe: no finite track record makes the
+    # observed edge distinguishable from the benchmark.
+    assert (
+        minimum_track_record_length(
+            sharpe_hat=0.5,
+            benchmark_sharpe=0.5,
+            skewness=0.0,
+            kurtosis=3.0,
+            confidence=0.95,
+        )
+        is None
+    )
+
+
+def test_minimum_track_record_length_matches_closed_form_by_hand() -> None:
+    # Bailey & Lopez de Prado's MinTRL, computed independently here to
+    # cross-check the implementation rather than trust it circularly.
+    import math
+
+    sharpe_hat, benchmark_sharpe, skew, kurt, confidence = 1.0, 0.2, 0.0, 3.0, 0.95
+    denom = 1.0 - skew * sharpe_hat + ((kurt - 1.0) / 4.0) * sharpe_hat**2
+    z = 1.6448536269514722  # Phi^-1(0.95), computed independently
+    expected = 1.0 + denom * z**2 / (sharpe_hat - benchmark_sharpe) ** 2
+    n = minimum_track_record_length(
+        sharpe_hat=sharpe_hat,
+        benchmark_sharpe=benchmark_sharpe,
+        skewness=skew,
+        kurtosis=kurt,
+        confidence=confidence,
+    )
+    assert n == math.ceil(expected)

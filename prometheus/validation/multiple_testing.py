@@ -46,6 +46,15 @@ def _phi_inv(p: float) -> float:
     return statistics.NormalDist().inv_cdf(p)
 
 
+def _psr_denominator(skewness: float, kurtosis: float, sharpe_hat: float) -> float:
+    """The PSR/MinTRL shared denominator -- Bailey & Lopez de Prado
+    (2012/2014)'s adjustment for skew and (non-excess) kurtosis. Shared
+    by probabilistic_sharpe_ratio and minimum_track_record_length so the
+    same formula is never duplicated between the two companion
+    statistics."""
+    return 1.0 - skewness * sharpe_hat + ((kurtosis - 1.0) / 4.0) * sharpe_hat**2
+
+
 def probabilistic_sharpe_ratio(
     sharpe_hat: float,
     benchmark_sharpe: float,
@@ -63,11 +72,44 @@ def probabilistic_sharpe_ratio(
     combined with a large |sharpe_hat|)."""
     if n_observations < 2:
         return None
-    denom = 1.0 - skewness * sharpe_hat + ((kurtosis - 1.0) / 4.0) * sharpe_hat**2
+    denom = _psr_denominator(skewness, kurtosis, sharpe_hat)
     if denom <= 0:
         return None
     z = (sharpe_hat - benchmark_sharpe) * math.sqrt(n_observations - 1) / math.sqrt(denom)
     return _phi(z)
+
+
+def minimum_track_record_length(
+    *,
+    sharpe_hat: float,
+    benchmark_sharpe: float,
+    skewness: float,
+    kurtosis: float,
+    confidence: float,
+) -> int | None:
+    """Bailey & Lopez de Prado's Minimum Track Record Length -- the
+    number of independent observations needed before an observed Sharpe
+    is distinguishable from benchmark_sharpe at the given confidence,
+    given the same skew/kurtosis adjustment probabilistic_sharpe_ratio
+    already applies (same paper, same _psr_denominator helper -- the
+    natural companion statistic, not a new formula family). Used by
+    paper/duration.py to answer PROMPTS.md's "observation period derived
+    from horizon and independent trade count needed for significance"
+    with a citable closed form instead of an invented number.
+
+    None if the denominator is non-positive (same degenerate case
+    probabilistic_sharpe_ratio guards against) or sharpe_hat equals
+    benchmark_sharpe (no finite track record distinguishes an edge of
+    exactly zero from the benchmark)."""
+    denom = _psr_denominator(skewness, kurtosis, sharpe_hat)
+    if denom <= 0:
+        return None
+    diff = sharpe_hat - benchmark_sharpe
+    if diff == 0:
+        return None
+    z = _phi_inv(confidence)
+    n_star = 1.0 + denom * (z**2) / (diff**2)
+    return max(2, math.ceil(n_star))
 
 
 def expected_max_sharpe(n_trials: int, sharpe_std_across_trials: float) -> float | None:
