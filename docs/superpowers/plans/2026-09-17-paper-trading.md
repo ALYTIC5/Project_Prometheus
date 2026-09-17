@@ -1137,7 +1137,7 @@ _INSERT_PAPER_ORDER = text(
 )
 
 _SELECT_OPEN_ORDERS = text(
-    "SELECT id, client_order_id, symbol FROM paper_orders WHERE status = 'SUBMITTED' AND symbol = :symbol"
+    "SELECT id, exchange_order_id, symbol FROM paper_orders WHERE status = 'SUBMITTED' AND symbol = :symbol"
 )
 
 _UPDATE_FILL = text(
@@ -1250,7 +1250,7 @@ async def poll_fills(session: AsyncSession, broker: Any, *, symbol: str) -> list
     open_rows = (await session.execute(_SELECT_OPEN_ORDERS, {"symbol": symbol})).fetchall()
     updated: list[str] = []
     for row in open_rows:
-        fetched = broker.fetch_order(symbol=symbol, exchange_order_id=row.client_order_id)
+        fetched = broker.fetch_order(symbol=symbol, exchange_order_id=row.exchange_order_id)
         if fetched.get("status") != "closed":
             continue
         await session.execute(
@@ -1267,7 +1267,7 @@ async def poll_fills(session: AsyncSession, broker: Any, *, symbol: str) -> list
     return updated
 ```
 
-Note: `FakeBroker.fetch_open_orders`/`fetch_order` in the test use keyword-only calls (`symbol=...`, `exchange_order_id=...`) matching `PaperBroker`'s real signature from Task 5 — `poll_fills` calls `broker.fetch_order(symbol=symbol, exchange_order_id=row.client_order_id)`, so `PaperOrder.exchange_order_id` and `client_order_id` need to be consistent about which one is used to look up on the exchange; ccxt's `fetch_order` takes the *exchange's* order id, not the client order id. Fix before merging: query by `row.exchange_order_id` (not `row.client_order_id`) in `poll_fills`'s loop, and make sure `_SELECT_OPEN_ORDERS` selects `exchange_order_id` too. Correct the query and loop body to select and use `exchange_order_id`.
+Note: `poll_fills` looks orders up on the exchange by `exchange_order_id` (ccxt's `fetch_order` takes the exchange's own order id, not the client-assigned one), which is why `_SELECT_OPEN_ORDERS` selects `exchange_order_id` rather than `client_order_id` — `FakeBroker.fetch_order` in the test above takes `exchange_order_id=...` matching `PaperBroker`'s real signature from Task 5.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1290,8 +1290,8 @@ git commit -m "feat(paper): execution.py -- idempotent order submission, fill po
 - Test: `tests/test_paper_reconciliation.py`
 
 **Interfaces:**
-- Consumes: `core.db.PaperOrder`, `core.db.PaperFinding` (Task 1); `backtest.benchmark.compute_benchmark_curve` (existing); `backtest.costs.apply_cost` (existing).
-- Produces: `reconcile_order(session, *, order_id: str) -> dict[str, float] | None` (per-order expected-vs-actual deltas: `price_delta_pct`, `qty_delta_pct`, `latency_seconds`, `cost_delta`); `check_worse_than_holding(session, *, strategy_id: str, symbol: str, paper_equity_curve: list[tuple], as_of_cutoff: datetime) -> bool` (writes a `PAPER_WORSE_THAN_HOLDING` finding and returns True if it fired).
+- Consumes: `core.db.PaperOrder`, `core.db.PaperFinding` (Task 1); `backtest.benchmark.compute_benchmark_curve` (existing); `backtest.engine.STARTING_CAPITAL` (existing); `data.loaders.load_point_in_time` (existing).
+- Produces: `reconcile_order(session, *, order_id: str) -> dict[str, float] | None` (per-order expected-vs-actual deltas: `price_delta_pct`, `qty_delta_pct`, `latency_seconds`); `compute_paper_equity_curve(session, *, strategy_id: str, current_price: float) -> list[tuple[date, float]]` (a real mark-to-market curve from actual fills — Task 9 calls this, NOT a raw notional-per-trade query, before calling the next function); `check_worse_than_holding(session, *, strategy_id: str, symbol: str, paper_equity_curve: list[tuple[date, float]], as_of_cutoff: datetime) -> bool` (writes a `PAPER_WORSE_THAN_HOLDING` finding and returns True if it fired).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1301,7 +1301,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from prometheus.paper.reconciliation import check_worse_than_holding, reconcile_order
+from prometheus.paper.reconciliation import (
+    check_worse_than_holding,
+    compute_paper_equity_curve,
+    reconcile_order,
+)
 
 pytestmark = [pytest.mark.db]
 
@@ -1406,9 +1410,65 @@ async def test_check_worse_than_holding_fires_on_losing_curve(db_session):
         )
     ).fetchall()
     assert any(row.finding_type == "PAPER_WORSE_THAN_HOLDING" for row in findings)
+
+
+async def test_compute_paper_equity_curve_from_real_fills(db_session):
+    from sqlalchemy import text
+
+    await db_session.execute(
+        text(
+            "INSERT INTO strategies (id, family, spec, status) "
+            "VALUES ('MOMENTUM-013', 'MOMENTUM', '{}', 'CHAMPION')"
+        )
+    )
+    # Buy 0.01 BTC at 50000, then sell 0.005 at 51000 -- cash and
+    # position both move, and the curve must reflect BOTH fills, not
+    # just the size of the last one.
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO paper_orders (
+                id, strategy_id, client_order_id, symbol, side, qty, status,
+                expected_price, expected_qty, filled_qty, avg_fill_price,
+                event_time, submitted_at, filled_at
+            ) VALUES
+            ('PAPER-TEST-3A', 'MOMENTUM-013', 'coid-3a', 'BTC/USDT', 'buy', 0.01, 'FILLED',
+             50000.0, 0.01, 0.01, 50000.0,
+             now() - interval '2 hours', now() - interval '2 hours', now() - interval '2 hours'),
+            ('PAPER-TEST-3B', 'MOMENTUM-013', 'coid-3b', 'BTC/USDT', 'sell', 0.005, 'FILLED',
+             51000.0, 0.005, 0.005, 51000.0,
+             now() - interval '1 hour', now() - interval '1 hour', now() - interval '1 hour')
+            """
+        )
+    )
+    await db_session.commit()
+
+    curve = await compute_paper_equity_curve(
+        db_session, strategy_id="MOMENTUM-013", current_price=52000.0
+    )
+    assert len(curve) == 3  # one point per fill, plus the final mark-to-market point
+
+    # After fill 1 (buy 0.01 @ 50000): cash = 1000 - 500 = 500, position = 0.01
+    # equity = 500 + 0.01 * 50000 = 1000
+    assert curve[0][1] == pytest.approx(1000.0, abs=1e-6)
+
+    # After fill 2 (sell 0.005 @ 51000): cash = 500 + 255 = 755, position = 0.005
+    # equity = 755 + 0.005 * 51000 = 1010
+    assert curve[1][1] == pytest.approx(1010.0, abs=1e-6)
+
+    # Final point marked at current_price=52000, not the last fill's price:
+    # equity = 755 + 0.005 * 52000 = 1015
+    assert curve[2][1] == pytest.approx(1015.0, abs=1e-6)
+
+
+async def test_compute_paper_equity_curve_empty_with_no_fills(db_session):
+    curve = await compute_paper_equity_curve(
+        db_session, strategy_id="MOMENTUM-NONEXISTENT", current_price=100.0
+    )
+    assert curve == []
 ```
 
-The third test needs real ingested `BTC/USDT` bars for `compute_benchmark_curve` to return a non-empty curve — mark it `@pytest.mark.skipif` gated the same way `test_ablation_placebo.py` gates on real data, or seed a handful of `ohlcv_bars` rows directly in the test (`INSERT INTO ohlcv_bars (...)` for a few days) rather than relying on production data being present. Prefer seeding directly — it keeps the test self-contained and deterministic.
+The `test_check_worse_than_holding_fires_on_losing_curve` test needs real ingested `BTC/USDT` bars for `compute_benchmark_curve` to return a non-empty curve — mark it `@pytest.mark.skipif` gated the same way `test_ablation_placebo.py` gates on real data, or seed a handful of `ohlcv_bars` rows directly in the test (`INSERT INTO ohlcv_bars (...)` for a few days) rather than relying on production data being present. Prefer seeding directly — it keeps the test self-contained and deterministic.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -1426,12 +1486,13 @@ in this codebase uses, not a second benchmark computation.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve
+from prometheus.backtest.engine import STARTING_CAPITAL
 from prometheus.core.db import PaperFinding
 from prometheus.data.loaders import load_point_in_time
 
@@ -1440,6 +1501,15 @@ _SELECT_ORDER = text(
     SELECT expected_price, expected_qty, filled_qty, avg_fill_price,
            submitted_at, filled_at, status
       FROM paper_orders WHERE id = :order_id
+    """
+)
+
+_SELECT_FILLED_ORDERS_CHRONO = text(
+    """
+    SELECT side, filled_qty, avg_fill_price, filled_at
+      FROM paper_orders
+     WHERE strategy_id = :strategy_id AND status = 'FILLED'
+     ORDER BY filled_at
     """
 )
 
@@ -1464,24 +1534,61 @@ async def reconcile_order(session: AsyncSession, *, order_id: str) -> dict[str, 
     }
 
 
+async def compute_paper_equity_curve(
+    session: AsyncSession, *, strategy_id: str, current_price: float
+) -> list[tuple[date, float]]:
+    """A REAL mark-to-market equity curve built from actual fills --
+    cash (STARTING_CAPITAL, debited by every buy's notional and credited
+    by every sell's) plus the current position's value, same accounting
+    shape backtest.engine._run_accounting produces from simulated
+    positions, now built from real filled orders. This is deliberately
+    NOT "the notional of each individual trade" -- a list of per-trade
+    notionals is not an equity curve and cannot be meaningfully compared
+    against compute_benchmark_curve's final portfolio value.
+
+    One point per fill event (marked at that fill's own price), plus a
+    final point marked at `current_price` (the latest close) -- an open
+    position's value moves with the market between fills, not just at
+    the moment of the last trade."""
+    rows = (
+        await session.execute(_SELECT_FILLED_ORDERS_CHRONO, {"strategy_id": strategy_id})
+    ).fetchall()
+    if not rows:
+        return []
+
+    cash = STARTING_CAPITAL
+    position_qty = 0.0
+    curve: list[tuple[date, float]] = []
+    for row in rows:
+        signed_qty = float(row.filled_qty) if row.side == "buy" else -float(row.filled_qty)
+        cash -= signed_qty * float(row.avg_fill_price)
+        position_qty += signed_qty
+        curve.append((row.filled_at.date(), cash + position_qty * float(row.avg_fill_price)))
+
+    curve.append((rows[-1].filled_at.date(), cash + position_qty * current_price))
+    return curve
+
+
 async def check_worse_than_holding(
     session: AsyncSession,
     *,
     strategy_id: str,
     symbol: str,
-    paper_equity_curve: list[tuple[object, float]],
+    paper_equity_curve: list[tuple[date, float]],
     as_of_cutoff: datetime,
 ) -> bool:
-    """Compares the champion's realized paper equity against a €1000
-    buy-and-hold of its own symbol over the identical window (Law 8).
-    Writes and prominently surfaces PAPER_WORSE_THAN_HOLDING -- checked
-    FIRST, same ordering validation/decision.py already establishes for
-    the backtest-time equivalent of this same check."""
+    """Compares the champion's realized paper equity (compute_paper_equity_curve's
+    output) against a €1000 buy-and-hold of its own symbol over the
+    identical window (Law 8). Writes and prominently surfaces
+    PAPER_WORSE_THAN_HOLDING -- checked FIRST, same ordering
+    validation/decision.py already establishes for the backtest-time
+    equivalent of this same check."""
     if not paper_equity_curve:
         return False
 
+    window_start = datetime.combine(paper_equity_curve[0][0], time.min, tzinfo=UTC)
     pit, _data_version_hash = await load_point_in_time(
-        session, [symbol], "1d", paper_equity_curve[0][0], as_of_cutoff
+        session, [symbol], "1d", window_start, as_of_cutoff
     )
     benchmark = compute_benchmark_curve(pit, [symbol], as_of_cutoff)
     if not benchmark.equity_curve:
@@ -1512,7 +1619,7 @@ This uses the ORM `PaperFinding` class from Task 1 (`session.add(...)`) rather t
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_paper_reconciliation.py -v`
-Expected: PASS (all three tests).
+Expected: PASS (all five tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1778,7 +1885,11 @@ from prometheus.data.loaders import load_point_in_time
 from prometheus.paper.broker import PaperBroker
 from prometheus.paper.divergence import check_divergence
 from prometheus.paper.execution import decide_and_submit, poll_fills
-from prometheus.paper.reconciliation import check_worse_than_holding, reconcile_order
+from prometheus.paper.reconciliation import (
+    check_worse_than_holding,
+    compute_paper_equity_curve,
+    reconcile_order,
+)
 ```
 
 (No other function in `worker.py` does a local `import` inside its body — keep these three at module level rather than repeating local imports inside `is_due`/`_run_paper` below, matching the rest of the file's style.)
@@ -1920,18 +2031,11 @@ async def _run_paper() -> None:
             if deltas:
                 await check_divergence(session, strategy_id=row.id, reconciliation_deltas=deltas)
 
-            equity_rows = (
-                await session.execute(
-                    text(
-                        "SELECT filled_at, avg_fill_price * filled_qty AS notional "
-                        "FROM paper_orders WHERE strategy_id = :id AND status = 'FILLED' "
-                        "ORDER BY filled_at"
-                    ),
-                    {"id": row.id},
-                )
-            ).fetchall()
-            if equity_rows:
-                paper_curve = [(r.filled_at.date(), float(r.notional)) for r in equity_rows]
+            current_price = float(bars.tail(1)["close"][0])
+            paper_curve = await compute_paper_equity_curve(
+                session, strategy_id=row.id, current_price=current_price
+            )
+            if paper_curve:
                 await check_worse_than_holding(
                     session,
                     strategy_id=row.id,
@@ -1940,6 +2044,8 @@ async def _run_paper() -> None:
                     as_of_cutoff=as_of_cutoff,
                 )
 ```
+
+Note: this uses `compute_paper_equity_curve` (Task 7) — a real mark-to-market curve from actual fills — never a raw `avg_fill_price * filled_qty` per-trade query. The latter is not an equity curve (it's the size of each trade) and would make `check_worse_than_holding`'s comparison against `compute_benchmark_curve`'s final portfolio value meaningless.
 
 Add the needed imports at the top of `worker.py` (`import polars as pl`, `from prometheus.strategy.spec import StrategySpec` — check `StrategySpec` isn't already imported; it is, per the existing `from prometheus.strategy.spec import FAMILIES, StrategySpec` line — just add `pl` and the four `prometheus.paper.*` imports listed at the start of this step).
 
