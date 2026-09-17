@@ -23,6 +23,7 @@ from sqlalchemy import text
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from prometheus.research.population import STRATEGY_STATES, population_summary
 from prometheus.world.construction import (
     BUILDING_LOCATIONS,
     CONSTRUCTION_MANIFEST,
@@ -408,6 +409,46 @@ async def _get_in_flight_agents(session: AsyncSession) -> list[Agent]:
         return []
 
 
+async def _get_districts(session: AsyncSession) -> list[District]:
+    """One District per real strategy family (PROMPT 7). `strategies.
+    family` (strategy/spec.py's own FAMILIES) already carries this --
+    doesn't wait on the separate `strategy_families` table
+    docs/WORLD_MAPPING.md's original Prompt-4 design named and never
+    built (docs/DEFERRED.md). Reuses `population.population_summary`'s
+    real `GROUP BY family, status` query rather than reimplementing it.
+    `archetype` is the lower-cased family name -- the real value until a
+    `strategy_families.archetype` table exists to say otherwise (also
+    deferred). `health`/`activity`/`portfolio_weight`/`alert_flags` stay
+    at their real defaults (0.0/[]): their own source tables
+    (validation_results aggregation, running-experiment counts, paper
+    portfolio, strategy_alerts) are each a real, separate query this
+    prompt doesn't build -- same rule as every other SCAFFOLDING field
+    in this file, never fabricated."""
+    try:
+        summary = await population_summary(session)
+    except Exception:
+        await session.rollback()
+        return []
+
+    districts = []
+    for family, counts in summary.items():
+        population_by_status = {state.lower(): 0 for state in STRATEGY_STATES}
+        population_by_status.update(counts)
+        total = sum(population_by_status.values())
+        districts.append(
+            District(
+                id=family,
+                name=f"{family} District",
+                archetype=family.lower(),
+                population_by_status=population_by_status,
+                building_state=(
+                    ConstructionPhase.ACTIVE if total > 0 else ConstructionPhase.PLANNED
+                ),
+            )
+        )
+    return districts
+
+
 async def _get_pending_depth_by_stage(session: AsyncSession) -> dict[str, int]:
     try:
         result = await session.execute(
@@ -468,13 +509,12 @@ async def build_world_state(session: AsyncSession) -> WorldState:
     benchmark_value = benchmark_curve[-1]["equity"] if benchmark_curve else 1000.0
     benchmark_return = (benchmark_value - 1000.0) / 1000.0 * 100
 
-    # Districts are per strategy FAMILY (docs/WORLD_MAPPING.md), and the
-    # strategy_families table still does not exist (this pass adds
-    # `strategies`, not `strategy_families` -- deliberately out of scope,
-    # see docs/WORLD_MAPPING.md). Pipeline buildings are `structures`, not
-    # districts — conflating them would make the world claim districts
-    # exist when none do.
-    districts: list[District] = []
+    # Districts are per strategy FAMILY (docs/WORLD_MAPPING.md) -- real as
+    # of PROMPT 7, from `strategies.family` via `_get_districts` (the
+    # separate `strategy_families` table the original doc named is still
+    # deferred, see docs/DEFERRED.md; family/archetype come straight off
+    # `strategies` itself).
+    districts: list[District] = await _get_districts(session)
 
     # Agents are per ACTIVE JOB (docs/WORLD_MAPPING.md: agents[].id <- jobs.id).
     # Real as of Prompt 4's jobs table -- empty exactly when nothing is

@@ -48,6 +48,7 @@ class District(BaseModel):
             "regime_specialist": 0,
             "dormant": 0,
             "quarantined": 0,
+            "rejected": 0,
             "retired": 0,
         }
     )

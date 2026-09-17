@@ -114,3 +114,30 @@ def test_config_hash_is_sha256_hex() -> None:
     digest = spec.config_hash()
     assert len(digest) == 64
     int(digest, 16)  # raises if not valid hex
+
+
+def test_with_updates_applies_a_valid_change() -> None:
+    spec = StrategySpec(
+        symbol="BTC/USDT", timeframe="1d", fast_window=5, slow_window=20, expected_horizon=20
+    )
+    child = spec.with_updates(slow_window=40)
+    assert child.slow_window == 40
+    assert child.fast_window == spec.fast_window
+    assert spec.slow_window == 20  # the original is untouched (frozen)
+
+
+def test_with_updates_re_validates_unlike_model_copy() -> None:
+    """PROMPT 7's mutation/crossover code depends on this: plain
+    model_copy(update=...) is documented Pydantic v2 behavior that skips
+    validation entirely -- confirmed by testing it directly, not assumed.
+    with_updates() must go through the real constructor instead."""
+    spec = StrategySpec(
+        symbol="BTC/USDT", timeframe="1d", fast_window=10, slow_window=20, expected_horizon=20
+    )
+    # model_copy itself really does allow this (documents the bug it
+    # would otherwise be easy to reintroduce).
+    invalid_via_model_copy = spec.model_copy(update={"slow_window": 5})
+    assert invalid_via_model_copy.slow_window == 5  # silently invalid
+
+    with pytest.raises(ValidationError):
+        spec.with_updates(slow_window=5)

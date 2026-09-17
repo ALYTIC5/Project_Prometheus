@@ -153,3 +153,13 @@ class StrategySpec(BaseModel):
         canonical = self.model_dump(include=set(_IDENTITY_FIELDS))
         canonical_json = json.dumps(canonical, sort_keys=True)
         return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+    def with_updates(self, **updates: object) -> StrategySpec:
+        """A validated copy -- NOT `model_copy(update=...)`, which is
+        documented Pydantic v2 behavior to skip validation entirely and
+        was confirmed, by actually testing it, to happily produce a spec
+        with slow_window <= fast_window. Going through the real
+        constructor re-runs `_params_match_family`, so PROMPT 7's
+        mutation/crossover code gets a real error here instead of a
+        silently-invalid spec surfacing confusion somewhere downstream."""
+        return StrategySpec(**{**self.model_dump(), **updates})

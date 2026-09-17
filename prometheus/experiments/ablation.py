@@ -54,12 +54,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve
 from prometheus.backtest.costs import CostModel, apply_cost
-from prometheus.backtest.engine import BacktestResult, run_backtest_from_positions, signal_for
+from prometheus.backtest.engine import (
+    BacktestResult,
+    run_backtest,
+    run_backtest_from_positions,
+    signal_for,
+)
 from prometheus.core.db import AblationTrial as AblationTrialRow
 from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.loaders import load_point_in_time
 from prometheus.data.schema import PointInTimeFrame
-from prometheus.strategy.spec import StrategySpec
+from prometheus.research.generate import generate_baseline_grid
+from prometheus.research.mutations import parameter_tune, swap_family
+from prometheus.research.templates import seed_specs_by_family
+from prometheus.strategy.spec import FAMILIES, StrategySpec
 
 ComponentFn = Callable[[pl.DataFrame, StrategySpec, list[float], random.Random], list[float]]
 
@@ -485,6 +493,139 @@ async def register_baseline(
         families_affected,
         n_trials_this_batch=0,
         n_failed_this_batch=0,
+    )
+    await session.commit()
+    return result
+
+
+async def record_trial(
+    session: AsyncSession,
+    *,
+    component: str,
+    version: str,
+    symbol: str,
+    config_hash: str,
+    seed: int,
+    enabled_return_pct: float,
+    disabled_return_pct: float,
+    enabled_sharpe: float | None = None,
+    disabled_sharpe: float | None = None,
+    enabled_total_costs: float = 0.0,
+    disabled_total_costs: float = 0.0,
+    compute_cost_delta: float = 0.0,
+) -> None:
+    """Writes one AblationTrialRow directly, bypassing run_ablation_trial's
+    "same spec, position-perturbed" shape -- for a real, different
+    statistical question: comparing two SELECTION PROCESSES (e.g. best
+    grid-search spec vs best evolved spec), not one spec's baseline vs
+    its own perturbation. Same row shape/columns run_ablation already
+    writes, so _recompute_registry's aggregation works identically
+    either way. Caller commits by calling this and then
+    _recompute_registry, same two-commit pattern run_ablation itself
+    uses."""
+    session.add(
+        AblationTrialRow(
+            component=component,
+            version=version,
+            symbol=symbol,
+            config_hash=config_hash,
+            seed=seed,
+            enabled_return_pct=enabled_return_pct,
+            disabled_return_pct=disabled_return_pct,
+            enabled_sharpe=enabled_sharpe,
+            disabled_sharpe=disabled_sharpe,
+            enabled_total_costs=enabled_total_costs,
+            disabled_total_costs=disabled_total_costs,
+            compute_cost_delta=compute_cost_delta,
+        )
+    )
+    await session.commit()
+
+
+async def register_evolution_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    generations: int,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Evolution vs. grid search, honestly -- the real question PROMPT 7
+    asks: does the mutation/crossover loop (research/mutations.py,
+    research/templates.py) find anything the deterministic baseline grid
+    (research/generate.generate_baseline_grid) doesn't, on real
+    out-of-sample data. Per symbol: scores every baseline-grid spec with
+    the real backtest engine, then runs `generations` real, bounded
+    mutation steps starting from that same scored grid (a real but
+    bounded run -- tens of generations against 1-2 real symbols, per
+    docs/DEFERRED.md, not a compute spike), keeping every child that
+    both survives StrategySpec's own validator and has enough bars to
+    backtest. Records one paired trial per symbol via record_trial
+    (enabled = best evolved score, disabled = best grid score), then
+    reuses _recompute_registry for the real verdict -- reported
+    honestly, including a NEUTRAL or HARMFUL one."""
+    templates = seed_specs_by_family()
+    component = "mutation_evolution"
+    n_trials = 0
+    n_failed = 0
+
+    def _score(pit: PointInTimeFrame, spec: StrategySpec) -> float | None:
+        try:
+            return run_backtest(pit, spec, end, cost_model=cost_model).total_return_pct
+        except ValueError:
+            return None
+
+    for symbol in symbols:
+        pit, _data_version_hash = await load_point_in_time(
+            session, [symbol], timeframe, start, end
+        )
+        scored_grid = [
+            (spec, score)
+            for spec in generate_baseline_grid(symbol, timeframe)
+            if (score := _score(pit, spec)) is not None
+        ]
+        if not scored_grid:
+            n_failed += 1
+            continue
+        _best_grid_spec, best_grid_score = max(scored_grid, key=lambda pair: pair[1])
+
+        population = list(scored_grid)
+        rng = rng_for(derive_seed(component, version, symbol))
+        for _generation in range(generations):
+            parent_spec, _parent_score = rng.choice(population)
+            mutation = parameter_tune(parent_spec, rng) or swap_family(
+                parent_spec, rng, seed_specs_by_family=templates
+            )
+            if mutation is None:
+                continue
+            child_score = _score(pit, mutation.child)
+            if child_score is None:
+                continue
+            population.append((mutation.child, child_score))
+
+        best_evolved_spec, best_evolved_score = max(population, key=lambda pair: pair[1])
+        await record_trial(
+            session,
+            component=component,
+            version=version,
+            symbol=symbol,
+            config_hash=best_evolved_spec.config_hash(),
+            seed=derive_seed(component, version, symbol),
+            enabled_return_pct=best_evolved_score,
+            disabled_return_pct=best_grid_score,
+        )
+        n_trials += 1
+
+    result = await _recompute_registry(
+        session,
+        component,
+        version,
+        list(FAMILIES),
+        n_trials_this_batch=n_trials,
+        n_failed_this_batch=n_failed,
     )
     await session.commit()
     return result

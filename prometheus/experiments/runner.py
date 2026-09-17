@@ -49,6 +49,7 @@ from prometheus.experiments.failure import classify_exception, classify_result
 from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.generate import generate_grid
+from prometheus.research.population import elect_champions, verdict_to_status
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.decay import compute_decay
 from prometheus.validation.decision import Evidence, decide
@@ -259,6 +260,19 @@ _SELECT_LATEST_EXPERIMENT_FOR_SPEC = text(
     "SELECT id, strategy_id FROM experiments WHERE config_hash = :config_hash "
     "ORDER BY created_at DESC LIMIT 1"
 )
+
+
+async def latest_experiment_id_for_spec(session: AsyncSession, config_hash: str) -> str | None:
+    """The most recent experiment for a given spec's own config_hash --
+    same lookup `validate_grid` already does per spec, exported for
+    worker.py's evolution step, which needs a parent SPEC's real
+    experiment id to populate a child job's `parent_experiment_id`
+    payload key (see `_run_job`)."""
+    row = (
+        await session.execute(_SELECT_LATEST_EXPERIMENT_FOR_SPEC, {"config_hash": config_hash})
+    ).first()
+    return row.id if row is not None else None
+
 _SELECT_LATEST_VERDICT_FOR_FINGERPRINT = text(
     "SELECT verdict FROM validation_results WHERE strategy_fingerprint = :fp "
     "ORDER BY created_at DESC LIMIT 1"
@@ -399,6 +413,11 @@ async def validate_grid(
             continue
         experiment_ids.append(experiment_id)
 
+    # PROMPT 7: re-elect each family's champion now that this batch's
+    # verdicts (and therefore statuses) are current -- a stale CHAMPION
+    # that a fresher VALIDATED strategy has since beaten must not linger.
+    await elect_champions(session)
+
     await session.commit()
     return experiment_ids
 
@@ -502,8 +521,12 @@ async def _validate_one_spec(
             },
         )
     )
-    if strategy_id is not None and decision_result.verdict.value == "PROMOTE":
-        await session.execute(_UPDATE_STRATEGY_STATUS, {"status": "VALIDATED", "id": strategy_id})
+    if strategy_id is not None:
+        # PROMPT 7: EVERY verdict updates strategies.status, not just
+        # PROMOTE -- population.verdict_to_status is the one real mapping
+        # from an Oracle verdict to a population lifecycle state.
+        new_status = verdict_to_status(decision_result.verdict.value)
+        await session.execute(_UPDATE_STRATEGY_STATUS, {"status": new_status, "id": strategy_id})
 
 
 _RUN_BACKTEST_KIND = "run_backtest"
@@ -555,7 +578,14 @@ async def _run_job(job: Job) -> str:
     """Executes one claimed job's payload against real data -- the only
     kind this worker understands is run_backtest. A separate session from
     the one claim() used: see queue.claim's docstring on why the claiming
-    transaction must already be committed before work starts."""
+    transaction must already be committed before work starts.
+
+    `parent_experiment_id`/`hypothesis`/`change_set` are optional payload
+    keys -- present when this job was enqueued by PROMPT 7's evolution
+    step (worker.py), absent for a plain grid job (enqueue_grid never
+    sets them). `run_one` already accepts and threads all three through
+    to the Experiment row (migration 0006's lineage columns); this is
+    just the payload -> kwargs bridge, not new lineage logic."""
     if job.kind != _RUN_BACKTEST_KIND:
         raise ValueError(f"unknown job kind: {job.kind!r}")
     spec = StrategySpec.model_validate(job.payload["spec"])
@@ -563,7 +593,15 @@ async def _run_job(job: Job) -> str:
     end = datetime.now(UTC)
     start = end - timedelta(days=days)
     async with get_session() as session:
-        return await run_one(session, spec, start, end)
+        return await run_one(
+            session,
+            spec,
+            start,
+            end,
+            parent_experiment_id=job.payload.get("parent_experiment_id"),
+            hypothesis=job.payload.get("hypothesis"),
+            change_set=job.payload.get("change_set"),
+        )
 
 
 async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = None) -> list[str]:
