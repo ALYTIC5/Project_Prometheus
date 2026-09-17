@@ -1,0 +1,36 @@
+"""Test paper order ID generation.
+
+Paper order IDs follow the same per-day scoping and 6-digit headroom as
+job IDs -- PAPER-YYYYMMDD-NNNNNN. A live champion polling every 15 minutes
+can plausibly submit or re-check many orders a day.
+"""
+from __future__ import annotations
+
+import os
+import re
+from datetime import date
+
+import pytest
+
+from prometheus.core.ids import next_paper_order_id
+
+os.environ.setdefault("DATABASE_URL", os.environ.get("TEST_DATABASE_URL", ""))
+
+pytestmark = [
+    pytest.mark.db,
+    pytest.mark.skipif(
+        not os.environ.get("TEST_DATABASE_URL"),
+        reason="requires TEST_DATABASE_URL (Postgres with migrations 0001-0012 applied)",
+    ),
+]
+
+
+async def test_next_paper_order_id_format(db_engine):
+    order_id = await next_paper_order_id(day=date(2026, 9, 17))
+    assert re.match(r"^PAPER-20260917-\d{6}$", order_id)
+
+
+async def test_next_paper_order_id_increments(db_engine):
+    first = await next_paper_order_id(day=date(2026, 9, 18))
+    second = await next_paper_order_id(day=date(2026, 9, 18))
+    assert first != second

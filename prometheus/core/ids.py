@@ -28,6 +28,7 @@ from prometheus.core.db import get_engine
 EXPERIMENT_ID_RE = re.compile(r"^EXP-\d{4}-\d{6}$")
 STRATEGY_ID_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}-\d{3}$")
 JOB_ID_RE = re.compile(r"^JOB-\d{8}-\d{6}$")
+PAPER_ORDER_ID_RE = re.compile(r"^PAPER-\d{8}-\d{6}$")
 _FAMILY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 
 _UPSERT_COUNTER = text(
@@ -95,3 +96,17 @@ async def next_job_id(day: date | None = None) -> str:
     if n > 999_999:
         raise IdSequenceExhausted(f"job id sequence exhausted for {resolved_day:%Y%m%d}")
     return f"JOB-{resolved_day:%Y%m%d}-{n:06d}"
+
+
+async def next_paper_order_id(day: date | None = None) -> str:
+    """PAPER-YYYYMMDD-NNNNNN, same per-day scoping and 6-digit headroom
+    as next_job_id() -- a live champion polling every 15 minutes can
+    plausibly submit or re-check many orders a day."""
+    resolved_day = day if day is not None else datetime.now(UTC).date()
+    scope = f"paper_order:{resolved_day:%Y%m%d}"
+    async with get_engine().begin() as conn:
+        result = await conn.execute(_UPSERT_COUNTER, {"scope": scope})
+        n: int = result.scalar_one()
+    if n > 999_999:
+        raise IdSequenceExhausted(f"paper order id sequence exhausted for {resolved_day:%Y%m%d}")
+    return f"PAPER-{resolved_day:%Y%m%d}-{n:06d}"

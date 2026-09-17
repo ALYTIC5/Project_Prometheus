@@ -343,6 +343,59 @@ class ComponentRegistry(Base):
     )
 
 
+class PaperOrder(Base):
+    """Mutable current-state table -- a fill UPDATEs this row, it is not
+    an event log (same exemption as Strategy.status/Job)."""
+
+    __tablename__ = "paper_orders"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id"))
+    client_order_id: Mapped[str] = mapped_column(sa.String(64), unique=True)
+    exchange_order_id: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    symbol: Mapped[str] = mapped_column(sa.String(32))
+    side: Mapped[str] = mapped_column(sa.String(4))
+    qty: Mapped[float] = mapped_column(sa.Numeric(28, 8, asdecimal=False))
+    status: Mapped[str] = mapped_column(default="SUBMITTED")
+    expected_price: Mapped[float] = mapped_column(sa.Numeric(20, 8, asdecimal=False))
+    expected_qty: Mapped[float] = mapped_column(sa.Numeric(28, 8, asdecimal=False))
+    filled_qty: Mapped[float] = mapped_column(sa.Numeric(28, 8, asdecimal=False), default=0.0)
+    avg_fill_price: Mapped[float | None] = mapped_column(
+        sa.Numeric(20, 8, asdecimal=False), nullable=True
+    )
+    event_time: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    submitted_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+    filled_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+
+
+class PaperFinding(Base):
+    """Append-only by convention (Law 6-adjacent, same treatment as
+    research_violations and ablation_trials -- see migration 0012's own
+    docstring)."""
+
+    __tablename__ = "paper_findings"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id"))
+    finding_type: Mapped[str] = mapped_column(sa.String(32))
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    detected_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class WorkerCadence(Base):
+    """Scheduling state for worker.py's cadence-gated concerns -- mutable,
+    like Strategy.status, not a history log."""
+
+    __tablename__ = "worker_cadence"
+
+    concern: Mapped[str] = mapped_column(primary_key=True)
+    last_run_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 _holdout_engine: AsyncEngine | None = None
