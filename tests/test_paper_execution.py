@@ -196,8 +196,14 @@ async def test_poll_fills_marks_closed_order_as_filled(db_session):
         )
     ).mappings().first()
     assert row["status"] == "FILLED"
-    assert row["filled_qty"] == pytest.approx(0.02)
-    assert row["avg_fill_price"] == pytest.approx(51000.0)
+    # NUMERIC columns come back from a real Postgres via asyncpg as
+    # decimal.Decimal, not float -- pytest.approx(float) can't subtract
+    # against a Decimal directly (TypeError), so cast before comparing.
+    # Production code already does this at every real call site
+    # (execution.py/reconciliation.py); this is a test-assertion fix
+    # only, not a production bug.
+    assert float(row["filled_qty"]) == pytest.approx(0.02)
+    assert float(row["avg_fill_price"]) == pytest.approx(51000.0)
 
 
 async def test_poll_fills_leaves_open_order_untouched(db_session):

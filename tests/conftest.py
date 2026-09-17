@@ -7,6 +7,8 @@ from collections.abc import AsyncIterator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from prometheus.core import db as core_db
+
 # Distinct, easy-to-spot-in-a-diff values so no one mistakes these for
 # real limits.
 #
@@ -21,6 +23,32 @@ os.environ["MAX_LEVERAGE"] = "3"
 os.environ["MAX_DAILY_LOSS_PCT"] = "4"
 os.environ["MAX_DRAWDOWN_PCT"] = "15"
 os.environ["KILL_SWITCH"] = "false"
+
+
+@pytest.fixture(autouse=True)
+async def _fresh_core_engine() -> AsyncIterator[None]:
+    """core.ids.next_job_id()/next_experiment_id()/next_strategy_id()/
+    next_paper_order_id() all go through core.db.get_engine()'s
+    module-global, process-lifetime engine -- a design that assumes one
+    long-lived event loop (the real API/worker process), not
+    pytest-asyncio's per-test-function loop. Left cached across tests, an
+    engine created inside an earlier test's now-closed loop raises
+    "Event loop is closed" / "attached to a different loop" on its next
+    use, and can leave an id_counters increment half-done, producing
+    downstream duplicate-key collisions in whatever table that id was for
+    -- all three symptoms traced to this one cause via CI's real-Postgres
+    db-tests job (no local Postgres in this dev environment to catch it
+    sooner). Originally solved locally in test_queue_semantics.py; hoisted
+    here so every db-marked test gets it, not just the one file that
+    happened to need it first. A no-op for tests that never call
+    get_engine() -- resetting an unused module global costs nothing."""
+    core_db._engine = None
+    core_db._session_factory = None
+    yield
+    if core_db._engine is not None:
+        await core_db._engine.dispose()
+        core_db._engine = None
+        core_db._session_factory = None
 
 
 @pytest.fixture()

@@ -26,10 +26,17 @@ from sqlalchemy import text
 from prometheus.core.db import get_engine
 
 EXPERIMENT_ID_RE = re.compile(r"^EXP-\d{4}-\d{6}$")
-STRATEGY_ID_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}-\d{3}$")
+STRATEGY_ID_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}-\d{3}$")
 JOB_ID_RE = re.compile(r"^JOB-\d{8}-\d{6}$")
 PAPER_ORDER_ID_RE = re.compile(r"^PAPER-\d{8}-\d{6}$")
-_FAMILY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
+# Widened from [A-Z0-9]{1,9} (no underscore, 10 chars max) after a real
+# bug: strategy.spec.FAMILY_VOL_BREAKOUT = "VOL_BREAKOUT" (12 chars, has
+# an underscore) has never been a valid next_strategy_id() input since it
+# was added -- ValueError: invalid strategy family: 'VOL_BREAKOUT',
+# caught by CI's real-Postgres db-tests job, not locally (no local
+# Postgres in this environment). Allows underscores and up to 20 chars,
+# double the longest real FAMILIES entry today, not an unlimited pattern.
+_FAMILY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
 
 _UPSERT_COUNTER = text(
     """
