@@ -177,6 +177,28 @@ async def population(session_factory: async_sessionmaker[AsyncSession]) -> Popul
     # identical nominal scores -- exactly what "this test's own fixture
     # rows are the top scorers" already assumed.
     score_offset = (experiment_year - 9000) * 1e-6
+    # The score offset above turned out not to be enough: population.py's
+    # real select_for_cross_breeding join (_LATEST_FINGERPRINT_CTE) keys
+    # `latest_score` by config_hash, not strategy_id --
+    # validation_results.strategy_fingerprint IS the config_hash, shared
+    # across ANY strategies with identical spec parameters. Every test's
+    # population fixture called _momentum(5, 20) etc. with the exact same
+    # literal windows, so different tests' "validated_high" strategies
+    # (different real strategies.id) shared the identical config_hash,
+    # and the join's "most recent validation_results row for this
+    # fingerprint" collapsed them all onto whichever test committed last
+    # for that hash -- the score_offset above never mattered, since the
+    # query doesn't care which specific strategy row "owns" a
+    # validation_results row, only which config_hash it's tagged with.
+    # A per-test window offset makes every test's spec parameters -- and
+    # therefore every test's config_hash -- genuinely distinct, fixing
+    # the actual shared resource rather than a symptom one layer removed
+    # from it.
+    window_offset = experiment_year - 9000
+
+    def _m(fast: int, slow: int) -> StrategySpec:
+        return _momentum(fast + window_offset, slow + window_offset)
+
     async with session_factory() as session:
 
         async def insert(
@@ -211,14 +233,14 @@ async def population(session_factory: async_sessionmaker[AsyncSession]) -> Popul
                 await session.flush()
             ids[label] = strategy_id
 
-        await insert("validated_high", _momentum(5, 20), "VALIDATED", 0.9)
-        await insert("validated_low", _momentum(5, 30), "VALIDATED", 0.1)
-        await insert("champion", _momentum(5, 40), "CHAMPION", 0.5)
-        await insert("promising_a", _momentum(10, 20), "PROMISING", 0.8)
-        await insert("promising_b", _momentum(10, 30), "PROMISING", 0.3)
-        await insert("dormant_old", _momentum(20, 50), "DORMANT", None)
-        await insert("quarantined", _momentum(20, 60), "QUARANTINED", None)
-        await insert("rejected", _momentum(20, 100), "REJECTED", None)
+        await insert("validated_high", _m(5, 20), "VALIDATED", 0.9)
+        await insert("validated_low", _m(5, 30), "VALIDATED", 0.1)
+        await insert("champion", _m(5, 40), "CHAMPION", 0.5)
+        await insert("promising_a", _m(10, 20), "PROMISING", 0.8)
+        await insert("promising_b", _m(10, 30), "PROMISING", 0.3)
+        await insert("dormant_old", _m(20, 50), "DORMANT", None)
+        await insert("quarantined", _m(20, 60), "QUARANTINED", None)
+        await insert("rejected", _m(20, 100), "REJECTED", None)
         await session.commit()
     return PopulationFixture(ids=ids)
 
