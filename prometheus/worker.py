@@ -33,7 +33,6 @@ import asyncio
 import hashlib
 from datetime import UTC, datetime, timedelta
 
-import polars as pl
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,6 +94,18 @@ _INGEST_INTERVAL_SECONDS = 3600.0  # hourly
 _RESEARCH_INTERVAL_SECONDS = 1800.0  # 30 min
 _PAPER_INTERVAL_SECONDS = 900.0  # 15 min -- also the new cron tick itself
 
+# mark_run stamps last_run_at at the END of a concern's own work, and each
+# interval constant above exactly equals its own tick period -- without
+# slack, a concern's nonzero runtime means `elapsed` at the next tick is
+# always slightly under interval_seconds, is_due returns False that tick
+# and True the tick after, and the cadence silently averages out to
+# roughly DOUBLE what's intended (paper ~30min not 15, etc). 0.9 absorbs
+# a concern's own runtime (up to 10% of its interval) while still keeping
+# the crash-retry semantics: a crashed tick that never called mark_run
+# leaves last_run_at unchanged, so `elapsed` keeps growing every wake
+# regardless of this factor and the concern stays due.
+_CADENCE_SLACK_FACTOR = 0.9
+
 _SELECT_CADENCE = text("SELECT last_run_at FROM worker_cadence WHERE concern = :concern")
 _UPSERT_CADENCE = text(
     """
@@ -106,15 +117,15 @@ _UPSERT_CADENCE = text(
 
 async def is_due(session: AsyncSession, *, concern: str, interval_seconds: float) -> bool:
     """True if `concern` has never run, or last ran more than
-    interval_seconds ago. Each concern gates itself independently so one
-    tightened */15 cron can serve three different cadences (PROMPTS.md's
-    own schedule: ingest hourly / research 30min / paper 15min) without a
-    second scheduled service."""
+    interval_seconds * _CADENCE_SLACK_FACTOR ago. Each concern gates
+    itself independently so one tightened */15 cron can serve three
+    different cadences (PROMPTS.md's own schedule: ingest hourly /
+    research 30min / paper 15min) without a second scheduled service."""
     row = (await session.execute(_SELECT_CADENCE, {"concern": concern})).first()
     if row is None:
         return True
     elapsed = (datetime.now(UTC) - row.last_run_at).total_seconds()
-    return bool(elapsed >= interval_seconds)
+    return bool(elapsed >= interval_seconds * _CADENCE_SLACK_FACTOR)
 
 
 async def mark_run(session: AsyncSession, *, concern: str) -> None:
@@ -295,6 +306,11 @@ async def _run_research() -> list[str]:
     return ran + validated
 
 
+_SELECT_STRATEGY_FILLED_ORDER_IDS = text(
+    "SELECT id FROM paper_orders WHERE strategy_id = :strategy_id AND status = 'FILLED'"
+)
+
+
 async def _run_paper() -> None:
     """Every champion, every tick: poll fills, reconcile, check
     divergence. Trading decisions (decide_and_submit) only actually
@@ -311,13 +327,27 @@ async def _run_paper() -> None:
     _run_paper on every tick for want of credentials nothing yet needs,
     which -- since run_once() does not catch per-concern exceptions --
     would also break the unrelated ingest/research concerns on that same
-    tick."""
+    tick.
+
+    Divergence is checked against a strategy's WHOLE FILLED order
+    history (queried by strategy_id), not just the ids poll_fills()
+    happened to fill THIS tick: decide_and_submit submits at most one
+    order per strategy per tick, so a single-tick delta list has length
+    0 or 1 and check_divergence's materiality test
+    (divergence._is_material) requires >=2 observations to have a
+    variance to test at all -- with only this tick's deltas, divergence
+    could never fire in production. Querying by strategy_id directly
+    also avoids cross-attributing another champion's fill to this one
+    when two champions share a symbol (poll_fills() itself is correctly
+    scoped by symbol only, since it is just updating fill status against
+    the exchange -- the attribution fix belongs here, in which deltas
+    get reconciled and handed to which strategy_id)."""
     as_of_cutoff = datetime.now(UTC)
 
     async with get_session() as session:
         champions = (
             await session.execute(
-                text("SELECT id, family, spec FROM strategies WHERE status = 'CHAMPION'")
+                text("SELECT id, spec FROM strategies WHERE status = 'CHAMPION'")
             )
         ).fetchall()
 
@@ -335,17 +365,20 @@ async def _run_paper() -> None:
                 as_of_cutoff - timedelta(days=_GRID_LOOKBACK_DAYS),
                 as_of_cutoff,
             )
-            bars = pit.as_of(as_of_cutoff).filter(pl.col("symbol") == spec.symbol).sort(
-                "available_at"
-            )
+            bars = pit.as_of(as_of_cutoff)
             if bars.height == 0:
                 continue
 
             await decide_and_submit(session, broker, strategy_id=row.id, spec=spec, bars=bars)
-            filled_ids = await poll_fills(session, broker, symbol=spec.symbol)
+            await poll_fills(session, broker, symbol=spec.symbol)
 
+            strategy_order_ids = (
+                await session.execute(
+                    _SELECT_STRATEGY_FILLED_ORDER_IDS, {"strategy_id": row.id}
+                )
+            ).scalars().all()
             deltas = []
-            for order_id in filled_ids:
+            for order_id in strategy_order_ids:
                 delta = await reconcile_order(session, order_id=order_id)
                 if delta is not None:
                     deltas.append(delta)
