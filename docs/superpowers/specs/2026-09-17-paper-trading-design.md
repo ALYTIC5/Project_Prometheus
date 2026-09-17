@@ -128,11 +128,21 @@ z=1.96 convention against the reconciliation deltas' own distribution —
 not a new invented percentage) to slippage and fill-rate divergence. On
 a material divergence: writes `PAPER_DIVERGENCE` to `paper_findings`,
 sets `strategies.status = 'QUARANTINED'` (existing status from
-`population.py`'s vocabulary — no new state introduced), and enqueues a
-`cost_recalibration_proposal` job via the existing `queue.enqueue()`
-(visible in the dashboard's Queue section; nothing consumes this kind
-yet — documented as deferred, matching how this repo has already shipped
-hooks ahead of their consumers, e.g. `pairwise_interactions` in PROMPT 6).
+`population.py`'s vocabulary — no new state introduced), and records the
+recalibration proposal as a new `experiments` row (`strategy_id` set,
+`hypothesis` describing the observed divergence, `change_set` describing
+the suggested `config/costs.yaml` delta, `status="proposed"`) —
+**not** a queue job. `experiments/runner.py::run_one` raises
+`ValueError` for any job `kind` other than `"run_backtest"`
+(verified — line 589), so a `cost_recalibration_proposal` job would
+fail/retry/dead-letter, not sit as a harmless visible no-op.
+PROMPTS.md's own wording is "propose cost-model recalibration as a new
+**experiment**" anyway — `experiments.hypothesis`/`change_set` already
+model exactly this. Visible in the dashboard's Experiments section, not
+Queue. Nothing acts on this proposal automatically: Law 7 requires a
+threshold change to be re-evaluated across the entire historical corpus,
+never adopted off one strategy's proposal — the actual recalibration
+consumer is deferred and documented, not silently dropped.
 
 ### `paper/duration.py`
 
