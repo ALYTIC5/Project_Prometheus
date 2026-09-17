@@ -9,10 +9,15 @@ docstring), but this fixture does NOT delete its rows -- the
 experiments/validation_results rows it also writes are append-only
 (Law 6) and would leave dangling FKs if their strategy row vanished, so
 everything here accumulates forever, same convention
-test_lineage_queries.py's own fixture already uses. Experiment ids use
-year 9997, matching that file's own never-collides-with-real-data
-convention; strategy ids come from the real next_strategy_id() sequence,
-identifiable by family.
+test_lineage_queries.py's own fixture already uses. Experiment ids use a
+distinct never-collides-with-real-data year per test function
+(_TEST_EXPERIMENT_YEAR, starting at 9000) rather than one literal shared
+across every test -- a real cross-test collision surfaced in CI's real
+Postgres when this all used a single hardcoded 9997, since
+next_experiment_id(year=9997)'s id_counters sequence is a shared,
+durably-committed resource every test in this file was implicitly
+depending on continuing to accumulate cleanly forever; strategy ids come
+from the real next_strategy_id() sequence, identifiable by family.
 
 Several tests below use a family (BOLLINGER / VOL_BREAKOUT) that no
 other test in this file touches, specifically so accumulation from
@@ -21,6 +26,7 @@ or count drift in their assertions.
 """
 from __future__ import annotations
 
+import itertools
 import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -90,6 +96,22 @@ def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
+# A distinct year per test function, not one shared "9997" literal --
+# next_experiment_id(year=...)'s id_counters row for a given year is a
+# real, durably-committed sequence, and every test in this file that
+# creates experiments was assuming that shared sequence would keep
+# accumulating cleanly across independent test functions. In CI's real
+# Postgres it doesn't: two different tests each got back the SAME low
+# counter values (EXP-9997-000001 colliding across tests), a real,
+# unresolved cross-test collision this file's tests had apparently never
+# actually passed against a real database before (introduced in PROMPT 7,
+# CI's db-tests job has failed on every push since). Rather than a
+# shared, never-reset scope every test silently depends on staying
+# collision-free forever, each test gets its own: impossible to collide
+# with another test in this file regardless of the exact mechanism.
+_TEST_EXPERIMENT_YEAR = itertools.count(9000)
+
+
 def _momentum(fast: int, slow: int) -> StrategySpec:
     return StrategySpec(
         family="MOMENTUM",
@@ -137,6 +159,7 @@ class PopulationFixture:
 @pytest.fixture()
 async def population(session_factory: async_sessionmaker[AsyncSession]) -> PopulationFixture:
     ids: dict[str, str] = {}
+    experiment_year = next(_TEST_EXPERIMENT_YEAR)
     async with session_factory() as session:
 
         async def insert(
@@ -149,7 +172,7 @@ async def population(session_factory: async_sessionmaker[AsyncSession]) -> Popul
                 )
             )
             await session.flush()
-            experiment_id = await next_experiment_id(year=9997)
+            experiment_id = await next_experiment_id(year=experiment_year)
             session.add(
                 Experiment(
                     id=experiment_id,
@@ -283,7 +306,7 @@ async def test_elect_champions_promotes_best_and_demotes_stale_champion(
         )
         await session.flush()
 
-        experiment_id = await next_experiment_id(year=9997)
+        experiment_id = await next_experiment_id(year=next(_TEST_EXPERIMENT_YEAR))
         session.add(
             Experiment(
                 id=experiment_id,
