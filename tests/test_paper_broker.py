@@ -18,8 +18,8 @@ class FakeCcxtExchange:
         if enabled:
             self.urls = {"api": "https://testnet.binance.vision/api"}
 
-    def create_order(self, symbol, side, order_type, qty, price=None, params=None):
-        self.calls.append(("create_order", (symbol, side, order_type, qty), params or {}))
+    def create_order(self, symbol, order_type, side, qty, price=None, params=None):
+        self.calls.append(("create_order", (symbol, order_type, side, qty), params or {}))
         return {"id": "exch-1", "status": "open"}
 
     def fetch_order(self, exchange_order_id, symbol):
@@ -62,6 +62,12 @@ def test_submit_order_calls_create_order_with_client_order_id():
     broker = PaperBroker(exchange_factory=lambda **_: fake)
     result = broker.submit_order(symbol="BTC/USDT", side="buy", qty=0.01, client_order_id="abc123")
     assert result["id"] == "exch-1"
+    # Verifies the real ccxt positional order (symbol, type, side, amount) --
+    # inspect.signature(ccxt.binance.create_order) is
+    # (self, symbol, type, side, amount, price=None, params={}). A fake that
+    # silently matched the previously-swapped (symbol, side, type, amount)
+    # order would fail this assertion.
+    assert fake.calls[0][1] == ("BTC/USDT", "market", "buy", 0.01)
     assert fake.calls[0][2].get("newClientOrderId") == "abc123"
 
 
@@ -75,11 +81,11 @@ def test_submit_order_retries_on_network_error_then_succeeds(monkeypatch):
             super().__init__()
             self.attempts = 0
 
-        def create_order(self, symbol, side, order_type, qty, price=None, params=None):
+        def create_order(self, symbol, order_type, side, qty, price=None, params=None):
             self.attempts += 1
             if self.attempts < 2:
                 raise ccxt.NetworkError("simulated transient failure")
-            return super().create_order(symbol, side, order_type, qty, price, params)
+            return super().create_order(symbol, order_type, side, qty, price, params)
 
     monkeypatch.setattr("time.sleep", lambda _seconds: None)  # no real delay in tests
     fast_settings = QueueSettings(
@@ -101,7 +107,7 @@ def test_submit_order_gives_up_after_max_attempts(monkeypatch):
     from prometheus.core.config import QueueSettings
 
     class AlwaysFlaky(FakeCcxtExchange):
-        def create_order(self, symbol, side, order_type, qty, price=None, params=None):
+        def create_order(self, symbol, order_type, side, qty, price=None, params=None):
             raise ccxt.NetworkError("simulated permanent failure")
 
     monkeypatch.setattr("time.sleep", lambda _seconds: None)

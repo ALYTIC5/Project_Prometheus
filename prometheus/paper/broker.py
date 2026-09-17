@@ -56,8 +56,8 @@ class CcxtExchange(Protocol):
     def create_order(
         self,
         symbol: str,
-        side: str,
         order_type: str,
+        side: str,
         qty: float,
         price: float | None = None,
         params: dict[str, Any] | None = None,
@@ -149,7 +149,7 @@ class PaperBroker:
     ) -> dict[str, Any]:
         return self._with_retry(
             lambda: self.exchange.create_order(
-                symbol, side, "market", qty, params={"newClientOrderId": client_order_id}
+                symbol, "market", side, qty, params={"newClientOrderId": client_order_id}
             )
         )
 
