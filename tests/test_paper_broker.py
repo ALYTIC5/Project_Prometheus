@@ -45,6 +45,27 @@ def test_broker_asserts_testnet_url(monkeypatch):
     assert "testnet" in str(broker.exchange.urls["api"]).lower()
 
 
+class _FakeLiveLookingExchange(FakeCcxtExchange):
+    """I14 (final-review fix wave): unlike FakeCcxtExchange,
+    set_sandbox_mode(True) here does NOT switch exchange.urls to a
+    testnet URL -- it stays live-looking, exercising the actual failure
+    path PaperBroker.__init__ is supposed to guard. Without this fixture,
+    test_broker_asserts_testnet_url is vacuous: FakeCcxtExchange always
+    reports a testnet URL once sandboxed, so the RuntimeError branch in
+    PaperBroker.__init__ could be deleted entirely and every existing
+    test would still pass."""
+
+    def set_sandbox_mode(self, enabled: bool) -> None:
+        self.sandbox_enabled = enabled
+        # Deliberately does NOT update self.urls -- stays
+        # "https://api.binance.com" even once "sandboxed".
+
+
+def test_broker_raises_if_sandbox_mode_does_not_confirm_testnet(monkeypatch):
+    with pytest.raises(RuntimeError, match="could not confirm testnet mode"):
+        PaperBroker(exchange_factory=lambda **_: _FakeLiveLookingExchange())
+
+
 def test_broker_raises_if_live_var_present(monkeypatch):
     monkeypatch.setenv("BINANCE_API_KEY", "danger")
     with pytest.raises(RuntimeError, match="live-sounding"):

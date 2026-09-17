@@ -245,19 +245,11 @@ async def _run_evolution_step(session: AsyncSession) -> list[str]:
 
 
 async def _run_ingest() -> None:
-    # A prior cycle that crashed mid-job (or was killed by Railway between
-    # heartbeats) leaves its claim stale forever unless something reclaims
-    # it -- nothing else calls reap_stale_claims(), so this scheduled
-    # worker is the only thing that ever will. Runs before draining so a
-    # reclaimed job is immediately eligible this cycle, not next.
-    settings = get_queue_settings()
-    async with get_session() as session:
-        reaped = await reap_stale_claims(
-            session, stale_after_seconds=settings.JOB_HEARTBEAT_TIMEOUT_SECONDS
-        )
-        await session.commit()
-    if reaped:
-        print(f"worker: reclaimed {len(reaped)} stale claim(s): {reaped}")
+    # I7 (final-review fix wave): reap_stale_claims used to run here, but
+    # this concern is only hourly-gated while research's drain_queue (30
+    # min) can run without ingest on the ticks in between -- moved to
+    # run_once()'s top so it runs every tick regardless of cadence; see
+    # that function for the full reasoning.
     await backfill(_INGEST_CATCHUP_DAYS)
 
 
@@ -322,12 +314,7 @@ async def _run_paper() -> None:
     is a no-op if it's empty -- PAPER_API_KEY/PAPER_API_SECRET (required
     by PaperBroker.__init__) must only be set once paper trading has an
     actual CHAMPION to trade, not from day one of the tightened */15
-    cron before any strategy has ever reached CHAMPION status. Without
-    this ordering, a fresh/no-champions deployment would raise out of
-    _run_paper on every tick for want of credentials nothing yet needs,
-    which -- since run_once() does not catch per-concern exceptions --
-    would also break the unrelated ingest/research concerns on that same
-    tick.
+    cron before any strategy has ever reached CHAMPION status.
 
     Divergence is checked against a strategy's WHOLE FILLED order
     history (queried by strategy_id), not just the ids poll_fills()
@@ -341,7 +328,15 @@ async def _run_paper() -> None:
     when two champions share a symbol (poll_fills() itself is correctly
     scoped by symbol only, since it is just updating fill status against
     the exchange -- the attribution fix belongs here, in which deltas
-    get reconciled and handed to which strategy_id)."""
+    get reconciled and handed to which strategy_id).
+
+    I9 (final-review fix wave): each champion's body is wrapped in its
+    own try/except -- one champion's failure (a ccxt error, a bad
+    historical row, anything) must not stop the others from being
+    processed this tick. run_once() itself also isolates this whole
+    concern, but that alone would still mean champion #1's exception
+    prevents champions #2..N from ever being polled/reconciled this
+    tick; this is a second, per-champion layer."""
     as_of_cutoff = datetime.now(UTC)
 
     async with get_session() as session:
@@ -356,50 +351,77 @@ async def _run_paper() -> None:
 
     broker = PaperBroker()
     for row in champions:
-        spec = StrategySpec.model_validate(row.spec)
-        async with get_session() as session:
-            pit, _data_version_hash = await load_point_in_time(
-                session,
-                [spec.symbol],
-                spec.timeframe,
-                as_of_cutoff - timedelta(days=_GRID_LOOKBACK_DAYS),
-                as_of_cutoff,
-            )
-            bars = pit.as_of(as_of_cutoff)
-            if bars.height == 0:
-                continue
-
-            await decide_and_submit(session, broker, strategy_id=row.id, spec=spec, bars=bars)
-            await poll_fills(session, broker, symbol=spec.symbol)
-
-            strategy_order_ids = (
-                await session.execute(
-                    _SELECT_STRATEGY_FILLED_ORDER_IDS, {"strategy_id": row.id}
-                )
-            ).scalars().all()
-            deltas = []
-            for order_id in strategy_order_ids:
-                delta = await reconcile_order(session, order_id=order_id)
-                if delta is not None:
-                    deltas.append(delta)
-            if deltas:
-                await check_divergence(session, strategy_id=row.id, reconciliation_deltas=deltas)
-
-            current_price = float(bars.tail(1)["close"][0])
-            paper_curve = await compute_paper_equity_curve(
-                session, strategy_id=row.id, current_price=current_price
-            )
-            if paper_curve:
-                await check_worse_than_holding(
+        try:
+            spec = StrategySpec.model_validate(row.spec)
+            async with get_session() as session:
+                pit, _data_version_hash = await load_point_in_time(
                     session,
-                    strategy_id=row.id,
-                    symbol=spec.symbol,
-                    paper_equity_curve=paper_curve,
-                    as_of_cutoff=as_of_cutoff,
+                    [spec.symbol],
+                    spec.timeframe,
+                    as_of_cutoff - timedelta(days=_GRID_LOOKBACK_DAYS),
+                    as_of_cutoff,
                 )
+                bars = pit.as_of(as_of_cutoff)
+                if bars.height == 0:
+                    continue
+
+                await decide_and_submit(
+                    session, broker, strategy_id=row.id, spec=spec, bars=bars
+                )
+                await poll_fills(session, broker, symbol=spec.symbol)
+
+                strategy_order_ids = (
+                    await session.execute(
+                        _SELECT_STRATEGY_FILLED_ORDER_IDS, {"strategy_id": row.id}
+                    )
+                ).scalars().all()
+                deltas = []
+                for order_id in strategy_order_ids:
+                    delta = await reconcile_order(session, order_id=order_id)
+                    if delta is not None:
+                        deltas.append(delta)
+                if deltas:
+                    await check_divergence(
+                        session, strategy_id=row.id, reconciliation_deltas=deltas
+                    )
+
+                current_price = float(bars.tail(1)["close"][0])
+                paper_curve = await compute_paper_equity_curve(
+                    session, strategy_id=row.id, current_price=current_price
+                )
+                if paper_curve:
+                    await check_worse_than_holding(
+                        session,
+                        strategy_id=row.id,
+                        symbol=spec.symbol,
+                        paper_equity_curve=paper_curve,
+                        as_of_cutoff=as_of_cutoff,
+                    )
+        except Exception as exc:
+            print(f"worker: paper concern failed for strategy {row.id}: {exc!r}")
+            continue
 
 
 async def run_once() -> list[str]:
+    # I7 (final-review fix wave): runs unconditionally, every tick,
+    # regardless of which of the three cadence-gated concerns below are
+    # due this wake -- previously this lived inside _run_ingest() (hourly
+    # gated), so a stale claim could wait up to an hour even though
+    # research's drain_queue (every 30 min) could otherwise have picked
+    # up the reclaimed job sooner. One cheap query per tick guarantees a
+    # stale claim never waits longer than one cron interval (15 min).
+    try:
+        settings = get_queue_settings()
+        async with get_session() as session:
+            reaped = await reap_stale_claims(
+                session, stale_after_seconds=settings.JOB_HEARTBEAT_TIMEOUT_SECONDS
+            )
+            await session.commit()
+        if reaped:
+            print(f"worker: reclaimed {len(reaped)} stale claim(s): {reaped}")
+    except Exception as exc:  # I9: one concern's failure must not sink the tick
+        print(f"worker: reap_stale_claims failed: {exc!r}")
+
     ran: list[str] = []
     async with get_session() as session:
         ingest_due = await is_due(
@@ -412,20 +434,35 @@ async def run_once() -> list[str]:
             session, concern="paper", interval_seconds=_PAPER_INTERVAL_SECONDS
         )
 
+    # I9 (final-review fix wave): each concern is isolated in its own
+    # try/except -- previously any single exception (a ccxt error from
+    # _run_paper, say) killed the entire tick, including concerns that
+    # hadn't run yet. mark_run still only fires on that concern's own
+    # success, unchanged: a crashed concern is retried next wake, but no
+    # longer takes the other two concerns down with it.
     if ingest_due:
-        await _run_ingest()
-        async with get_session() as session:
-            await mark_run(session, concern="ingest")
+        try:
+            await _run_ingest()
+            async with get_session() as session:
+                await mark_run(session, concern="ingest")
+        except Exception as exc:
+            print(f"worker: ingest concern failed: {exc!r}")
 
     if research_due:
-        ran = await _run_research()
-        async with get_session() as session:
-            await mark_run(session, concern="research")
+        try:
+            ran = await _run_research()
+            async with get_session() as session:
+                await mark_run(session, concern="research")
+        except Exception as exc:
+            print(f"worker: research concern failed: {exc!r}")
 
     if paper_due:
-        await _run_paper()
-        async with get_session() as session:
-            await mark_run(session, concern="paper")
+        try:
+            await _run_paper()
+            async with get_session() as session:
+                await mark_run(session, concern="paper")
+        except Exception as exc:
+            print(f"worker: paper concern failed: {exc!r}")
 
     return ran
 

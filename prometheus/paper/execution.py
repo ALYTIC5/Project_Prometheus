@@ -87,12 +87,23 @@ def _client_order_id(strategy_id: str, event_time: datetime, side: str) -> str:
 def _clamp_target_qty(target_qty: float, price: float) -> float:
     """Law 4: order sizing never exceeds RISK_LIMITS, applied against
     this strategy's own €1000 paper capital (STARTING_CAPITAL), not the
-    whole paper-trading book. MAX_LEVERAGE would only matter for a
+    whole paper-trading book.
+
+    I4 (final-review fix wave): MAX_LEVERAGE is one more independent cap
+    inside the min(...), not a multiplying factor on top of the other
+    two -- .env.example documents it as "max gross exposure divided by
+    equity, as a multiplier (1 = unlevered)", i.e. a ceiling, and
+    multiplying by it can only ever relax MAX_POSITION_PCT/
+    MAX_GROSS_EXPOSURE_PCT, which is backwards for a risk limit (with the
+    test sentinels 11/22/3, the old formula's effective cap was 33%
+    despite MAX_POSITION_PCT=11). MAX_LEVERAGE would only matter for a
     margined position, which nothing here ever opens (spot only) --
     included anyway so a future margin feature can't silently bypass it."""
     max_notional = STARTING_CAPITAL * min(
-        RISK_LIMITS.MAX_POSITION_PCT / 100.0, RISK_LIMITS.MAX_GROSS_EXPOSURE_PCT / 100.0
-    ) * RISK_LIMITS.MAX_LEVERAGE
+        RISK_LIMITS.MAX_POSITION_PCT / 100.0,
+        RISK_LIMITS.MAX_GROSS_EXPOSURE_PCT / 100.0,
+        RISK_LIMITS.MAX_LEVERAGE,
+    )
     max_qty = max_notional / price
     return max(min(target_qty, max_qty), -max_qty)
 
@@ -114,6 +125,14 @@ async def decide_and_submit(
     the caller should call this every tick; it is a safe no-op when
     there is nothing new to do.
     """
+    # I5 (final-review fix wave): Law 4 / .env.example's own documented
+    # contract -- "true = no new positions, regardless of every limit
+    # above" -- was previously enforced nowhere. Checked first, before
+    # computing a signal or touching the broker at all: a no-op, exactly
+    # like "no change needed".
+    if RISK_LIMITS.KILL_SWITCH:
+        return None
+
     signaled = signal_for(bars, spec)
     last_row = signaled.tail(1).to_dicts()[0]
     target_fraction = last_row["position"]
@@ -170,12 +189,23 @@ async def poll_fills(session: AsyncSession, broker: Any, *, symbol: str) -> list
         fetched = broker.fetch_order(symbol=symbol, exchange_order_id=row.exchange_order_id)
         if fetched.get("status") != "closed":
             continue
+        filled_qty = fetched.get("filled")
+        avg_fill_price = fetched.get("average")
+        if filled_qty is None or avg_fill_price is None:
+            # I1 (final-review fix wave): the exchange reported the order
+            # "closed" but didn't (yet) give us fill data -- .get(...)
+            # with no default so a present-but-null value is caught the
+            # same as a missing key. Leave the row SUBMITTED so next
+            # tick's poll_fills retries, instead of writing None/0.0 into
+            # a NOT NULL column that reconcile_order/
+            # compute_paper_equity_curve would later choke on every tick.
+            continue
         await session.execute(
             _UPDATE_FILL,
             {
                 "id": row.id,
-                "filled_qty": fetched.get("filled", 0.0),
-                "avg_fill_price": fetched.get("average"),
+                "filled_qty": filled_qty,
+                "avg_fill_price": avg_fill_price,
             },
         )
         updated.append(row.id)

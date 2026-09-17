@@ -1,5 +1,3 @@
-import math
-
 from prometheus.paper.duration import required_observation_days, required_paper_trading_duration
 
 

@@ -57,7 +57,7 @@ CONSTRUCTION_MANIFEST: dict[str, dict[str, Any]] = {
     },
     "harbour": {
         "prompt": 8,
-        "activates_on": ["paper_trades"],
+        "activates_on": ["paper_orders"],
         "agent_roles": ["builder"],
         "description": "Paper trading",
         "kind": "harbour",

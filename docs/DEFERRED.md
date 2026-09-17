@@ -258,3 +258,111 @@ and update the entry's status when it does.
   **Trigger:** revisit only if Qubx relicenses under a permissive license
   AND ships a real headless library entrypoint -- neither is expected,
   so this is not an active watch item.
+
+## PROMPT 8 (paper trading) -- final-branch-review findings, documented not built
+
+- **Quarantine/demotion doesn't close the open testnet position or keep
+  polling its orders (I3)** — `divergence.check_divergence` flips a
+  strategy to QUARANTINED, and validation's decision logic can demote a
+  CHAMPION, but nothing in either path cancels the strategy's still-open
+  testnet orders or flattens its held position. `worker._run_paper` only
+  polls/reconciles/checks strategies currently `status = 'CHAMPION'`, so
+  a quarantined or demoted strategy's real testnet position simply stops
+  being looked at, not closed out. PROMPTS.md's spec implies this should
+  happen; building it means deciding how a quarantined strategy submits
+  an unwind order outside its own `decide_and_submit` signal path, which
+  is a real design question, not a one-line fix. **Trigger:** before
+  Prompt 8's real 48h verification run (an actual quarantine event during
+  that run would otherwise leave a real testnet position open and
+  unmonitored), or whenever a real demotion/quarantine first happens in
+  production.
+
+- **Paper accounting isn't distortion-matched to the backtest/benchmark
+  it's compared against (I6)** — `execution._clamp_target_qty` applies a
+  real RISK_LIMITS clamp to the €1000 paper position, but
+  `backtest/engine.py`'s own simulated accounting applies no equivalent
+  clamp at all, so a paper position and its "same strategy" backtested
+  position can size differently for reasons that have nothing to do with
+  strategy quality. Separately, `compute_paper_equity_curve` charges zero
+  fees on every real fill, while `compute_benchmark_curve`'s €1000
+  buy-and-hold charges one `apply_cost(1000)` entry fee (Law 8's own
+  requirement that the benchmark use the same cost model). Both
+  distortions are real but currently unquantified, and either one could
+  make `PAPER_WORSE_THAN_HOLDING` fire on a sizing/fee artifact rather
+  than genuine underperformance. **Trigger:** before treating
+  `PAPER_WORSE_THAN_HOLDING` findings as decision-grade evidence for
+  demoting a CHAMPION -- quantify both gaps first (how much clamp
+  divergence actually occurs in practice; what a paper-side entry fee
+  would change) rather than assuming they wash out.
+
+- **A crash between `broker.submit_order()` succeeding and the
+  `paper_orders` INSERT commit loses the DB's record of a real order
+  (I8)** — `execution.decide_and_submit` calls `broker.submit_order()`
+  first and only inserts the `paper_orders` row afterward; a process
+  crash in that window leaves a real, live testnet order with no local
+  row at all. The design's intended recovery is "safe to re-attempt" (the
+  deterministic `client_order_id` from `_client_order_id` is meant to
+  make a retry a no-op), but ccxt's actual behavior on a duplicate
+  `newClientOrderId` is to raise `InvalidOrder`, not `NetworkError` --
+  and `PaperBroker._with_retry` only retries `NetworkError`. So the
+  intended-safe retry path is not actually safe today; it surfaces an
+  unhandled `InvalidOrder` instead. **Trigger:** if this crash window is
+  ever actually hit in production (visible as an `InvalidOrder` in
+  worker logs with no matching `paper_orders` row), or as a preventative
+  pass before the 48h verification run -- fixing it means either
+  reconciling against `fetch_open_orders`/`fetch_order` by
+  `client_order_id` before treating `InvalidOrder` as fatal, or writing
+  the `paper_orders` row (status='SUBMITTED', no exchange_order_id yet)
+  BEFORE calling the broker instead of after.
+
+- **No order precision or minNotional handling (I10)** — nothing in
+  `execution.py` calls ccxt's `amount_to_precision`/`price_to_precision`,
+  and nothing checks Binance's minNotional before submitting. Real orders
+  sized off `_clamp_target_qty`'s typical clamped notional (a fraction of
+  €1000) are likely to be rejected by Binance's real LOT_SIZE/minNotional
+  filters on the actual testnet. **Trigger:** the first real rejected
+  order seen in testnet logs (Task 11's integration test or the 48h
+  verification run), or a dedicated pass that fetches and applies
+  `exchange.markets[symbol]` precision/limits before every `create_order`
+  call.
+
+- **`PAPER_WORSE_THAN_HOLDING` findings are write-only and undeduplicated
+  (I11)** — `check_worse_than_holding` writes a `PaperFinding` row, but
+  nothing surfaces it: no API route reads `paper_findings`, no frontend
+  view renders it, and `world/entities.py`'s `paper_pnl_today` is still
+  hardcoded `0.0` rather than sourced from real paper P&L. There is also
+  no dedup -- a champion that stays behind its benchmark writes a new
+  `PAPER_WORSE_THAN_HOLDING` row every 15-minute tick indefinitely, with
+  no "already flagged, don't repeat" check. **Trigger:** whenever the
+  paper-trading world view (harbour building, treasury's
+  `paper_pnl_today`) is actually wired up -- at minimum needs a `/paper`
+  or `/findings` API route, real `paper_pnl_today` sourced from
+  `compute_paper_equity_curve`, and a dedup rule (e.g. one open,
+  unresolved finding per strategy rather than one per tick).
+
+- **A heavy research tick can eat into paper's cadence slack budget
+  (Deferred #2)** — `worker.run_once`'s three concerns (ingest hourly,
+  research 30min, paper 15min) all run from the same single */15 cron
+  tick when their cadences happen to align. `_run_research`'s
+  `drain_queue` call runs real backtests and has no bound on how long a
+  large batch takes; on the rare tick where ingest, research, and paper
+  are all simultaneously due, a long research batch could delay `_run_paper`
+  enough to eat into `_CADENCE_SLACK_FACTOR`'s 10% slack budget, making
+  the next paper tick's `is_due` check borderline. **Trigger:** if
+  production logs ever show paper's actual cadence drifting measurably
+  past 15 minutes on ticks where all three concerns fire together; not
+  worth bounding `drain_queue`'s batch size pre-emptively without that
+  evidence.
+
+- **`reconcile_order`'s one-query-per-order-id grows with a champion's
+  full fill history every tick (Deferred #3)** — `worker._run_paper`
+  re-reconciles every FILLED order for a strategy on every tick (not just
+  new fills), issuing one `reconcile_order` query per historical order
+  id. At the expected scale (roughly one order per champion per day) this
+  is immaterial, but it is O(days²) cumulative queries over a long
+  running champion, not O(days). **Trigger:** if a champion's real fill
+  frequency ever turns out to be much higher than ~1/day, or if a single
+  champion runs long enough (many months) that this becomes measurable
+  worker runtime -- at that point, only reconcile orders newer than the
+  last reconciled one, tracked via a new column or `paper_findings`
+  cursor, rather than re-querying the whole history.

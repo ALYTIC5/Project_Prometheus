@@ -19,7 +19,7 @@ from prometheus.data.loaders import load_point_in_time
 _SELECT_ORDER = text(
     """
     SELECT expected_price, expected_qty, filled_qty, avg_fill_price,
-           submitted_at, filled_at, status
+           submitted_at, filled_at, status, side
       FROM paper_orders WHERE id = :order_id
     """
 )
@@ -34,23 +34,41 @@ _SELECT_FILLED_ORDERS_CHRONO = text(
 )
 
 
-async def reconcile_order(session: AsyncSession, *, order_id: str) -> dict[str, float] | None:
+async def reconcile_order(session: AsyncSession, *, order_id: str) -> dict[str, float | str] | None:
     """None if the order hasn't reached FILLED yet -- there is nothing
-    to reconcile against a still-open order."""
+    to reconcile against a still-open order.
+
+    Also returns None (I1, final-review fix wave) if a FILLED row somehow
+    carries a NULL avg_fill_price/filled_qty -- execution.py's poll_fills
+    now refuses to mark an order FILLED without both values, but this is
+    a second, independent guard: since worker.py re-reconciles a
+    strategy's FULL fill history every tick, one bad historical row
+    raising TypeError here would otherwise break every future tick for
+    that champion forever."""
     row = (await session.execute(_SELECT_ORDER, {"order_id": order_id})).first()
     if row is None or row.status != "FILLED":
+        return None
+    if row.avg_fill_price is None or row.filled_qty is None:
         return None
 
     price_delta_pct = (float(row.avg_fill_price) - float(row.expected_price)) / float(
         row.expected_price
     ) * 100
-    qty_delta_pct = (float(row.filled_qty) - float(row.expected_qty)) / float(row.expected_qty) * 100
+    qty_delta_pct = (
+        (float(row.filled_qty) - float(row.expected_qty)) / float(row.expected_qty) * 100
+    )
     latency_seconds = (row.filled_at - row.submitted_at).total_seconds()
 
     return {
         "price_delta_pct": price_delta_pct,
         "qty_delta_pct": qty_delta_pct,
         "latency_seconds": latency_seconds,
+        # C1 (final-review fix wave): divergence.py needs the order's side
+        # to normalize price_delta_pct into "adverse slippage" (paying
+        # more than expected on a buy vs. receiving less than expected on
+        # a sell are both bad, but have opposite signs here) -- fetched
+        # from this same row, no second query.
+        "side": row.side,
     }
 
 
@@ -69,7 +87,14 @@ async def compute_paper_equity_curve(
     One point per fill event (marked at that fill's own price), plus a
     final point marked at `current_price` (the latest close) -- an open
     position's value moves with the market between fills, not just at
-    the moment of the last trade."""
+    the moment of the last trade.
+
+    Skips (I1, final-review fix wave) any row with a NULL avg_fill_price
+    or filled_qty rather than raising -- execution.py's poll_fills now
+    refuses to write a FILLED row without both, but this is a second,
+    independent guard against one bad historical row taking down this
+    strategy's equity curve, and therefore every future tick's
+    PAPER_WORSE_THAN_HOLDING check, forever."""
     rows = (
         await session.execute(_SELECT_FILLED_ORDERS_CHRONO, {"strategy_id": strategy_id})
     ).fetchall()
@@ -79,13 +104,20 @@ async def compute_paper_equity_curve(
     cash = STARTING_CAPITAL
     position_qty = 0.0
     curve: list[tuple[date, float]] = []
+    last_valid_row = None
     for row in rows:
+        if row.avg_fill_price is None or row.filled_qty is None:
+            continue
         signed_qty = float(row.filled_qty) if row.side == "buy" else -float(row.filled_qty)
         cash -= signed_qty * float(row.avg_fill_price)
         position_qty += signed_qty
         curve.append((row.filled_at.date(), cash + position_qty * float(row.avg_fill_price)))
+        last_valid_row = row
 
-    curve.append((rows[-1].filled_at.date(), cash + position_qty * current_price))
+    if last_valid_row is None:
+        return []
+
+    curve.append((last_valid_row.filled_at.date(), cash + position_qty * current_price))
     return curve
 
 
