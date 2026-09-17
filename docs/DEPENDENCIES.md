@@ -55,3 +55,21 @@ packer) rather than duplicating it; `frontend/src/sprites/direction.ts` is a
 ~15-line pure function, not something worth a dependency for.
 
 **Isometric math attribution:** PROMPTS.md asks that the isometric grid math be ported from `github.com/0xheycat/isometric-game-skills` (MIT-licensed; algorithms only, not its Canvas2D/Godot rendering code or ComfyUI/SDXL art pipeline). The 2:1 screen&lt;-&gt;grid projection formula and depth sorting are now implemented (`frontend/src/iso/projection.ts`'s `gridToScreen`/`screenToGrid`/`depthOf`), matching that repo's `isometric-grid-math` and `depth-sorting-occlusion` skill references (`screenX=(col-row)*(W/2)`, `screenY=(col+row)*(H/2)`; depth keyed on a multi-tile object's far-most occupied tile, not its origin, so large buildings sort correctly against smaller neighbours). The hand-authored city layout (`prometheus/world/construction.py`'s `BUILDING_LOCATIONS`, validated by `tests/test_building_layout.py`) replaces the earlier arrangement, which had real overlapping footprints (the Monument literally overlapped both the Forge and the Vault). A* pathfinding and autotiling from that toolkit remain deferred: `agents` and `districts` are still always `[]` — `prometheus/world/projection.py` hardcodes this with an explicit comment that a fabricated agent would be the world lying about work it is not doing, and there is still no jobs table or scheduler anywhere in the backend (PROMPT 4). The builder sprites the renderer now shows are static idle decoration keyed off each building's real `construction_phase` (PROMPTS.md's actual Prompt-1 acceptance bar), not the pathfinding-driven migration system PROMPTS.md describes for later — that still needs Prompt 4's real per-agent backend state before it can be built without inventing data. Revisit pathfinding when Prompt 4 or later actually produces a moving agent with real `from_location`/`to_location`/`progress`.
+
+**Qubx evaluated and not adopted (2026-09-17):** PROMPTS.md PROMPT 8 asks
+that `github.com/xLydianSoftware/Qubx` be evaluated as the paper-trading
+execution layer before building our own. Checked via `gh repo view
+xLydianSoftware/Qubx`: GPLv3-licensed ("Framework for quantitative
+strategies development, backtesting and live execution"), primary
+language Jupyter Notebook, 69 stars. Two disqualifying findings, not a
+technical feature comparison: (1) GPLv3 linked into this codebase risks
+obligating the whole combined work to GPLv3 if this repo is ever
+distributed, an unforced risk when `ccxt` (already an MIT dependency,
+already used in `data/ingestion.py`) covers everything a testnet broker
+adapter needs directly; (2) a notebook-first repo is a poor fit for the
+bounded, async, Postgres-`SKIP LOCKED`-queue-driven worker this codebase
+already runs (`worker.py`, `experiments/queue.py`) -- there is no clean
+headless entrypoint to integrate against without adopting its whole
+framework shape. `paper/broker.py` is a ~100-line `ccxt.binance()`
+wrapper instead. PROMPTS.md explicitly permits concluding "our adapter is
+simpler" -- this is that conclusion.

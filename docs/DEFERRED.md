@@ -251,3 +251,10 @@ and update the entry's status when it does.
   work by changing WHEN trades happen rather than HOW MANY or how
   exposed — the ablation harness would need a placebo actually proven
   neutral against that specific kind of perturbation, not this one.
+- **Qubx (`xLydianSoftware/Qubx`) was evaluated and rejected for the
+  paper-trading execution layer** -- GPLv3 license risk plus a
+  notebook-first shape that doesn't fit this repo's bounded async worker
+  (full reasoning in `docs/DEPENDENCIES.md`'s 2026-09-17 entry).
+  **Trigger:** revisit only if Qubx relicenses under a permissive license
+  AND ships a real headless library entrypoint -- neither is expected,
+  so this is not an active watch item.
