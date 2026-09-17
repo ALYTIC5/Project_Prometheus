@@ -300,8 +300,18 @@ async def _run_paper() -> None:
     divergence. Trading decisions (decide_and_submit) only actually
     submit when a new 1d bar makes the target position differ from the
     current one -- see paper/execution.py's own idempotency, not a
-    separate "is a new bar due" check here."""
-    broker = PaperBroker()
+    separate "is a new bar due" check here.
+
+    The champions query runs BEFORE constructing PaperBroker(), and this
+    is a no-op if it's empty -- PAPER_API_KEY/PAPER_API_SECRET (required
+    by PaperBroker.__init__) must only be set once paper trading has an
+    actual CHAMPION to trade, not from day one of the tightened */15
+    cron before any strategy has ever reached CHAMPION status. Without
+    this ordering, a fresh/no-champions deployment would raise out of
+    _run_paper on every tick for want of credentials nothing yet needs,
+    which -- since run_once() does not catch per-concern exceptions --
+    would also break the unrelated ingest/research concerns on that same
+    tick."""
     as_of_cutoff = datetime.now(UTC)
 
     async with get_session() as session:
@@ -311,6 +321,10 @@ async def _run_paper() -> None:
             )
         ).fetchall()
 
+    if not champions:
+        return
+
+    broker = PaperBroker()
     for row in champions:
         spec = StrategySpec.model_validate(row.spec)
         async with get_session() as session:
