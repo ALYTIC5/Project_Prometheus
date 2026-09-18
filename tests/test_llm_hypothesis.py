@@ -6,7 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from prometheus.research.llm.hypothesis import PaperContext, generate_hypothesis
+from prometheus.research.llm.hypothesis import (
+    LLMResponseError,
+    PaperContext,
+    generate_hypothesis,
+)
 
 _VALID_RESPONSE_JSON = json.dumps(
     {
@@ -87,3 +91,33 @@ async def test_generate_hypothesis_raises_value_error_on_unknown_family() -> Non
             client, "claude-sonnet-5", "BTC/USDT", "1d",
             [PaperContext(paper_id=1, key_sections="momentum literature review")],
         )
+
+
+@pytest.mark.parametrize(
+    "response_text",
+    [
+        _MALFORMED_RESPONSE_JSON,  # fails StrategySpec's own model_validator
+        _UNKNOWN_FAMILY_RESPONSE_JSON,  # KeyError against the param_fields dict
+        "not json at all",  # json.JSONDecodeError
+    ],
+    ids=["invalid-spec", "unknown-family", "unparseable-json"],
+)
+async def test_every_post_call_failure_raises_llm_response_error_carrying_usage(
+    response_text: str,
+) -> None:
+    """I3 (final-review fix wave): the Anthropic call already billed by
+    the time ANY of these failures happen, so each must surface as
+    LLMResponseError carrying the exact token counts and model the caller
+    needs to write the llm_usage row. LLMResponseError subclasses
+    ValueError, so callers catching ValueError are unaffected."""
+    client = _mock_client(response_text, input_tokens=777, output_tokens=333)
+    with pytest.raises(LLMResponseError) as excinfo:
+        await generate_hypothesis(
+            client, "claude-sonnet-5", "BTC/USDT", "1d",
+            [PaperContext(paper_id=1, key_sections="momentum literature review")],
+        )
+
+    assert isinstance(excinfo.value, ValueError)
+    assert excinfo.value.input_tokens == 777
+    assert excinfo.value.output_tokens == 333
+    assert excinfo.value.model == "claude-sonnet-5"
