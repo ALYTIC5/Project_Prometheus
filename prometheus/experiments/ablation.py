@@ -631,6 +631,99 @@ async def register_evolution_component(
     return result
 
 
+_SELECT_LLM_SPECS_FOR_SYMBOL = text(
+    "SELECT spec FROM strategies WHERE spec->>'symbol' = :symbol"
+    " AND spec->>'source' = 'llm_hypothesis'"
+)
+
+
+async def register_llm_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """PROMPT 9: does the LLM hypothesis generator (research/llm/
+    hypothesis.py) find anything the deterministic baseline grid
+    (research/generate.generate_baseline_grid) doesn't, on real
+    out-of-sample data. Same shape as register_evolution_component: per
+    symbol, scores every baseline-grid spec and every LLM-sourced spec
+    (spec.source == "llm_hypothesis", found directly in `strategies` --
+    llm_hypotheses is provenance/audit only, never needed for scoring)
+    with the real backtest engine, records one paired trial (enabled =
+    best LLM score, disabled = best grid score) via record_trial, then
+    reuses _recompute_registry for the real verdict -- reported honestly,
+    including a NEUTRAL or HARMFUL one, and displayed prominently in the
+    Temple of Knowledge either way via the existing component_registry ->
+    world/projection.py wiring.
+
+    _SELECT_LLM_SPECS_FOR_SYMBOL filters on spec->>'symbol', not a
+    `symbol` column -- prometheus.core.db.Strategy has no such column
+    (only id/family/spec/status/created_at); symbol lives inside the
+    JSONB spec, same as every other StrategySpec field read back here."""
+    component = "llm_generation"
+    n_trials = 0
+    n_failed = 0
+
+    def _score(pit: PointInTimeFrame, spec: StrategySpec) -> float | None:
+        try:
+            return run_backtest(pit, spec, end, cost_model=cost_model).total_return_pct
+        except ValueError:
+            return None
+
+    for symbol in symbols:
+        pit, _data_version_hash = await load_point_in_time(
+            session, [symbol], timeframe, start, end
+        )
+        scored_grid = [
+            (spec, score)
+            for spec in generate_baseline_grid(symbol, timeframe)
+            if (score := _score(pit, spec)) is not None
+        ]
+        llm_rows = (
+            await session.execute(_SELECT_LLM_SPECS_FOR_SYMBOL, {"symbol": symbol})
+        ).fetchall()
+        llm_specs = [StrategySpec.model_validate(row.spec) for row in llm_rows]
+        scored_llm = [
+            (spec, score)
+            for spec in llm_specs
+            if (score := _score(pit, spec)) is not None
+        ]
+        if not scored_grid or not scored_llm:
+            n_failed += 1
+            continue
+
+        _best_grid_spec, best_grid_score = max(scored_grid, key=lambda pair: pair[1])
+        best_llm_spec, best_llm_score = max(scored_llm, key=lambda pair: pair[1])
+
+        await record_trial(
+            session,
+            component=component,
+            version=version,
+            symbol=symbol,
+            config_hash=best_llm_spec.config_hash(),
+            seed=derive_seed(component, version, symbol),
+            enabled_return_pct=best_llm_score,
+            disabled_return_pct=best_grid_score,
+        )
+        n_trials += 1
+
+    result = await _recompute_registry(
+        session,
+        component,
+        version,
+        list(FAMILIES),
+        n_trials_this_batch=n_trials,
+        n_failed_this_batch=n_failed,
+    )
+    await session.commit()
+    return result
+
+
 def pairwise_interactions(components: dict[str, ComponentFn]) -> dict[tuple[str, str], ComponentFn]:
     """Every 2-way combination of the given component functions,
     composed (both perturbations applied to the baseline in sequence,
