@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.experiments.ablation import register_llm_component
@@ -19,19 +20,22 @@ async def _seed_llm_strategy(session: AsyncSession, *, strategy_id: str, symbol:
         fast_window=5, slow_window=20, expected_horizon=5,
         source="llm_hypothesis", description="seeded for ablation test",
     )
-    # Spec JSON embedded literally in the query text, not bound as a
-    # parameter -- matches this codebase's own established pattern for
-    # seeding strategies.spec (a JSONB column) in tests
-    # (tests/test_paper_divergence.py's _seed_strategy), avoiding a
-    # driver-level jsonb-cast-from-bound-string question entirely. Safe
-    # here: spec.model_dump_json()'s content is fully controlled test
-    # fixture data, not external input.
+    # Spec bound as a real JSONB parameter, not embedded literally in the
+    # query text -- text() scans the WHOLE string for `:identifier`
+    # bind-marker syntax regardless of quoting, so a real spec's JSON
+    # (full of "field":value colons) gets misparsed as bind params
+    # ("fast_window":5 looks like a `:5` placeholder). The `'{}'` literal
+    # in tests/test_paper_divergence.py's _seed_strategy has no colons,
+    # which is why that precedent looked safe but doesn't generalize.
+    # Same bindparam(type_=JSONB) pattern this file's own
+    # register_llm_component/ablation.py module already uses elsewhere
+    # (e.g. _UPSERT_REGISTRY's families_affected column).
     await session.execute(
         text(
-            f"INSERT INTO strategies (id, family, spec, status) "
-            f"VALUES (:id, :family, '{spec.model_dump_json()}', 'pending')"
-        ),
-        {"id": strategy_id, "family": spec.family},
+            "INSERT INTO strategies (id, family, spec, status) "
+            "VALUES (:id, :family, :spec, 'pending')"
+        ).bindparams(bindparam("spec", type_=JSONB)),
+        {"id": strategy_id, "family": spec.family, "spec": spec.model_dump()},
     )
     await session.commit()
 
