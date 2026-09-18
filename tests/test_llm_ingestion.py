@@ -1,13 +1,17 @@
 """tests/test_llm_ingestion.py"""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.research.llm.ingestion import _extract_key_sections, ingest_paper
+from prometheus.research.llm.ingestion import (
+    _extract_key_sections,
+    ingest_paper,
+    search_arxiv,
+)
 
 pytestmark = pytest.mark.db
 
@@ -42,6 +46,68 @@ def test_extract_key_sections_excludes_references_via_grobid_tei() -> None:
 def test_extract_key_sections_falls_back_to_full_text_without_tei() -> None:
     sections = _extract_key_sections(abstract="This paper studies momentum.", tei_xml=None)
     assert "This paper studies momentum." in sections
+
+
+# I4 (final-review fix wave): a REAL GROBID paragraph, with an inline
+# <ref> child. ElementTree's `p.text` stops at the first child element, so
+# the pre-fix code kept only "Momentum was first documented by " and threw
+# away everything after the citation -- i.e. most of every paragraph.
+_TEI_XML_WITH_INLINE_REFS = """<?xml version="1.0"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0">
+  <text><body>
+    <div><head>Introduction</head><p>Momentum was first documented by \
+<ref type="bibr">[1]</ref> and confirmed out of sample much later.</p></div>
+  </body></text>
+</TEI>"""
+
+
+def test_extract_key_sections_captures_text_after_inline_refs() -> None:
+    sections = _extract_key_sections(abstract="abstract text", tei_xml=_TEI_XML_WITH_INLINE_REFS)
+    assert "Momentum was first documented by" in sections
+    assert "[1]" in sections
+    # The half that `p.text` silently dropped before the fix.
+    assert "confirmed out of sample much later" in sections
+
+
+_FAKE_ARXIV_FEED = """<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2401.00123v1</id>
+    <title>A Recent Quant Paper</title>
+    <summary>An abstract.</summary>
+  </entry>
+</feed>"""
+
+
+def _mock_httpx_client(response_text: str) -> tuple[MagicMock, MagicMock]:
+    response = MagicMock()
+    response.text = response_text
+    response.raise_for_status = MagicMock()
+    client = MagicMock()
+    client.get = AsyncMock(return_value=response)
+    client_ctx = MagicMock()
+    client_ctx.__aenter__ = AsyncMock(return_value=client)
+    client_ctx.__aexit__ = AsyncMock(return_value=False)
+    return client_ctx, client
+
+
+async def test_search_arxiv_sorts_by_submission_date_descending() -> None:
+    """I5 (final-review fix wave): without an explicit sort, arXiv returns
+    relevance order, which is static for a fixed category query -- the
+    daily ingestion concern would refetch the same top-N papers forever
+    and research_papers would never grow."""
+    client_ctx, client = _mock_httpx_client(_FAKE_ARXIV_FEED)
+    with patch(
+        "prometheus.research.llm.ingestion.httpx.AsyncClient", return_value=client_ctx
+    ):
+        papers = await search_arxiv("cat:q-fin.*", 5)
+
+    assert [p.arxiv_id for p in papers] == ["2401.00123v1"]
+    params = client.get.await_args.kwargs["params"]
+    assert params["sortBy"] == "submittedDate"
+    assert params["sortOrder"] == "descending"
+    assert params["search_query"] == "cat:q-fin.*"
+    assert params["max_results"] == 5
 
 
 async def test_ingest_paper_is_idempotent_on_arxiv_id(db_session: AsyncSession) -> None:

@@ -80,11 +80,22 @@ async def search_arxiv(query: str, max_results: int) -> list[ArxivPaper]:
     testability; production always passes a fixed category filter
     (see worker.py's own call site) -- never anything derived from
     strategy state, which would make ingestion depend on research
-    outcomes rather than the other way around."""
+    outcomes rather than the other way around.
+
+    I5 (final-review fix wave): sorted by submission date, newest first.
+    arXiv's default sort is by relevance, which is STATIC for a fixed
+    category query -- the daily ingestion concern would have refetched
+    the same top-N papers forever and research_papers would never have
+    grown past its first day's results."""
     async with httpx.AsyncClient() as client:
         response = await client.get(
             _ARXIV_API_BASE,
-            params={"search_query": query, "max_results": max_results},
+            params={
+                "search_query": query,
+                "max_results": max_results,
+                "sortBy": "submittedDate",
+                "sortOrder": "descending",
+            },
             timeout=30.0,
         )
         response.raise_for_status()
@@ -153,7 +164,11 @@ def _extract_key_sections(*, abstract: str, tei_xml: str | None) -> str:
         head = div.findtext("tei:head", default="", namespaces=_TEI_NS)
         if not head or not _WANTED_SECTION_HEADS.match(head.strip()):
             continue
-        paragraphs = [p.text or "" for p in div.findall("tei:p", _TEI_NS)]
+        # I4 (final-review fix wave): itertext(), not `.text` -- real
+        # GROBID paragraphs carry inline <ref>/<formula> children, and
+        # `.text` is only the run of text BEFORE the first child element,
+        # so most of a paragraph was being silently dropped.
+        paragraphs = ["".join(p.itertext()) for p in div.findall("tei:p", _TEI_NS)]
         parts.append(" ".join(paragraphs))
     return "\n\n".join(parts)
 
