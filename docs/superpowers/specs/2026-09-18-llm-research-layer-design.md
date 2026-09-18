@@ -70,8 +70,8 @@ CREATE TABLE research_papers (
 );
 
 CREATE TABLE llm_hypotheses (
-    id               BIGSERIAL PRIMARY KEY,
-    strategy_id      VARCHAR REFERENCES strategies(id),
+    id                    BIGSERIAL PRIMARY KEY,
+    strategy_fingerprint  VARCHAR(64) NOT NULL,  -- StrategySpec.config_hash(), same idiom validation_results.strategy_fingerprint already uses -- NOT strategies.id, which doesn't exist yet at generation time (the spec is enqueued as a run_backtest job, same as an evolution child; the Strategy row is created later when that job actually runs)
     paper_ids        JSONB NOT NULL DEFAULT '[]',  -- research_papers.id list this hypothesis cited
     hypothesis_text  TEXT NOT NULL,
     expected_effect  TEXT NOT NULL,
@@ -153,13 +153,18 @@ public API — structurally cannot open a holdout connection, cannot call
   output_tokens: int, est_cost_usd: float)`.
 
 A thin orchestration function elsewhere (`worker.py`'s research cycle, see
-below) is what persists the result: inserts the `Strategy` row
-(`source="llm_hypothesis"`, same field `research/mutations.py` already uses
-for `source="mutation"`), the `llm_hypotheses` row, and the `llm_usage` row
-— then the resulting spec flows into the exact same
-`experiments/runner.py`/`enqueue_grid`/`validate_grid` pipeline every other
-spec goes through. No bypass path exists for an LLM-generated spec to reach
-holdout early or skip validation.
+below) is what persists the result: sets `spec.source = "llm_hypothesis"`
+(same field `research/mutations.py` already uses for `source="mutation"`),
+enqueues it via the SAME `enqueue()`/`_enqueue_child`-shaped call every
+evolution child already goes through (`kind="run_backtest"`, no second
+execution path), and writes the `llm_hypotheses` row (keyed by
+`strategy_fingerprint = spec.config_hash()`, not a `strategy_id` — no
+`Strategy` row exists yet at this point, exactly like `validation_results`
+never joins on `strategy_id` either) and the `llm_usage` row. The `Strategy`
+row itself gets created later, when `drain_queue` actually runs the job —
+identical to how an evolution child's `Strategy` row comes to exist. No
+bypass path exists for an LLM-generated spec to reach holdout early or skip
+validation.
 
 **Holdout-safety test:** a structural test asserting
 `research/llm/hypothesis.py` imports nothing from `prometheus.validation.holdout`
@@ -196,8 +201,13 @@ never gated on budget.
 `register_llm_component(session, *, symbols, timeframe, start, end,
 version)` — same shape as the existing `register_evolution_component`:
 per symbol, scores the best baseline-grid spec and the best LLM-generated
-spec (from `llm_hypotheses` joined to `strategies`) with the real backtest
-engine, records one paired trial via the existing `record_trial`, then
+spec with the real backtest engine. LLM-generated specs are found via
+`SELECT spec FROM strategies WHERE spec->>'source' = 'llm_hypothesis'`
+(reconstructed with `StrategySpec.model_validate`) — `llm_hypotheses` is
+provenance/audit only (hypothesis text, papers cited, cost), never needed
+for ablation scoring itself, since the real spec already lives in
+`strategies` by the time this runs (its `run_backtest` job has completed).
+Records one paired trial via the existing `record_trial`, then
 `_recompute_registry` produces a real VALUABLE/NEUTRAL/HARMFUL/UNPROVEN
 verdict — reused, not reimplemented. This automatically reaches the Temple
 of Knowledge via `component_registry` → `world/projection.py`, already
