@@ -121,3 +121,50 @@ code, never the test.
   not build, what you're uncertain about, and the exact command to verify it.
 - If a task is underspecified, ask rather than inventing a threshold. Inventing
   numeric thresholds is how the second blueprint went wrong.
+
+## World & Art Laws (World Track)
+
+W1. Every visual state is a pure function of WorldState plus
+    config/world_visuals.yaml. The renderer never decides something "looks bad".
+W2. Information-bearing motion is only for signal entities (agents bound to jobs,
+    heroes bound to strategies). Ambient townsfolk are allowed ONLY if they are:
+    visually distinct, excluded from anything the user reads as workload,
+    hideable via "Signal only", seeded-deterministic, and never enter the Oracle,
+    Vault, Arena or Harbour.
+W3. Scenes never decide outcomes. Outcomes come from event payloads. Animation
+    duration is cosmetic and must never imply timing that didn't happen.
+W4. Mock/scenario data always shows a non-dismissable "SIMULATED DATA" banner
+    and can never be the default in a production build.
+W5. No variant-specific branches outside the sprite manifest (Prompt 1 rule).
+W6. No text or numbers baked into art. The engine renders all text (e.g. the
+    Monument's "€1,000").
+W7. Every asset is palette-locked to world_client/sprites/palette.json and has a
+    row in art/registry.json (tool, PixelLab id, prompt, generations spent, date).
+W8. PixelLab spend: generate as much as the work needs, following the
+    PAUSE-AND-RESUME PROTOCOL (below). Run a pilot before any batch. Never use
+    mode="pro" or confirm_cost=true without explicit human approval in chat.
+    If $ART_CHECKPOINT_GENERATIONS is set, pause for review when it is reached.
+W9. The PixelLab token never appears in any repo file, log, registry row, commit,
+    or chat message. Never ask the user to paste a key into the conversation;
+    tell them to update the PIXELLAB_API_TOKEN environment variable instead.
+
+### Pause-and-resume protocol (PixelLab credits)
+- Before EVERY batch, call get_balance and estimate the batch cost. If the
+  balance cannot cover the whole batch, do not start it (half-finished batches
+  leave animations with missing directions).
+- Treat any PixelLab error mentioning credits, balance, quota, insufficient,
+  payment, 402 or 429 as "out of generations". Stop queueing immediately.
+- Jobs already queued keep running. Poll them to completion, download, and ingest.
+- Write art/RESUME.md: the prompt being run (e.g. W4), the exact step, what is
+  done, what is queued, what remains, and the estimated generations still needed.
+  Every job id must already be in art/registry.json.
+- Commit the work, then end the session with this message to the user:
+    "PixelLab generations exhausted. Top up the account (or update
+     PIXELLAB_API_TOKEN), restart Claude Code, and run the RESUME prompt."
+- On resume: call get_balance first, confirm it is the SAME PixelLab account
+  (list_characters must show the mockup characters), fill any partial animation
+  groups via animation_group_id before starting new work, then continue from
+  art/RESUME.md.
+W10. Quantitative values are never rendered in decorative fonts or replaced by
+     game scores. Hero stats always expose the underlying metric on hover and
+     show "UNMAPPED" when no source exists.
