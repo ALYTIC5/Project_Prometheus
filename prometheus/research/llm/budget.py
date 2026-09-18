@@ -90,5 +90,11 @@ def model_for_tier(tier: Tier) -> str:
 
 
 def estimate_cost(model: str, *, input_tokens: int, output_tokens: int) -> float:
-    input_rate, output_rate = _PRICING_PER_1K_TOKENS[model]
+    try:
+        input_rate, output_rate = _PRICING_PER_1K_TOKENS[model]
+    except KeyError:
+        # Same error contract as model_for_tier above -- an unpriced model
+        # is a configuration problem the caller can report, not a raw
+        # KeyError leaking this module's private dict shape.
+        raise ValueError(f"no pricing data for model {model!r}") from None
     return (input_tokens / 1000) * input_rate + (output_tokens / 1000) * output_rate

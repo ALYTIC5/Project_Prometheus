@@ -60,6 +60,12 @@ FAMILIES = (FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT)
 # _params_match_family below, not left to convention: a spec claiming two
 # families' parameters at once (or none) is a real construction error, not
 # something the engine should silently guess about.
+#
+# DRIFT WARNING: prometheus/research/llm/hypothesis.py keeps its own copy
+# of this family->fields mapping in TWO places (the _SYSTEM_PROMPT's
+# field listing, and the param_fields dict inside generate_hypothesis).
+# Adding a family here means updating both of those in step, or the LLM
+# generator silently keeps proposing only the old families.
 _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_MOMENTUM: ("fast_window", "slow_window"),
     FAMILY_BOLLINGER: ("lookback_window", "band_multiplier"),
