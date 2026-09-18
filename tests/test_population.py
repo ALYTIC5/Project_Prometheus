@@ -160,41 +160,38 @@ class PopulationFixture:
 async def population(session_factory: async_sessionmaker[AsyncSession]) -> PopulationFixture:
     ids: dict[str, str] = {}
     experiment_year = next(_TEST_EXPERIMENT_YEAR)
-    # Same collision class as the experiment year above, one layer down:
-    # every test's "validated_high" scores exactly 0.9, "champion" exactly
-    # 0.5, etc. -- identical literals across every independent test
-    # function using this fixture. select_for_cross_breeding's real query
-    # (research/population.py) is `ORDER BY ls.score DESC` with no
-    # secondary tiebreak, so once two different tests' same-family rows
-    # tie exactly, which one sorts first is Postgres's arbitrary choice,
-    # not this test's own fixture rows -- a real assertion failure CI
-    # caught (`assert a.strategy_id == population.ids["validated_high"]`
-    # got an EARLIER test's MOMENTUM row instead of this test's own).
-    # A monotonically increasing per-test epsilon, tiny enough to never
-    # change intended relative ordering WITHIN one test's own five scores
-    # (0.9/0.8/0.5/0.3/0.1 are ~1e5 times further apart than this), makes
-    # each test's own rows strictly outscore every earlier test's
-    # identical nominal scores -- exactly what "this test's own fixture
-    # rows are the top scorers" already assumed.
-    score_offset = (experiment_year - 9000) * 1e-6
-    # The score offset above turned out not to be enough: population.py's
-    # real select_for_cross_breeding join (_LATEST_FINGERPRINT_CTE) keys
-    # `latest_score` by config_hash, not strategy_id --
-    # validation_results.strategy_fingerprint IS the config_hash, shared
-    # across ANY strategies with identical spec parameters. Every test's
-    # population fixture called _momentum(5, 20) etc. with the exact same
-    # literal windows, so different tests' "validated_high" strategies
-    # (different real strategies.id) shared the identical config_hash,
-    # and the join's "most recent validation_results row for this
-    # fingerprint" collapsed them all onto whichever test committed last
-    # for that hash -- the score_offset above never mattered, since the
-    # query doesn't care which specific strategy row "owns" a
-    # validation_results row, only which config_hash it's tagged with.
-    # A per-test window offset makes every test's spec parameters -- and
-    # therefore every test's config_hash -- genuinely distinct, fixing
-    # the actual shared resource rather than a symptom one layer removed
-    # from it.
+    # Two distinct real bugs, both from the same root cause: every test's
+    # population() call uses identical literal spec parameters AND
+    # identical literal scores (validated_high=0.9, promising_a=0.8, ...),
+    # and both `strategies`/`validation_results` accumulate forever across
+    # every test function in this file (this fixture's own docstring).
+    #
+    # Bug 1 (config_hash collision): validation_results.strategy_fingerprint
+    # IS config_hash, not strategy_id -- population.py's real
+    # _LATEST_FINGERPRINT_CTE join resolves "this strategy's latest score"
+    # by config_hash, so two DIFFERENT strategies (different real
+    # strategies.id, from different tests) with the SAME spec parameters
+    # share the SAME fingerprint and collapse onto whichever
+    # validation_results row for that hash was committed most recently --
+    # cross-test score contamination between otherwise-unrelated rows.
+    # Fixed by window_offset: shifting every _momentum() call's windows by
+    # a per-test amount makes every test's config_hash genuinely distinct.
+    #
+    # Bug 2 (global-vs-local ranking): select_for_cross_breeding(family=
+    # "MOMENTUM") legitimately returns the GLOBAL top-2 MOMENTUM candidates
+    # across the whole accumulating table, by design -- not "the top-2 among
+    # whichever rows the current test happens to have inserted". Once Bug 1
+    # is fixed and every test's rows carry real, distinct scores, a test
+    # asserting a SPECIFIC pair is returned must guarantee its own two
+    # intended winners outscore every OTHER test's rows too, not just rank
+    # correctly among its own five. Margin needed: test i's worst intended
+    # winner (promising_a, base 0.8) must exceed test (i-1)'s best candidate
+    # (validated_high, base 0.9) -- 0.8 + step*i > 0.9 + step*(i-1) reduces
+    # to step > 0.1, so any step comfortably above 0.1 works for every pair
+    # of tests, not just adjacent ones (scores only ever increase with
+    # test index, so domination is transitive).
     window_offset = experiment_year - 9000
+    score_offset = window_offset * 0.5
 
     def _m(fast: int, slow: int) -> StrategySpec:
         return _momentum(fast + window_offset, slow + window_offset)
