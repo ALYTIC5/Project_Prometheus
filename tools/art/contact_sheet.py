@@ -75,7 +75,9 @@ def render_contact_sheet(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--keys", nargs="*", default=None, help="Registry keys to render; default: all")
+    parser.add_argument(
+        "--keys", nargs="*", default=None, help="Registry keys to render; default: all"
+    )
     parser.add_argument("--state", default="idle")
     parser.add_argument("--out", type=Path, default=Path("artifacts/art/contact_mockups.png"))
     parser.add_argument(

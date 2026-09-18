@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -160,7 +160,7 @@ def main() -> int:
     for record in all_records:
         registry[record["key"]] = record
 
-    registry["_generated_at"] = datetime.now(timezone.utc).isoformat()
+    registry["_generated_at"] = datetime.now(UTC).isoformat()
     json_dump(registry, REGISTRY_PATH)
 
     print(f"Ingested {len(folders)} characters ({len(all_records)} state records) into:")
