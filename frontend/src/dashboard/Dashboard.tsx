@@ -2,6 +2,7 @@
 
 import { useBuildingsQuery, useScoreboardQuery, useViolationsQuery, useWorldStateQuery } from '../data/queries';
 import { DashboardHeader } from './DashboardHeader';
+import { ResearchSummary } from './ResearchSummary';
 import { ViolationsBanner } from './ViolationsBanner';
 import { BenchmarkChart } from './sections/BenchmarkChart';
 import { CostsSection } from './sections/CostsSection';
@@ -55,13 +56,21 @@ export default function Dashboard() {
         style={{ paddingTop: HEADER_HEIGHT_PX + (hasViolations ? BANNER_HEIGHT_PX : 0) }}
         className="mx-auto max-w-5xl pb-16"
       >
+        {/*
+          Always visible, not collapsible -- "what's the research doing
+          right now" answered without opening anything. Real content
+          (Strategies/Queue/Experiments/Benchmark) comes next; the two
+          sections still genuinely awaiting a later prompt (Data, Costs)
+          sink to the bottom so they never interrupt what's real today.
+        */}
+        <ResearchSummary />
         <SystemsTable />
-        <BenchmarkChart />
-        <DataSection />
         <StrategiesSection />
-        <ExperimentsSection />
         <QueueSection />
+        <ExperimentsSection />
+        <BenchmarkChart />
         <LawsSection world={world} isLoading={worldQuery.isLoading} />
+        <DataSection />
         <CostsSection />
       </main>
     </div>

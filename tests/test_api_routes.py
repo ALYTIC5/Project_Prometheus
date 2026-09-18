@@ -81,6 +81,26 @@ def test_queue_status_shape() -> None:
     assert isinstance(body["failed_pending_count"], int)
 
 
+def test_strategies_response_carries_validation_and_lineage_fields() -> None:
+    with TestClient(app) as client:
+        response = client.get("/strategies/")
+    assert response.status_code == 200
+    body = response.json()
+    assert "strategies" in body
+    # Empty table is a valid, honest state -- the field must be present on
+    # the shape whether or not any rows exist yet, same posture as
+    # test_experiments_response_carries_lineage_fields above.
+    for strategy in body["strategies"]:
+        for field in (
+            "verdict", "score", "pbo", "deflated_sharpe",
+            "excess_return", "excess_sharpe", "reason_codes",
+            "generation", "parent",
+        ):
+            assert field in strategy
+        assert isinstance(strategy["generation"], int)
+        assert strategy["generation"] >= 0
+
+
 def test_benchmark_drilldown_carries_curve() -> None:
     with TestClient(app) as client:
         response = client.get("/world/drilldown/benchmark/current")

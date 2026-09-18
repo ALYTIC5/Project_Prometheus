@@ -203,12 +203,31 @@ export interface BuildingWithCount extends Building {
   row_count: number;
 }
 
+/** GET /strategies/'s per-row shape. verdict/score/pbo/deflated_sharpe/
+ * excess_return/excess_sharpe/reason_codes come from the strategy's
+ * latest validation_results row (null/empty until Prompt 5's validator
+ * has run against it, an honest "not yet validated" state, not missing
+ * data). generation/parent are resolved server-side from the spec's own
+ * parent_id chain (prometheus/api/routes/strategies.py's
+ * _resolve_lineage) -- generation 0 and parent null both mean "no
+ * traceable parent," which is the correct reading for a strategy that
+ * really has none (grid-search seed) and one whose parent isn't in the
+ * table (deleted, or predates this feature) alike. */
 export interface StrategyRow {
   id: string;
   family: string;
   spec: Record<string, unknown>;
   status: string;
   created_at: string;
+  verdict: string | null;
+  score: number | null;
+  pbo: number | null;
+  deflated_sharpe: number | null;
+  excess_return: number | null;
+  excess_sharpe: number | null;
+  reason_codes: string[];
+  generation: number;
+  parent: string | null;
 }
 
 export interface DecisionPayload {
