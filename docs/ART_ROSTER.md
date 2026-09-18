@@ -7,6 +7,21 @@ this reuses the Prompt-12-era extraction instead of re-unzipping
 `Mockups.zip`). Cross-checked against `prometheus/world/entities.py`'s
 real `AgentRole` enum, not assumed.
 
+## Update 2026-09-18: account-status table below is now historical
+
+The 15 "exists" rows below described the **original** PixelLab account,
+which is now fully exhausted (0 generations). As of 2026-09-18, all 20
+of those characters (12 agents + 3 harbour + 5 new W4-Part-A characters)
+have been **recreated with new `character_id`s on a different trial
+account** — PixelLab characters do not transfer between accounts at all
+(confirmed: a fresh account starts with 0 characters regardless of what
+existed elsewhere). The current character_ids, per-account status, and
+which characters have walk cycles live in `art/registry.json` (local,
+gitignored) and `art/RESUME.md` (committed) — not in the table below.
+Treat the "exists"/"not found" column here as a snapshot of the dead
+account only, kept for its still-accurate duplicate-prompt and gap
+findings (both below).
+
 ## Critical finding: most characters no longer exist in the PixelLab account
 
 `get_character(id)` (free) was called for all 38 mockup characters. Result:

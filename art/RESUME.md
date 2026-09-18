@@ -1,86 +1,83 @@
-# Art pipeline — PAUSE (PixelLab credits exhausted)
+# Art pipeline — PAUSED (World Track on hold, backend work takes priority)
 
-**Paused at:** 2026-09-18, after W4 pilot batch.
-**Account:** trial, 40/40 generations used, $0.00 balance, 0 remaining.
-**Confirmed via:** `get_balance` -> `generations_remaining: 0`.
+**Paused at:** 2026-09-18, end of W4 character batch on trial account #1.
+**Account:** trial, 36/40 generations used, 4 remaining (not enough for
+another full 8-direction character — treat as exhausted for planning).
 
-## What's done
+## What's done (this account, token #1: `c6fc1a3a...`)
 
-- W0 (tooling check, ingest pipeline, art roster) — complete, see
-  `docs/ART_ROSTER.md`, commit `c4a7cac`.
-- W4 pilot: walk-cycle mode decision. Ran both PixelLab modes on
-  `agent_scribe` (character_id `d36c0bd2-a3ca-4f12-9b31-c85cb21a93f9`):
-  - `walk_template_pilot` — template mode, `walking-8-frames`, all 8
-    directions, 8 generations, job group `ff0e3672-8319-49a4-834b-f6dfa5fe1d1e`.
-  - `walk_v3_pilot` — v3 custom mode, south-east only, 8 frames,
-    1 generation, job group `8d257c55-710d-4163-a804-eb6fea350b76`.
-  - Both recorded in `art/registry.json`'s `agent_scribe.animations`
-    (local only, gitignored — rebuild via ingest if this file is ever lost,
-    the job IDs above are the source of truth).
-  - Decision written to `docs/ART_DECISIONS.md`: **use v3 mode for future
-    walk cycles**, with the action_description made explicit about the
-    held prop (e.g. "carrying a sealed scroll, no weapon") to prevent the
-    identity drift the pilot observed in v3's default prompt.
+- **20 characters created**, confirmed via `list_characters`:
+  - 12 agents + 3 harbour **recreated fresh** with their exact original
+    prompts (agent_scribe, agent_scholar, agent_prophet, agent_engineer,
+    agent_blacksmith, agent_experimenter, agent_statistician,
+    agent_guardian, agent_auditor, agent_historian, agent_messenger,
+    agent_necromancer, harbor_trader, harbor_courier, harbor_guard).
+  - 5 new W4-Part-A characters (agent_builder, townsfolk_villager,
+    townsfolk_merchant, townsfolk_pilgrim, dockhand).
+  - All local static art downloaded to `art/raw/characters/<key>/idle/
+    rotation/<direction>/0.png` — nothing left only on PixelLab's servers.
+- **2 characters fully walk-cycled** (v3 mode, 8 directions, 8 frames):
+  `agent_scribe` (job group `a61a6167-c33b-4208-8760-60f6dae80cdc`) and
+  `agent_engineer` (job group `2b20fcee-436b-4e32-acdb-40ac442c77f2`).
+  Downloaded to `art/raw/characters/<key>/idle/walk_v3/<direction>/
+  {0..8}.png`.
+- All of the above recorded in `art/registry.json` (local, gitignored).
 
-## What's queued
+## What remains
 
-Nothing queued — both pilot jobs completed and were ingested before the
-account ran out (no half-finished animation groups to resume).
+- **18 characters still need walk cycles** (all except agent_scribe/
+  agent_engineer) — ~8 generations each, ~144 generations total across
+  future accounts.
+- **23 gods/heroes still need full recreation from scratch** — never
+  started this session. ~23 `create_character` calls (~23 generations)
+  before any of them can even be animated.
 
-## What remains (real W4 batch, once a working account exists)
+## Key findings from this session (read before resuming)
 
-Per `docs/ART_ROSTER.md`'s gap analysis, on a **fresh account** (this
-one's account_status data — 12/12 agents, 3/3 harbour exist; 0/12 gods,
-0/11 heroes — should be re-verified with `list_characters` in case the
-new account is the SAME PixelLab account resurrected, not a different
-one; if the god/hero characters are gone there too, it's the account, not
-this trial cycling):
+1. **PixelLab characters do not transfer between accounts at all.**
+   `list_characters` on this account showed 0 before any creates, even
+   though the OLD account had 15 real characters. This means multi-account
+   rotation only helps for the **create** step (spreadable across
+   accounts) — **animation of a character must happen on the same account
+   that created it**, before that account's budget runs out. Plan future
+   batches as create+animate together per account, in priority order —
+   never assume a character created on one account can be animated on a
+   different one later.
+2. **Canvas size drifted.** This pipeline now produces 68x68 canvases
+   regardless of the `size=48` param requested (both for recreated
+   originals and new characters) — inconsistent with the true 48x48
+   canvas the original 15 characters had on the old dead account. Needs a
+   normalization decision (resize at ingest vs. accept 68px as the new
+   standard) before atlas packing. Not resolved — flagged for whoever
+   resumes this.
+3. **The old account's data is fully backed up locally already** — its
+   38 characters' idle rotation art came bundled inside `Mockups.zip`
+   itself (real export files, not just metadata), copied into
+   `art/raw/characters/` by the Prompt-12-era pipeline before this
+   session. Nothing further is retrievable from that account via API
+   (23 of them are evicted/`not_found` server-side — only the local
+   export copy exists for those).
 
-1. **W4 Part A — new characters** (no existing PixelLab record, must use
-   `create_character`, not `animate_character`):
-   - `agent_builder` (AgentRole.BUILDER has no mockup art yet)
-   - 3 ambient townsfolk: `townsfolk_villager`, `townsfolk_merchant`,
-     `townsfolk_pilgrim` (cosmetic only, Law W2 — never signal-bearing)
-   - `dockhand` (harbour NPC, no AgentRole)
-2. **W4 Part B — walk cycles for the 15 still-existing characters**
-   (12 agents + 3 harbour), using v3 mode per the pilot decision above,
-   prop-explicit prompts per character (check each character's own
-   `prompt` field in `art/registry.json` for what it's holding/wearing
-   before writing the action_description).
-3. **Harbour duplicate-prompt fix** — `harbor_courier` and `harbor_guard`
-   share verbatim prompt text with `agent_messenger`/`agent_guardian`
-   (see `docs/ART_ROSTER.md`). Regenerate with real sailor/dockhand
-   prompts — `create_character` cost, bundle with Part A if budget allows.
-4. **23-character recreation** (all gods, all heroes) — full
-   `create_character` cost, much larger spend than animation; the
-   session already flagged ~35-40 total trial-account cycles needed for
-   the whole pipeline at this account's generation budget.
+## PAUSED — do not resume without explicit user request
 
-Estimated generations still needed: unchanged from `docs/ART_ROSTER.md`'s
-prior estimate — nowhere near coverable by a single trial account, hence
-the multi-account rotation already agreed with the user.
+Per explicit user instruction mid-session: **all World Track / PixelLab
+art work is paused in favor of backend development.** Do not rotate to
+the next account, do not spend any more PixelLab generations, even though
+9 more account tokens are queued and ready. Wait for the user to
+explicitly ask to resume the World Track before touching this again.
 
-## Resume steps
+## Resume steps (when the user asks to continue)
 
-1. Rotate to the next queued PixelLab trial account. Update the token via
-   environment variable, never paste it into a repo file, log, or commit
-   (Law W9):
+1. Rotate to token #2:
    ```
-   claude mcp add pixellab https://api.pixellab.ai/mcp -t http -H "Authorization: Bearer <token>"
+   claude mcp remove pixellab -s local
+   claude mcp add pixellab https://api.pixellab.ai/mcp -t http -H "Authorization: Bearer <token #2>" -s local
    ```
-2. Restart Claude Code so the new MCP connection takes effect.
-3. Call `get_balance` first — confirm it's a fresh/different balance than
-   0/40 exhausted.
-4. Call `list_characters` — **compare against this account's roster**
-   (12 agents, 3 harbour, 0 gods, 0 heroes). If the new account shows the
-   SAME roster, it's the same underlying PixelLab account (unexpected —
-   re-verify token rotation actually worked). If it shows a different
-   roster (likely empty, since these are fresh trial signups), proceed —
-   this is a new account and none of the existing character_ids are
-   valid on it; the god/hero/townsfolk/builder/dockhand characters must
-   be created fresh here via `create_character`, not referenced by the
-   old character_ids.
-5. No partial animation groups to fill (see "What's queued" above) —
-   start directly on the W4 batch per "What remains."
-6. Continue from here; this file gets rewritten (not appended) at the
-   next pause.
+2. Restart Claude Code.
+3. `get_balance` + `list_characters` to confirm a fresh account (0
+   characters expected, per finding #1 above).
+4. Resolve finding #2 (canvas size) before generating anything new.
+5. Continue: create the 23 gods/heroes (or a subset budget allows) AND
+   animate them on the SAME account before it runs out, per finding #1.
+   Then continue walk-cycling the 18 not-yet-animated agents/harbour on
+   whichever account has budget, one full character at a time.
