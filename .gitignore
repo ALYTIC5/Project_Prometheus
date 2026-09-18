@@ -31,6 +31,7 @@ art/*
 art/sliced/*
 !art/sliced/overrides.json
 !art/coverage_matrix.json
+!art/RESUME.md
 
 # World Track verification output (contact sheets, screenshots) --
 # regenerable from art/ + the renderer, same posture as art/* above.
