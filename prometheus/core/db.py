@@ -343,6 +343,65 @@ class ComponentRegistry(Base):
     )
 
 
+class ResearchPaper(Base):
+    """One ingested arXiv paper. Insert-only by convention, same
+    exemption as ResearchViolation/AblationTrial -- a source record, not
+    a decision history."""
+
+    __tablename__ = "research_papers"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    arxiv_id: Mapped[str] = mapped_column(sa.String(32), unique=True)
+    title: Mapped[str] = mapped_column(Text)
+    abstract: Mapped[str] = mapped_column(Text)
+    full_text: Mapped[str] = mapped_column(Text)
+    key_sections: Mapped[str] = mapped_column(Text)
+    ingested_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class LLMHypothesis(Base):
+    """One LLM-generated strategy hypothesis. strategy_fingerprint is
+    StrategySpec.config_hash(), matching validation_results' own
+    strategy_fingerprint idiom -- not a strategies.id FK, since no
+    Strategy row exists yet when this is written (the spec is enqueued
+    as a run_backtest job first, same as an evolution child)."""
+
+    __tablename__ = "llm_hypotheses"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    strategy_fingerprint: Mapped[str] = mapped_column(sa.String(64))
+    paper_ids: Mapped[list[int]] = mapped_column(JSONB, default=list)
+    hypothesis_text: Mapped[str] = mapped_column(Text)
+    expected_effect: Mapped[str] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(sa.String(64))
+    input_tokens: Mapped[int] = mapped_column(sa.Integer)
+    output_tokens: Mapped[int] = mapped_column(sa.Integer)
+    est_cost_usd: Mapped[float] = mapped_column(sa.Numeric(10, 6, asdecimal=False))
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class LLMUsage(Base):
+    """Every LLM API call, successful or not -- CLAUDE.md's cost
+    discipline: 'Every LLM call logs (model, input_tokens, output_tokens,
+    est_cost_usd) to llm_usage.' Insert-only, same exemption as above."""
+
+    __tablename__ = "llm_usage"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    model: Mapped[str] = mapped_column(sa.String(64))
+    input_tokens: Mapped[int] = mapped_column(sa.Integer)
+    output_tokens: Mapped[int] = mapped_column(sa.Integer)
+    est_cost_usd: Mapped[float] = mapped_column(sa.Numeric(10, 6, asdecimal=False))
+    purpose: Mapped[str] = mapped_column(sa.String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PaperOrder(Base):
     """Mutable current-state table -- a fill UPDATEs this row, it is not
     an event log (same exemption as Strategy.status/Job)."""

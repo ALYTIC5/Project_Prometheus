@@ -366,3 +366,30 @@ and update the entry's status when it does.
   worker runtime -- at that point, only reconcile orders newer than the
   last reconciled one, tracked via a new column or `paper_findings`
   cursor, rather than re-querying the whole history.
+
+## PROMPT 9 (LLM research layer)
+
+- **AgentQuant and QuantEvolve evaluation** — PROMPTS.md marks both
+  optional ("Optionally evaluate AgentQuant and QuantEvolve as
+  components"). Deferred, not evaluated: the core LLM hypothesis
+  generator itself (`research/llm/hypothesis.py`) has no evidence yet
+  that it beats the Prompt 7 deterministic baseline (its ablation
+  verdict starts UNPROVEN, same honest starting state as every other
+  component) — evaluating two more external repos before the simpler
+  question is answered would be scope creep, same posture as the Qubx
+  evaluation in Prompt 8. **Trigger:** if `register_llm_component`'s
+  verdict reaches VALUABLE with enough experiments to be meaningful,
+  revisit whether either repo's approach would extend that result
+  further; if it stays NEUTRAL/HARMFUL/UNPROVEN indefinitely, there is no
+  reason to evaluate either.
+- **A general restricted DSL beyond the 3 existing `StrategySpec`
+  families** — `strategy/spec.py`'s own docstring names a bigger surface
+  (`features/signals/entry_rules/exit_rules/position_sizing/risk_rules`)
+  as the eventual Prompt 9 target; this implementation reuses the 3
+  existing families instead (see
+  `docs/superpowers/specs/2026-09-18-llm-research-layer-design.md`'s own
+  reasoning: prove the cheap version first, CLAUDE.md's own null
+  hypothesis about LLM research). **Trigger:** revisit only if
+  `llm_generation`'s ablation verdict is VALUABLE enough that expanding
+  its expressiveness looks worth a whitelisted-grammar-plus-interpreter
+  project of its own.

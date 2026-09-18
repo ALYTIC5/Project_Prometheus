@@ -19,13 +19,20 @@ children through the SAME queue.enqueue() every grid job goes through,
 so they are claimed and run by next cycle's drain_queue via the
 identical "run_backtest" path, not a second execution path.
 
-Now three concerns run at three different rates from this ONE entrypoint,
+Now four concerns run at four different rates from this ONE entrypoint,
 gated by worker_cadence (is_due/mark_run below): ingest hourly, research
 (today's grid/validate/evolve pipeline, unchanged logic) every 30
-minutes, paper trading every tick. The Railway cron interval itself
-tightens from */30 to */15 (the finest of the three rates) so the paper
-concern's tick actually happens on schedule -- still one scheduled
-worker, not a second service.
+minutes, paper trading every tick, and (6) PROMPT 9's llm_ingestion
+daily -- an arXiv search plus PDF/GROBID extraction into
+research_papers, coarser than the other three because papers don't
+appear faster than that and the extraction is comparatively expensive.
+The research cycle itself also now carries (7) one bounded, budget-gated
+LLM hypothesis step, which enqueues its candidate through the SAME
+queue.enqueue() path as grid and evolution children and is isolated so
+its failure can never sink the deterministic work around it. The Railway
+cron interval itself tightens from */30 to */15 (the finest of the four
+rates) so the paper concern's tick actually happens on schedule -- still
+one scheduled worker, not a second service.
 """
 from __future__ import annotations
 
@@ -33,7 +40,8 @@ import asyncio
 import hashlib
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.core.db import get_session
@@ -56,6 +64,14 @@ from prometheus.paper.reconciliation import (
     reconcile_order,
 )
 from prometheus.research.crossover import crossover
+from prometheus.research.llm.budget import current_tier, estimate_cost, model_for_tier
+from prometheus.research.llm.hypothesis import (
+    LLMResponseError,
+    PaperContext,
+    _AnthropicClientProtocol,
+    generate_hypothesis,
+)
+from prometheus.research.llm.ingestion import ingest_paper, search_arxiv
 from prometheus.research.mutations import parameter_tune, swap_family
 from prometheus.research.population import (
     select_for_cross_breeding,
@@ -65,6 +81,22 @@ from prometheus.research.population import (
 from prometheus.research.prioritisation import ParentContext, expected_information_value
 from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.spec import FAMILIES, StrategySpec
+
+
+def _anthropic_client() -> _AnthropicClientProtocol:
+    """Constructed lazily, once per worker cycle -- not at import time,
+    so importing worker.py (e.g. from tests) never requires
+    ANTHROPIC_API_KEY to be set.
+
+    M1 (final-review fix wave): typed as hypothesis.py's own
+    _AnthropicClientProtocol rather than bare `object` -- worker.py still
+    doesn't need to know the real anthropic.Anthropic type, but `object`
+    made the generate_hypothesis call site a mypy argument-type error.
+    The protocol IS the contract this function promises to satisfy."""
+    import anthropic
+
+    return anthropic.Anthropic()
+
 
 # Same window as the grid's own lookback, not a short "catch-up" one --
 # ingestion.ingest_symbol makes exactly ONE fetch_ohlcv(..., limit=1000)
@@ -89,6 +121,25 @@ _RUN_BACKTEST_KIND = "run_backtest"
 # single-parent mutation.
 _EVOLUTION_EXPLOITATION_PARENTS = 1
 _EVOLUTION_EXPLORATION_PARENTS = 1
+
+# One bounded LLM hypothesis per research cycle -- same "bounded work per
+# tick" reasoning as _EVOLUTION_EXPLOITATION_PARENTS/_EVOLUTION_EXPLORATION_
+# PARENTS above, not a statistical choice. Fixed arXiv category filter
+# (Quantitative Finance), never a query derived from strategy state --
+# ingestion must not depend on research outcomes.
+_LLM_ARXIV_QUERY = "cat:q-fin.*"
+_LLM_RECENT_PAPERS_LIMIT = 3
+_LLM_SYMBOL = "BTC/USDT"
+_LLM_INGESTION_MAX_RESULTS = 5
+
+# Ingestion (PDF download + GROBID call) is comparatively expensive and
+# papers don't change fast enough to justify checking every 30-min
+# research cycle -- a separate, coarser worker_cadence concern, same
+# "different concerns, different rates from one entrypoint" pattern
+# ingest/research/paper already use. Daily, not weekly: arXiv publishes
+# new quant-finance papers daily, and a $0-idle scale-to-zero GROBID
+# service means checking daily costs nothing when there's nothing new.
+_LLM_INGESTION_INTERVAL_SECONDS = 86400.0  # daily
 
 _INGEST_INTERVAL_SECONDS = 3600.0  # hourly
 _RESEARCH_INTERVAL_SECONDS = 1800.0  # 30 min
@@ -145,8 +196,20 @@ async def _enqueue_child(
     change_set: dict[str, object],
     expected_information_value_: float,
 ) -> str:
+    # I1 (final-review fix wave): `child.source` is part of the key.
+    # config_hash() deliberately excludes source (it identifies BEHAVIOR,
+    # see spec.py's _IDENTITY_FIELDS), so without this an LLM hypothesis
+    # that happens to land on an existing grid point (fast=10/slow=50 is
+    # an actual grid coordinate) deduped straight into the grid's job:
+    # no strategy row with source='llm_hypothesis' was ever created,
+    # register_llm_component found nothing forever, and Anthropic was
+    # billed anyway. Re-running the same generator still dedupes against
+    # itself -- each generator sets its own source consistently
+    # ("deterministic_grid"/"mutation"/"llm_hypothesis") -- so the only
+    # behavior change is that two DIFFERENT generators proposing the same
+    # parameters now each get their own job and strategy row.
     idempotency_key = hashlib.sha256(
-        f"{_RUN_BACKTEST_KIND}|{child.config_hash()}|{_GRID_LOOKBACK_DAYS}".encode()
+        f"{_RUN_BACKTEST_KIND}|{child.source}|{child.config_hash()}|{_GRID_LOOKBACK_DAYS}".encode()
     ).hexdigest()
     return await enqueue(
         session,
@@ -253,6 +316,32 @@ async def _run_ingest() -> None:
     await backfill(_INGEST_CATCHUP_DAYS)
 
 
+async def _run_llm_ingestion() -> list[str]:
+    """The daily-cadence concern that actually populates research_papers
+    -- without this, ingestion.py has no production caller and
+    research_papers stays empty forever, starving
+    _run_llm_hypothesis_step of any context to work with. Fixed arXiv
+    category query, never derived from strategy/research state (see
+    ingestion.search_arxiv's own docstring). ingest_paper is idempotent
+    on arxiv_id, so re-discovering an already-ingested paper in a later
+    search is a safe no-op, not a duplicate.
+
+    Takes no session parameter and manages its own -- same shape as
+    _run_ingest() above (backfill() manages its own session
+    internally), not _run_research()/_run_paper()'s shape (which open
+    their own sessions per internal step). One session for this whole
+    concern is enough: ingestion has no cross-step state that needs
+    isolating the way research's grid/validate/evolve steps do."""
+    candidates = await search_arxiv(_LLM_ARXIV_QUERY, _LLM_INGESTION_MAX_RESULTS)
+    ingested: list[str] = []
+    async with get_session() as session:
+        for candidate in candidates:
+            paper = await ingest_paper(session, candidate.arxiv_id)
+            ingested.append(paper.arxiv_id)
+        await session.commit()
+    return ingested
+
+
 async def _run_research() -> list[str]:
     symbols = load_universe_symbols()
     for symbol in symbols:
@@ -292,10 +381,171 @@ async def _run_research() -> list[str]:
     async with get_session() as session:
         evolved_job_ids = await _run_evolution_step(session)
         await session.commit()
+
+        # PROMPT 9: one bounded LLM hypothesis, budget-gated. Anthropic client
+        # construction is deferred to here (not import time) so importing
+        # worker.py never requires a real API key.
+        #
+        # I2 (final-review fix wave): isolated in its own broad try/except.
+        # Everything above has already been committed, but an exception
+        # escaping here would propagate past this function's own `return`
+        # and prevent run_once()'s `mark_run(concern="research")` from
+        # firing at all -- leaving last_run_at stale, so the research
+        # concern would re-run at every 15-minute tick instead of every 30
+        # minutes, indefinitely. Broad Exception, not ValueError: a missing
+        # LLM_MONTHLY_BUDGET_USD raises pydantic.ValidationError, a missing
+        # ANTHROPIC_API_KEY raises inside the anthropic constructor, and
+        # anthropic's own APIError subtypes are not ValueErrors either.
+        # Same "one concern's failure must not sink unrelated work"
+        # principle run_once() already applies per concern.
+        try:
+            llm_job_id = await _run_llm_hypothesis_step(session, client=_anthropic_client())
+            await session.commit()
+            if llm_job_id is not None:
+                print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
+        except Exception as exc:
+            print(f"worker: LLM hypothesis step failed: {exc!r}")
     if evolved_job_ids:
         print(f"worker: enqueued {len(evolved_job_ids)} evolved candidate(s): {evolved_job_ids}")
 
     return ran + validated
+
+
+_SELECT_RECENT_PAPERS = text(
+    "SELECT id, key_sections FROM research_papers ORDER BY ingested_at DESC LIMIT :limit"
+)
+
+
+async def _select_recent_papers(session: AsyncSession, limit: int) -> list[PaperContext]:
+    rows = (await session.execute(_SELECT_RECENT_PAPERS, {"limit": limit})).fetchall()
+    return [PaperContext(paper_id=r.id, key_sections=r.key_sections) for r in rows]
+
+
+_INSERT_LLM_USAGE = text(
+    """
+    INSERT INTO llm_usage (model, input_tokens, output_tokens, est_cost_usd, purpose)
+    VALUES (:model, :input_tokens, :output_tokens, :est_cost_usd, :purpose)
+    """
+)
+_INSERT_LLM_HYPOTHESIS = text(
+    """
+    INSERT INTO llm_hypotheses
+        (strategy_fingerprint, paper_ids, hypothesis_text, expected_effect,
+         model, input_tokens, output_tokens, est_cost_usd)
+    VALUES
+        (:strategy_fingerprint, :paper_ids, :hypothesis_text, :expected_effect,
+         :model, :input_tokens, :output_tokens, :est_cost_usd)
+    """
+).bindparams(bindparam("paper_ids", type_=JSONB))
+
+
+async def _log_llm_usage(
+    session: AsyncSession,
+    *,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    est_cost_usd: float,
+) -> None:
+    """Writes one llm_usage row and commits it ON ITS OWN (I3). The spend
+    has already happened at the provider the moment the API call returned;
+    its record must not be able to roll back because some LATER step in
+    this cycle (the llm_hypotheses insert, the enqueue) failed. Losing the
+    hypothesis record while keeping the usage row is the correct
+    asymmetry -- the budget cap is only trustworthy if it sees every
+    dollar actually spent."""
+    await session.execute(
+        _INSERT_LLM_USAGE,
+        {
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "est_cost_usd": est_cost_usd,
+            "purpose": "hypothesis_generation",
+        },
+    )
+    await session.commit()
+
+
+async def _run_llm_hypothesis_step(
+    session: AsyncSession, *, client: _AnthropicClientProtocol
+) -> str | None:
+    """One bounded LLM hypothesis per research cycle, gated by budget.
+    current_tier(). Deterministic generation (grid + evolution, see
+    _run_research below) is completely separate code and is never gated
+    on this -- a halted LLM budget stops exactly this function, nothing
+    else. Returns the enqueued run_backtest job id, or None if halted, no
+    papers are available yet, or the LLM's response failed StrategySpec
+    validation (an honest 'no hypothesis this cycle', not a crashed
+    worker cycle).
+
+    I3: a response that fails validation was still BILLED, so its
+    llm_usage row is written and committed on the failure path too --
+    otherwise the monthly cap systematically under-counts exactly the
+    spend that produced nothing."""
+    tier = await current_tier(session)
+    if tier == "halted":
+        return None
+
+    papers = await _select_recent_papers(session, _LLM_RECENT_PAPERS_LIMIT)
+    if not papers:
+        return None
+
+    model = model_for_tier(tier)
+    try:
+        result = await generate_hypothesis(client, model, _LLM_SYMBOL, _TIMEFRAME, papers)
+    except LLMResponseError as exc:
+        await _log_llm_usage(
+            session,
+            model=exc.model,
+            input_tokens=exc.input_tokens,
+            output_tokens=exc.output_tokens,
+            est_cost_usd=estimate_cost(
+                exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
+            ),
+        )
+        print(f"worker: LLM hypothesis generation produced an invalid spec, skipping: {exc}")
+        return None
+    except ValueError as exc:
+        # A ValueError raised BEFORE the API call billed anything (an
+        # unpriced model, say) -- nothing to log, nothing was spent.
+        print(f"worker: LLM hypothesis generation failed before any spend, skipping: {exc}")
+        return None
+
+    await _log_llm_usage(
+        session,
+        model=result.model,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        est_cost_usd=result.est_cost_usd,
+    )
+    await session.execute(
+        _INSERT_LLM_HYPOTHESIS,
+        {
+            "strategy_fingerprint": result.spec.config_hash(),
+            "paper_ids": result.paper_ids,
+            "hypothesis_text": result.hypothesis_text,
+            "expected_effect": result.expected_effect,
+            "model": result.model,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "est_cost_usd": result.est_cost_usd,
+        },
+    )
+
+    return await _enqueue_child(
+        session,
+        child=result.spec,
+        parent_experiment_id=None,
+        hypothesis=result.hypothesis_text,
+        change_set={
+            "mutation_type": "LLM_HYPOTHESIS",
+            "field": "family",
+            "old_value": None,
+            "new_value": result.spec.family,
+        },
+        expected_information_value_=0.0,
+    )
 
 
 _SELECT_STRATEGY_FILLED_ORDER_IDS = text(
@@ -433,6 +683,9 @@ async def run_once() -> list[str]:
         paper_due = await is_due(
             session, concern="paper", interval_seconds=_PAPER_INTERVAL_SECONDS
         )
+        llm_ingestion_due = await is_due(
+            session, concern="llm_ingestion", interval_seconds=_LLM_INGESTION_INTERVAL_SECONDS
+        )
 
     # I9 (final-review fix wave): each concern is isolated in its own
     # try/except -- previously any single exception (a ccxt error from
@@ -463,6 +716,16 @@ async def run_once() -> list[str]:
                 await mark_run(session, concern="paper")
         except Exception as exc:
             print(f"worker: paper concern failed: {exc!r}")
+
+    if llm_ingestion_due:
+        try:
+            ingested = await _run_llm_ingestion()
+            async with get_session() as session:
+                await mark_run(session, concern="llm_ingestion")
+            if ingested:
+                print(f"worker: ingested {len(ingested)} paper(s): {ingested}")
+        except Exception as exc:
+            print(f"worker: llm_ingestion concern failed: {exc!r}")
 
     return ran
 

@@ -19,6 +19,9 @@ dependencies = [
     "ccxt==4.5.77",
     "fastapi==0.115.0",
     "uvicorn==0.30.6",
+    "httpx==0.27.2",
+    "pypdf==6.19.0",
+    "anthropic==1.6.0",
     # cpz-quant needs both; see docs/DEPENDENCIES.md for the real cost
     # accounting (scipy is genuinely new weight in the production image).
     # 2.4.6 is the newest numpy that still supports requires-python's
@@ -43,7 +46,6 @@ dev = [
     "pytest-asyncio==0.24.0",
     "pre-commit==3.8.0",
     "types-PyYAML==6.0.12.20240917",
-    "httpx==0.27.2",
     # tests/test_art_*.py exercise tools/art/, which needs the art extra.
     "prometheus[art]",
 ]
