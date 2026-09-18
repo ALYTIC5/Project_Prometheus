@@ -12,6 +12,10 @@ _HYPOTHESIS_MODULE_PATH = Path("prometheus/research/llm/hypothesis.py")
 _FORBIDDEN_MODULES = {
     "prometheus.validation.holdout",
     "prometheus.core.db",
+    # data.ingestion imports validation.holdout.load_holdout_config directly
+    # and writes to holdout.ohlcv_bars -- a transitive path to the holdout
+    # this module must never carry, even indirectly.
+    "prometheus.data.ingestion",
 }
 
 
@@ -39,5 +43,10 @@ def test_generate_hypothesis_signature_takes_no_session_parameter() -> None:
         for node in ast.walk(tree)
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "generate_hypothesis"
     )
-    param_names = {arg.arg for arg in func.args.args}
-    assert "session" not in param_names
+    named_params = func.args.args + func.args.posonlyargs + func.args.kwonlyargs
+    param_names = {arg.arg for arg in named_params}
+    assert not any("session" in name for name in param_names)
+    # A **kwargs (or *args) could smuggle a session through even if no
+    # named parameter is called "session" -- reject both.
+    assert func.args.vararg is None
+    assert func.args.kwarg is None

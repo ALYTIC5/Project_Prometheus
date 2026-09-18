@@ -58,7 +58,15 @@ class _AnthropicClientProtocol(Protocol):
     """Structural type for the Anthropic client -- lets tests pass a
     MagicMock without importing the real anthropic package's own types,
     and keeps this module's public signature honest about what it
-    actually needs (a `.messages.create(...)` call), not the whole SDK."""
+    actually needs (a `.messages.create(...)` call), not the whole SDK.
+
+    Must be a SYNCHRONOUS `anthropic.Anthropic()` instance, not
+    `AsyncAnthropic()` -- `generate_hypothesis` below calls
+    `client.messages.create(...)` without awaiting it, despite being
+    declared `async def` itself. This is intentional: Task 5's worker
+    constructs a sync client and this function's own `async def` exists
+    for its caller's concurrency, not to await this call.
+    """
 
     messages: Any
 
@@ -94,25 +102,35 @@ async def generate_hypothesis(
     raw_text = message.content[0].text
     parsed = json.loads(raw_text)
 
-    family = parsed["family"]
-    param_fields = {
-        "MOMENTUM": ("fast_window", "slow_window"),
-        "BOLLINGER": ("lookback_window", "band_multiplier"),
-        "VOL_BREAKOUT": ("breakout_window", "exit_window"),
-    }[family]
-    params = {field: parsed[field] for field in param_fields}
+    # An unknown family or a missing expected key is a malformed LLM
+    # response, not a programming error -- convert the KeyError it would
+    # otherwise raise into the same ValueError contract StrategySpec's own
+    # validation below uses, so callers can catch just ValueError for
+    # "this response was malformed." StrategySpec's own model_validator
+    # ValueError (e.g. slow_window <= fast_window) is deliberately NOT
+    # caught here -- only these KeyError cases are converted, so a real
+    # StrategySpec validation error is never double-wrapped.
+    try:
+        family = parsed["family"]
+        param_fields = {
+            "MOMENTUM": ("fast_window", "slow_window"),
+            "BOLLINGER": ("lookback_window", "band_multiplier"),
+            "VOL_BREAKOUT": ("breakout_window", "exit_window"),
+        }[family]
+        params = {field: parsed[field] for field in param_fields}
+        expected_horizon = parsed["expected_horizon"]
+        hypothesis_text = parsed["hypothesis_text"]
+        expected_effect = parsed["expected_effect"]
+    except KeyError as exc:
+        raise ValueError(f"LLM response missing or invalid field: {exc}") from exc
 
-    # StrategySpec's own model_validator raises ValueError on an invalid
-    # combination (e.g. slow_window <= fast_window) -- deliberately not
-    # caught here, so a malformed LLM response surfaces as a real error
-    # to the caller rather than being silently dropped or coerced.
     spec = StrategySpec(
         family=family,
         symbol=symbol,
         timeframe=timeframe,
-        expected_horizon=parsed["expected_horizon"],
+        expected_horizon=expected_horizon,
         source="llm_hypothesis",
-        description=parsed["hypothesis_text"],
+        description=hypothesis_text,
         **params,
     )
 
@@ -120,8 +138,8 @@ async def generate_hypothesis(
     output_tokens = message.usage.output_tokens
     return LLMHypothesis(
         spec=spec,
-        hypothesis_text=parsed["hypothesis_text"],
-        expected_effect=parsed["expected_effect"],
+        hypothesis_text=hypothesis_text,
+        expected_effect=expected_effect,
         paper_ids=[p.paper_id for p in paper_context],
         model=model,
         input_tokens=input_tokens,

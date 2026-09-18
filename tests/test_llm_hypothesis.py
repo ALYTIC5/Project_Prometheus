@@ -30,6 +30,15 @@ _MALFORMED_RESPONSE_JSON = json.dumps(
     }
 )
 
+_UNKNOWN_FAMILY_RESPONSE_JSON = json.dumps(
+    {
+        "family": "CARRY",  # not one of MOMENTUM/BOLLINGER/VOL_BREAKOUT
+        "expected_horizon": 5,
+        "hypothesis_text": "bad",
+        "expected_effect": "bad",
+    }
+)
+
 
 def _mock_client(
     response_text: str, *, input_tokens: int = 500, output_tokens: int = 200
@@ -61,6 +70,18 @@ async def test_generate_hypothesis_produces_valid_spec() -> None:
 
 async def test_generate_hypothesis_raises_on_invalid_spec_rather_than_coercing() -> None:
     client = _mock_client(_MALFORMED_RESPONSE_JSON)
+    with pytest.raises(ValueError):
+        await generate_hypothesis(
+            client, "claude-sonnet-5", "BTC/USDT", "1d",
+            [PaperContext(paper_id=1, key_sections="momentum literature review")],
+        )
+
+
+async def test_generate_hypothesis_raises_value_error_on_unknown_family() -> None:
+    """An unknown family is a KeyError against the internal param_fields
+    dict -- must surface as ValueError, not KeyError, so callers can rely
+    on catching just ValueError for "this response was malformed."""
+    client = _mock_client(_UNKNOWN_FAMILY_RESPONSE_JSON)
     with pytest.raises(ValueError):
         await generate_hypothesis(
             client, "claude-sonnet-5", "BTC/USDT", "1d",
