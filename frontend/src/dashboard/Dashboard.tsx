@@ -2,6 +2,7 @@
 
 import { useBuildingsQuery, useScoreboardQuery, useViolationsQuery, useWorldStateQuery } from '../data/queries';
 import { DashboardHeader } from './DashboardHeader';
+import { LiveActivity } from './LiveActivity';
 import { ResearchSummary } from './ResearchSummary';
 import { ViolationsBanner } from './ViolationsBanner';
 import { BenchmarkChart } from './sections/BenchmarkChart';
@@ -63,6 +64,7 @@ export default function Dashboard() {
           sections still genuinely awaiting a later prompt (Data, Costs)
           sink to the bottom so they never interrupt what's real today.
         */}
+        <LiveActivity />
         <ResearchSummary />
         <SystemsTable />
         <StrategiesSection />

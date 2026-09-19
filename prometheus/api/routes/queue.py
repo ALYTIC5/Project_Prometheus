@@ -26,7 +26,7 @@ _PENDING_BY_KIND = text(
     "SELECT kind, COUNT(*) AS n FROM jobs WHERE status = 'pending' GROUP BY kind"
 )
 _IN_FLIGHT = text(
-    "SELECT id, kind, agent_role, current_stage, next_stage, progress_pct, experiment_id "
+    "SELECT id, kind, agent_role, current_stage, next_stage, progress_pct, experiment_id, payload "
     "FROM jobs WHERE status = 'claimed' ORDER BY heartbeat_at DESC"
 )
 _DEAD_LETTER_COUNT = text("SELECT COUNT(*) FROM jobs_dead_letter")
@@ -41,18 +41,25 @@ async def get_queue_status() -> dict[str, Any]:
         pending_by_kind = {
             row.kind: row.n for row in await session.execute(_PENDING_BY_KIND)
         }
-        in_flight = [
-            {
-                "id": row.id,
-                "kind": row.kind,
-                "agent_role": row.agent_role,
-                "current_stage": row.current_stage,
-                "next_stage": row.next_stage,
-                "progress_pct": row.progress_pct,
-                "experiment_id": row.experiment_id,
-            }
-            for row in await session.execute(_IN_FLIGHT)
-        ]
+        in_flight = []
+        for row in await session.execute(_IN_FLIGHT):
+            # The job's own payload already carries the full spec
+            # (_enqueue_child writes {"spec": child.model_dump(), ...}) --
+            # family/symbol read straight off it, no join needed.
+            spec = (row.payload or {}).get("spec") or {}
+            in_flight.append(
+                {
+                    "id": row.id,
+                    "kind": row.kind,
+                    "agent_role": row.agent_role,
+                    "current_stage": row.current_stage,
+                    "next_stage": row.next_stage,
+                    "progress_pct": row.progress_pct,
+                    "experiment_id": row.experiment_id,
+                    "family": spec.get("family"),
+                    "symbol": spec.get("symbol"),
+                }
+            )
         dead_letter_count = (await session.execute(_DEAD_LETTER_COUNT)).scalar_one()
         failed_pending_count = (await session.execute(_FAILED_PENDING_COUNT)).scalar_one()
 

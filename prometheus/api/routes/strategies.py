@@ -44,15 +44,15 @@ _SELECT_ONE = text("SELECT id, family, spec, status, created_at FROM strategies 
 _SELECT_LATEST_VALIDATION = text(
     """
     WITH latest_experiment AS (
-        SELECT DISTINCT ON (strategy_id) strategy_id, config_hash
+        SELECT DISTINCT ON (strategy_id) strategy_id, config_hash, change_set
           FROM experiments
          WHERE strategy_id IS NOT NULL
          ORDER BY strategy_id, created_at DESC
     )
-    SELECT le.strategy_id, vr.verdict, vr.score, vr.pbo, vr.deflated_sharpe,
+    SELECT le.strategy_id, le.change_set, vr.verdict, vr.score, vr.pbo, vr.deflated_sharpe,
            vr.reason_codes, vr.metrics
       FROM latest_experiment le
-      JOIN LATERAL (
+      LEFT JOIN LATERAL (
           SELECT verdict, score, pbo, deflated_sharpe, reason_codes, metrics
             FROM validation_results
            WHERE strategy_fingerprint = le.config_hash
@@ -60,6 +60,29 @@ _SELECT_LATEST_VALIDATION = text(
       ) vr ON true
     """
 )
+
+# mutation_type -> a short, human label for the "recent activity" dashboard
+# view -- change_set is the real record research/mutations.py, crossover.py,
+# and research/llm/hypothesis.py already write (source of truth), this is
+# just presentation, never re-derived logic.
+_MUTATION_LABELS: dict[str, str] = {
+    "PARAMETER_TUNE": "tune {field}",
+    "SWAP_FAMILY": "swap family",
+    "CROSSOVER": "crossover",
+    "LLM_HYPOTHESIS": "LLM hypothesis",
+}
+
+
+def _mutation_label(change_set: dict[str, Any] | None) -> str | None:
+    if not change_set:
+        return None
+    mutation_type = change_set.get("mutation_type")
+    if not isinstance(mutation_type, str):
+        return None
+    template = _MUTATION_LABELS.get(mutation_type)
+    if template is None:
+        return None
+    return template.format(field=change_set.get("field", "?"))
 
 
 def _resolve_lineage(specs_by_id: dict[str, StrategySpec]) -> dict[str, tuple[str | None, int]]:
@@ -108,7 +131,8 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
     for row in rows:
         validation = validation_by_strategy_id.get(row.id)
         parent_id, generation = lineage.get(row.id, (None, 0))
-        metrics = validation.metrics if validation is not None else {}
+        metrics = validation.metrics if validation is not None and validation.metrics else {}
+        change_set = validation.change_set if validation is not None else None
         enriched.append(
             {
                 "id": row.id,
@@ -122,9 +146,11 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
                 "deflated_sharpe": validation.deflated_sharpe if validation is not None else None,
                 "excess_return": metrics.get("excess_return"),
                 "excess_sharpe": metrics.get("excess_sharpe"),
-                "reason_codes": validation.reason_codes if validation is not None else [],
+                "reason_codes": (validation.reason_codes if validation is not None else None)
+                or [],
                 "generation": generation,
                 "parent": parent_id,
+                "mutation_label": _mutation_label(change_set),
             }
         )
     return enriched

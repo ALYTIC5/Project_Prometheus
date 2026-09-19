@@ -228,6 +228,13 @@ export interface StrategyRow {
   reason_codes: string[];
   generation: number;
   parent: string | null;
+  /** A short human label for the mutation that produced this strategy
+   * ("tune fast_window", "swap family", "crossover", "LLM hypothesis"),
+   * derived server-side from the creating experiment's real change_set
+   * (prometheus/api/routes/strategies.py's _mutation_label) -- null for
+   * a grid-search seed (no mutation) or before this strategy's creating
+   * experiment has run yet. */
+  mutation_label: string | null;
 }
 
 export interface DecisionPayload {
@@ -277,6 +284,11 @@ export interface InFlightJob {
   next_stage: string;
   progress_pct: number;
   experiment_id: string | null;
+  /** Read straight off the job's own payload (every run_backtest job
+   * carries its full spec) -- null only if a future job kind ever
+   * ships a payload with no spec field. */
+  family: string | null;
+  symbol: string | null;
 }
 
 /** GET /queue/'s shape. failed_pending_count is the honest proxy for

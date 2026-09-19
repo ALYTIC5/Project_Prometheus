@@ -79,6 +79,12 @@ def test_queue_status_shape() -> None:
     }
     assert isinstance(body["dead_letter_count"], int)
     assert isinstance(body["failed_pending_count"], int)
+    # family/symbol read straight off the job's own payload (the spec every
+    # run_backtest job already carries) -- present on the shape even when
+    # nothing is in flight right now.
+    for job in body["in_flight"]:
+        assert "family" in job
+        assert "symbol" in job
 
 
 def test_strategies_response_carries_validation_and_lineage_fields() -> None:
@@ -94,7 +100,7 @@ def test_strategies_response_carries_validation_and_lineage_fields() -> None:
         for field in (
             "verdict", "score", "pbo", "deflated_sharpe",
             "excess_return", "excess_sharpe", "reason_codes",
-            "generation", "parent",
+            "generation", "parent", "mutation_label",
         ):
             assert field in strategy
         assert isinstance(strategy["generation"], int)
