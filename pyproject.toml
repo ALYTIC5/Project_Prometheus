@@ -90,6 +90,12 @@ ignore_missing_imports = true
 module = ["scipy.*"]
 ignore_missing_imports = true
 
+# scikit-learn ships no py.typed marker either; prometheus.backtest.ml_signal
+# imports sklearn.ensemble.RandomForestClassifier directly (real model fit).
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

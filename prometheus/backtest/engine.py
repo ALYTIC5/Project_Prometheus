@@ -37,11 +37,13 @@ from prometheus.backtest.benchmark import (
     compute_vs_benchmark,
 )
 from prometheus.backtest.costs import CostModel, apply_cost
+from prometheus.backtest.ml_signal import random_forest_signal
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
     FAMILY_BOLLINGER,
     FAMILY_MACD,
     FAMILY_MOMENTUM,
+    FAMILY_RANDOM_FOREST,
     FAMILY_RSI,
     FAMILY_VOL_BREAKOUT,
     StrategySpec,
@@ -248,6 +250,15 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
             and spec.macd_signal is not None
         )
         return _macd_signal(bars, spec.macd_fast, spec.macd_slow, spec.macd_signal)
+    if spec.family == FAMILY_RANDOM_FOREST:
+        assert (
+            spec.rf_train_window is not None
+            and spec.rf_retrain_interval is not None
+            and spec.rf_predict_threshold is not None
+        )
+        return random_forest_signal(
+            bars, spec.rf_train_window, spec.rf_retrain_interval, spec.rf_predict_threshold
+        )
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -272,6 +283,9 @@ def _min_bars_for(spec: StrategySpec) -> int:
     if spec.family == FAMILY_MACD:
         assert spec.macd_slow is not None and spec.macd_signal is not None
         return spec.macd_slow + spec.macd_signal + 2
+    if spec.family == FAMILY_RANDOM_FOREST:
+        assert spec.rf_train_window is not None
+        return spec.rf_train_window + 30
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 
