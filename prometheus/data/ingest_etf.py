@@ -11,6 +11,7 @@ short-lived, not a permanent fork.
 """
 from __future__ import annotations
 
+import argparse
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -144,3 +145,20 @@ async def backfill_etf(
                 },
             )
             await session.commit()
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Backfill ETF/index daily bars via Alpaca.")
+    parser.add_argument("--days", type=int, default=2000)
+    return parser.parse_args(argv)
+
+
+def main() -> None:
+    import asyncio
+
+    args = _parse_args()
+    asyncio.run(backfill_etf(days=args.days))
+
+
+if __name__ == "__main__":
+    main()
