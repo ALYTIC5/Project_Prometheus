@@ -308,3 +308,28 @@ export interface ViolationRow {
   detail: Record<string, unknown>;
   detected_at: string;
 }
+
+/** GET /pipeline/'s shape -- worker.py's own worker_cadence table, one
+ * row per concern (ingest/research/paper/llm_ingestion). last_run_at/
+ * next_due_at are null only for a concern that has never completed a
+ * cycle yet (an honest "never run", not an error). */
+export interface PipelineConcern {
+  concern: string;
+  interval_seconds: number;
+  last_run_at: string | null;
+  next_due_at: string | null;
+  is_due: boolean;
+}
+
+export interface PipelineStatusResponse {
+  concerns: PipelineConcern[];
+}
+
+/** GET /research-papers/'s shape -- PROMPT 9's daily arXiv ingestion. */
+export interface ResearchPaperRow {
+  id: number;
+  arxiv_id: string;
+  title: string;
+  abstract: string;
+  ingested_at: string;
+}

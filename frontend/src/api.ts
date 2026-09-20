@@ -3,7 +3,9 @@ import type {
   BuildingWithCount,
   ExperimentDetail,
   ExperimentRow,
+  PipelineStatusResponse,
   QueueStatus,
+  ResearchPaperRow,
   ScoreboardResponse,
   StrategyRow,
   ViolationRow,
@@ -69,6 +71,24 @@ export async function fetchQueueStatus(): Promise<QueueStatus> {
 export async function fetchViolations(): Promise<{ violations: ViolationRow[]; total: number }> {
   const res = await fetch(`${API_BASE}/violations/`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Violations fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPipelineStatus(): Promise<PipelineStatusResponse> {
+  const res = await fetch(`${API_BASE}/pipeline/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Pipeline status fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchResearchPapers(): Promise<{ papers: ResearchPaperRow[]; total: number }> {
+  const res = await fetch(`${API_BASE}/research-papers/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Research papers fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchStrategyDetail(strategyId: string): Promise<StrategyRow> {
+  const res = await fetch(`${API_BASE}/strategies/${strategyId}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Strategy detail fetch failed: ${res.status}`);
   return res.json();
 }
 

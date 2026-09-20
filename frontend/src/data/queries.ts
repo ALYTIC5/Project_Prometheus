@@ -23,9 +23,12 @@ import {
   fetchBuildings,
   fetchExperimentDetail,
   fetchExperiments,
+  fetchPipelineStatus,
   fetchQueueStatus,
+  fetchResearchPapers,
   fetchScoreboard,
   fetchStrategies,
+  fetchStrategyDetail,
   fetchViolations,
   fetchWorldState,
 } from '../api';
@@ -107,5 +110,31 @@ export function useExperimentDetailQuery(experimentId: string | null) {
     queryKey: ['experiment-detail', experimentId],
     queryFn: () => fetchExperimentDetail(experimentId as string),
     enabled: experimentId !== null,
+  });
+}
+
+export function usePipelineStatusQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['pipeline-status'],
+    queryFn: fetchPipelineStatus,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useResearchPapersQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['research-papers'],
+    queryFn: fetchResearchPapers,
+    refetchInterval: intervalMs,
+  });
+}
+
+// On-demand, not polled -- same posture as useExperimentDetailQuery, fetched
+// only when the detail modal opens for a given strategy.
+export function useStrategyDetailQuery(strategyId: string | null) {
+  return useQuery({
+    queryKey: ['strategy-detail', strategyId],
+    queryFn: () => fetchStrategyDetail(strategyId as string),
+    enabled: strategyId !== null,
   });
 }

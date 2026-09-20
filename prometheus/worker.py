@@ -44,6 +44,21 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from prometheus.core.cadence import (
+    CADENCE_SLACK_FACTOR as _CADENCE_SLACK_FACTOR,
+)
+from prometheus.core.cadence import (
+    INGEST_INTERVAL_SECONDS as _INGEST_INTERVAL_SECONDS,
+)
+from prometheus.core.cadence import (
+    LLM_INGESTION_INTERVAL_SECONDS as _LLM_INGESTION_INTERVAL_SECONDS,
+)
+from prometheus.core.cadence import (
+    PAPER_INTERVAL_SECONDS as _PAPER_INTERVAL_SECONDS,
+)
+from prometheus.core.cadence import (
+    RESEARCH_INTERVAL_SECONDS as _RESEARCH_INTERVAL_SECONDS,
+)
 from prometheus.core.db import get_session
 from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingestion import backfill, load_universe_symbols
@@ -139,23 +154,10 @@ _LLM_INGESTION_MAX_RESULTS = 5
 # ingest/research/paper already use. Daily, not weekly: arXiv publishes
 # new quant-finance papers daily, and a $0-idle scale-to-zero GROBID
 # service means checking daily costs nothing when there's nothing new.
-_LLM_INGESTION_INTERVAL_SECONDS = 86400.0  # daily
-
-_INGEST_INTERVAL_SECONDS = 3600.0  # hourly
-_RESEARCH_INTERVAL_SECONDS = 1800.0  # 30 min
-_PAPER_INTERVAL_SECONDS = 900.0  # 15 min -- also the new cron tick itself
-
-# mark_run stamps last_run_at at the END of a concern's own work, and each
-# interval constant above exactly equals its own tick period -- without
-# slack, a concern's nonzero runtime means `elapsed` at the next tick is
-# always slightly under interval_seconds, is_due returns False that tick
-# and True the tick after, and the cadence silently averages out to
-# roughly DOUBLE what's intended (paper ~30min not 15, etc). 0.9 absorbs
-# a concern's own runtime (up to 10% of its interval) while still keeping
-# the crash-retry semantics: a crashed tick that never called mark_run
-# leaves last_run_at unchanged, so `elapsed` keeps growing every wake
-# regardless of this factor and the concern stays due.
-_CADENCE_SLACK_FACTOR = 0.9
+#
+# The four interval constants and the slack factor are imported from
+# core/cadence.py (see the top of this file) rather than defined here --
+# GET /pipeline/ (the dashboard's pipeline-status panel) needs them too.
 
 _SELECT_CADENCE = text("SELECT last_run_at FROM worker_cadence WHERE concern = :concern")
 _UPSERT_CADENCE = text(

@@ -1,10 +1,14 @@
 'use client';
 
-import { useQueueQuery, useStrategiesQuery } from '../data/queries';
-import type { InFlightJob, StrategyRow } from '../types';
+import { useState } from 'react';
+import { useQueueQuery, useResearchPapersQuery, useStrategiesQuery } from '../data/queries';
+import type { InFlightJob, ResearchPaperRow, StrategyRow } from '../types';
+import { DetailModal, type DetailTarget } from './DetailModal';
 
 const DASHBOARD_POLL_MS = 10000;
 const RECENT_MUTATIONS_LIMIT = 5;
+const RECENT_HYPOTHESES_LIMIT = 5;
+const RECENT_PAPERS_LIMIT = 5;
 
 // Deliberately breaks from the rest of this dashboard's plain-text, no-
 // icons convention (SystemsTable/LawsSection etc.) for this one panel --
@@ -23,10 +27,13 @@ function familyClass(family: string | null): string {
     : 'border-border text-muted-foreground';
 }
 
-function BacktestRow({ job }: { job: InFlightJob }) {
+function BacktestRow({ job, onClick }: { job: InFlightJob; onClick: () => void }) {
   const pct = Math.round(job.progress_pct * 100);
   return (
-    <div className="flex items-center gap-3 py-1 font-mono text-xs">
+    <div
+      onClick={onClick}
+      className="flex cursor-pointer items-center gap-3 rounded py-1 font-mono text-xs hover:bg-muted/40"
+    >
       <span className={`shrink-0 rounded border px-1.5 py-0.5 ${familyClass(job.family)}`}>
         {job.family ?? '—'}
       </span>
@@ -45,9 +52,12 @@ function BacktestRow({ job }: { job: InFlightJob }) {
   );
 }
 
-function MutationRow({ strategy }: { strategy: StrategyRow }) {
+function MutationRow({ strategy, onClick }: { strategy: StrategyRow; onClick: () => void }) {
   return (
-    <div className="flex items-center gap-2 py-1 font-mono text-xs">
+    <div
+      onClick={onClick}
+      className="flex cursor-pointer items-center gap-2 rounded py-1 font-mono text-xs hover:bg-muted/40"
+    >
       <span className={`shrink-0 rounded border px-1.5 py-0.5 ${familyClass(strategy.family)}`}>
         {strategy.parent ?? '?'}
       </span>
@@ -61,16 +71,55 @@ function MutationRow({ strategy }: { strategy: StrategyRow }) {
   );
 }
 
+function HypothesisRow({ strategy, onClick }: { strategy: StrategyRow; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      className="flex cursor-pointer items-center gap-2 rounded py-1 font-mono text-xs hover:bg-muted/40"
+    >
+      <span className={`shrink-0 rounded border px-1.5 py-0.5 ${familyClass(strategy.family)}`}>
+        {strategy.id}
+      </span>
+      <span className="truncate text-muted-foreground">
+        {strategy.verdict ?? 'awaiting backtest'}
+      </span>
+    </div>
+  );
+}
+
+function PaperRow({ paper, onClick }: { paper: ResearchPaperRow; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      className="flex cursor-pointer items-center gap-2 rounded py-1 font-mono text-xs hover:bg-muted/40"
+    >
+      <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-muted-foreground">
+        {paper.arxiv_id}
+      </span>
+      <span className="truncate">{paper.title}</span>
+    </div>
+  );
+}
+
+function isLlmHypothesis(strategy: StrategyRow): boolean {
+  const source = (strategy.spec as { source?: unknown }).source;
+  return source === 'llm_hypothesis';
+}
+
 /** Always-visible glance panel, not a collapsible Section -- "what's
  * happening right now" answered visually: real backtest progress bars
- * (GET /queue/'s in_flight jobs, kind=run_backtest) and recent parent→child
- * mutation chips (GET /strategies/'s generation/parent/mutation_label,
- * already server-resolved). Both empty states are honest, not hidden. */
+ * (GET /queue/'s in_flight jobs, kind=run_backtest), recent parent→child
+ * mutation chips, recent LLM hypotheses (GET /strategies/'s
+ * generation/parent/mutation_label/spec.source, already server-resolved),
+ * and recently ingested papers (GET /research-papers/). Every row opens
+ * DetailModal on click. All empty states are honest, not hidden. */
 export function LiveActivity() {
   const { data: queueData, isLoading: queueLoading } = useQueueQuery(DASHBOARD_POLL_MS);
   const { data: strategyData, isLoading: strategiesLoading } = useStrategiesQuery(DASHBOARD_POLL_MS);
+  const { data: paperData, isLoading: papersLoading } = useResearchPapersQuery(DASHBOARD_POLL_MS);
+  const [target, setTarget] = useState<DetailTarget | null>(null);
 
-  if (queueLoading || strategiesLoading) {
+  if (queueLoading || strategiesLoading || papersLoading) {
     return (
       <div className="border-b border-border px-4 py-3 font-mono text-xs text-muted-foreground">
         Loading live activity…
@@ -79,12 +128,17 @@ export function LiveActivity() {
   }
 
   const backtests = (queueData?.in_flight ?? []).filter((job) => job.kind === 'run_backtest');
+  const hypotheses = (strategyData?.strategies ?? [])
+    .filter(isLlmHypothesis)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, RECENT_HYPOTHESES_LIMIT);
   const mutations = (strategyData?.strategies ?? [])
-    .filter((s) => s.generation > 0 && s.parent !== null)
+    .filter((s) => s.generation > 0 && s.parent !== null && !isLlmHypothesis(s))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, RECENT_MUTATIONS_LIMIT);
+  const papers = (paperData?.papers ?? []).slice(0, RECENT_PAPERS_LIMIT);
 
-  if (backtests.length === 0 && mutations.length === 0) {
+  if (backtests.length === 0 && mutations.length === 0 && hypotheses.length === 0 && papers.length === 0) {
     return (
       <div className="border-b border-border px-4 py-3 font-mono text-xs text-muted-foreground">
         Live activity — nothing running or mutating right now
@@ -100,7 +154,7 @@ export function LiveActivity() {
             ● Backtesting now ({backtests.length})
           </p>
           {backtests.map((job) => (
-            <BacktestRow key={job.id} job={job} />
+            <BacktestRow key={job.id} job={job} onClick={() => setTarget({ kind: 'job', job })} />
           ))}
         </div>
       )}
@@ -110,10 +164,39 @@ export function LiveActivity() {
             ● Mutating now
           </p>
           {mutations.map((strategy) => (
-            <MutationRow key={strategy.id} strategy={strategy} />
+            <MutationRow
+              key={strategy.id}
+              strategy={strategy}
+              onClick={() => setTarget({ kind: 'strategy', id: strategy.id })}
+            />
           ))}
         </div>
       )}
+      {hypotheses.length > 0 && (
+        <div>
+          <p className="mb-1 font-mono text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            ● LLM hypotheses proposed
+          </p>
+          {hypotheses.map((strategy) => (
+            <HypothesisRow
+              key={strategy.id}
+              strategy={strategy}
+              onClick={() => setTarget({ kind: 'strategy', id: strategy.id })}
+            />
+          ))}
+        </div>
+      )}
+      {papers.length > 0 && (
+        <div>
+          <p className="mb-1 font-mono text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            ● Papers ingested
+          </p>
+          {papers.map((paper) => (
+            <PaperRow key={paper.id} paper={paper} onClick={() => setTarget({ kind: 'paper', paper })} />
+          ))}
+        </div>
+      )}
+      <DetailModal target={target} onClose={() => setTarget(null)} />
     </div>
   );
 }

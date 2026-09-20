@@ -114,3 +114,31 @@ def test_benchmark_drilldown_carries_curve() -> None:
     body = response.json()
     assert "curve" in body
     assert isinstance(body["curve"], list)
+
+
+def test_pipeline_status_reports_all_four_concerns() -> None:
+    with TestClient(app) as client:
+        response = client.get("/pipeline/")
+    assert response.status_code == 200
+    concerns = response.json()["concerns"]
+    assert {c["concern"] for c in concerns} == {"ingest", "research", "paper", "llm_ingestion"}
+    for concern in concerns:
+        assert isinstance(concern["interval_seconds"], int | float)
+        assert isinstance(concern["is_due"], bool)
+        # Empty worker_cadence (never run) is a valid, honest state -- the
+        # field must be present and null, not a crash, same posture as
+        # test_experiments_response_carries_lineage_fields above.
+        assert "last_run_at" in concern
+        assert "next_due_at" in concern
+
+
+def test_research_papers_response_shape() -> None:
+    with TestClient(app) as client:
+        response = client.get("/research-papers/")
+    assert response.status_code == 200
+    body = response.json()
+    assert "papers" in body
+    # Empty table is a valid, honest state (no papers ingested yet).
+    for paper in body["papers"]:
+        for field in ("id", "arxiv_id", "title", "abstract", "ingested_at"):
+            assert field in paper
