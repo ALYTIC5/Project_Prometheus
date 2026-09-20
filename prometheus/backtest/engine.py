@@ -40,7 +40,9 @@ from prometheus.backtest.costs import CostModel, apply_cost
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
     FAMILY_BOLLINGER,
+    FAMILY_MACD,
     FAMILY_MOMENTUM,
+    FAMILY_RSI,
     FAMILY_VOL_BREAKOUT,
     StrategySpec,
 )
@@ -155,6 +157,72 @@ def _vol_breakout_signal(
     )
 
 
+def _rsi_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """Wilder's own RSI: average gain/loss smoothed with Wilder's
+    alpha=1/lookback recursive EMA (the standard practical
+    implementation -- pandas/ta-lib's own convention for "RSI", not a
+    plain SMA-of-gains approximation). Long whenever RSI drops below
+    the oversold threshold, flat otherwise -- a fresh condition
+    re-evaluated every bar, same stateless shape as _bollinger_signal,
+    not a stateful entry/exit like _vol_breakout_signal. Same
+    `shift(1)` discipline: the raw condition uses today's own close,
+    then the whole condition is shifted one bar before it becomes an
+    execution position.
+
+    A flat, never-moving price series makes avg_gain and avg_loss both
+    0.0, so RSI is 0/0 == NaN in polars -- `NaN < oversold` is false,
+    giving position 0.0 for every bar, the same "never trades on flat
+    prices" behavior every other family's null case exercises."""
+    delta = pl.col("close").diff()
+    gain = pl.when(delta > 0).then(delta).otherwise(0.0)
+    loss = pl.when(delta < 0).then(-delta).otherwise(0.0)
+    alpha = 1.0 / lookback
+    return (
+        bars.with_columns(gain.alias("_gain"), loss.alias("_loss"))
+        .with_columns(
+            pl.col("_gain").ewm_mean(alpha=alpha, adjust=False).alias("_avg_gain"),
+            pl.col("_loss").ewm_mean(alpha=alpha, adjust=False).alias("_avg_loss"),
+        )
+        .with_columns(
+            (100.0 - 100.0 / (1.0 + pl.col("_avg_gain") / pl.col("_avg_loss"))).alias("_rsi")
+        )
+        .with_columns(
+            (pl.col("_rsi") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _macd_signal(bars: pl.DataFrame, fast: int, slow: int, signal: int) -> pl.DataFrame:
+    """Gerald Appel's own construction: MACD line = EMA(fast) -
+    EMA(slow), signal line = EMA(MACD line, signal). Long whenever the
+    MACD line is above its own signal line, flat otherwise -- a fresh
+    condition re-evaluated every bar, same stateless shape as
+    _sma_signal (this is the EMA analogue of that same crossover idea).
+    `adjust=False` on every ewm_mean matches the standard recursive EMA
+    definition trading platforms use, not polars' default weighted
+    average, which does not equal it early in a series. Same
+    `shift(1)` discipline as every other family here."""
+    return (
+        bars.with_columns(
+            pl.col("close").ewm_mean(span=fast, adjust=False).alias("_ema_fast"),
+            pl.col("close").ewm_mean(span=slow, adjust=False).alias("_ema_slow"),
+        )
+        .with_columns((pl.col("_ema_fast") - pl.col("_ema_slow")).alias("_macd"))
+        .with_columns(pl.col("_macd").ewm_mean(span=signal, adjust=False).alias("_signal_line"))
+        .with_columns(
+            (pl.col("_macd") > pl.col("_signal_line"))
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
 def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     """Public seam validation/metrics.py's information-coefficient
     calculation needs: IC is a property of the SIGNAL (does it predict
@@ -170,6 +238,16 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     if spec.family == FAMILY_VOL_BREAKOUT:
         assert spec.breakout_window is not None and spec.exit_window is not None
         return _vol_breakout_signal(bars, spec.breakout_window, spec.exit_window)
+    if spec.family == FAMILY_RSI:
+        assert spec.rsi_lookback is not None and spec.rsi_oversold is not None
+        return _rsi_signal(bars, spec.rsi_lookback, spec.rsi_oversold)
+    if spec.family == FAMILY_MACD:
+        assert (
+            spec.macd_fast is not None
+            and spec.macd_slow is not None
+            and spec.macd_signal is not None
+        )
+        return _macd_signal(bars, spec.macd_fast, spec.macd_slow, spec.macd_signal)
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -188,6 +266,12 @@ def _min_bars_for(spec: StrategySpec) -> int:
     if spec.family == FAMILY_VOL_BREAKOUT:
         assert spec.breakout_window is not None
         return spec.breakout_window + 2
+    if spec.family == FAMILY_RSI:
+        assert spec.rsi_lookback is not None
+        return spec.rsi_lookback + 2
+    if spec.family == FAMILY_MACD:
+        assert spec.macd_slow is not None and spec.macd_signal is not None
+        return spec.macd_slow + spec.macd_signal + 2
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 

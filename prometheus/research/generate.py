@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from prometheus.strategy.spec import (
     FAMILY_BOLLINGER,
+    FAMILY_MACD,
     FAMILY_MOMENTUM,
+    FAMILY_RSI,
     FAMILY_VOL_BREAKOUT,
     StrategySpec,
 )
@@ -32,6 +34,17 @@ _BOLLINGER_MULTIPLIERS = (1.5, 2.0, 2.5)
 # Turtle Trading's own two classic systems used 20/10 and 55/20
 # (entry/exit) -- both included, plus one closer-spaced pair.
 _BREAKOUT_ENTRY_EXIT_PAIRS = ((20, 10), (55, 20), (30, 15))
+
+# Wilder's own default RSI lookback is 14 -- included with one shorter
+# and one longer still-standard variant, plus Wilder's classic 30
+# oversold level with two nearby, still-standard variants.
+_RSI_LOOKBACKS = (7, 14, 21)
+_RSI_OVERSOLD_LEVELS = (20.0, 25.0, 30.0)
+
+# Gerald Appel's own default (12, 26, 9) plus two commonly cited faster
+# variants (8/17/9 and 5/13/5, both standard alternate MACD
+# configurations for shorter-term signals, not invented).
+_MACD_PARAM_SETS = ((12, 26, 9), (8, 17, 9), (5, 13, 5))
 
 
 def generate_grid(symbol: str, timeframe: str, family: str = FAMILY_MOMENTUM) -> list[StrategySpec]:
@@ -103,6 +116,43 @@ def generate_vol_breakout_grid(symbol: str, timeframe: str) -> list[StrategySpec
     return specs
 
 
+def generate_rsi_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _RSI_LOOKBACKS:
+        for oversold in _RSI_OVERSOLD_LEVELS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_RSI,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    rsi_lookback=lookback,
+                    rsi_oversold=oversold,
+                    # Same rule as BOLLINGER: a mean-reversion signal's
+                    # own lookback IS its horizon claim.
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_macd_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for fast, slow, signal in _MACD_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_MACD,
+                symbol=symbol,
+                timeframe=timeframe,
+                macd_fast=fast,
+                macd_slow=slow,
+                macd_signal=signal,
+                # Same rule as MOMENTUM: the slower EMA IS the horizon claim.
+                expected_horizon=slow,
+            )
+        )
+    return specs
+
+
 def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     """Every classic-template family's grid, combined -- the full
     baseline every future component must beat. Carry (PROMPTS.md's
@@ -113,4 +163,6 @@ def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
         *generate_grid(symbol, timeframe),
         *generate_bollinger_grid(symbol, timeframe),
         *generate_vol_breakout_grid(symbol, timeframe),
+        *generate_rsi_grid(symbol, timeframe),
+        *generate_macd_grid(symbol, timeframe),
     ]

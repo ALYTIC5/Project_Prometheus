@@ -20,6 +20,8 @@ const FAMILY_COLOR: Record<string, string> = {
   MOMENTUM: 'border-amber-500/60 text-amber-700 dark:text-amber-400',
   BOLLINGER: 'border-violet-500/60 text-violet-700 dark:text-violet-400',
   VOL_BREAKOUT: 'border-cyan-500/60 text-cyan-700 dark:text-cyan-400',
+  RSI: 'border-rose-500/60 text-rose-700 dark:text-rose-400',
+  MACD: 'border-lime-500/60 text-lime-700 dark:text-lime-400',
 };
 
 function familyClass(family: string | null): string {

@@ -6,9 +6,17 @@ from prometheus.research.generate import (
     generate_baseline_grid,
     generate_bollinger_grid,
     generate_grid,
+    generate_macd_grid,
+    generate_rsi_grid,
     generate_vol_breakout_grid,
 )
-from prometheus.strategy.spec import FAMILY_BOLLINGER, FAMILY_MOMENTUM, FAMILY_VOL_BREAKOUT
+from prometheus.strategy.spec import (
+    FAMILY_BOLLINGER,
+    FAMILY_MACD,
+    FAMILY_MOMENTUM,
+    FAMILY_RSI,
+    FAMILY_VOL_BREAKOUT,
+)
 
 
 def test_generates_only_valid_slow_greater_than_fast_pairs() -> None:
@@ -53,7 +61,23 @@ def test_generate_vol_breakout_grid_produces_real_breakout_specs() -> None:
     assert all(spec.exit_window < spec.breakout_window for spec in specs)  # type: ignore[operator]
 
 
-def test_generate_baseline_grid_combines_all_three_families() -> None:
+def test_generate_rsi_grid_produces_real_rsi_specs() -> None:
+    specs = generate_rsi_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_RSI for spec in specs)
+    assert all(spec.rsi_lookback is not None and spec.rsi_oversold is not None for spec in specs)
+
+
+def test_generate_macd_grid_produces_real_macd_specs() -> None:
+    specs = generate_macd_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_MACD for spec in specs)
+    assert all(spec.macd_fast < spec.macd_slow for spec in specs)  # type: ignore[operator]
+
+
+def test_generate_baseline_grid_combines_all_five_families() -> None:
     specs = generate_baseline_grid("BTC/USDT", "1d")
     families = {spec.family for spec in specs}
-    assert families == {FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT}
+    assert families == {
+        FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
+    }

@@ -1,8 +1,12 @@
-"""Three concrete, fully-parameterized strategy families: SMA crossover
-(momentum), Bollinger mean-reversion, and Donchian-channel volatility
-breakout -- the "classic templates" PROMPT 6 names as the baseline every
-future component must beat. All three are cited, standard technical
-constructions, not invented formulas.
+"""Five concrete, fully-parameterized strategy families: SMA crossover
+(momentum), Bollinger mean-reversion, Donchian-channel volatility
+breakout, Wilder's RSI mean-reversion, and Appel's MACD trend-following
+-- the "classic templates" PROMPT 6 names as the baseline every future
+component must beat. All five are cited, standard technical
+constructions, not invented formulas. RSI/MACD added later, same
+justification and same touch points (backtest/engine.py's signal
+dispatch, research/generate.py's grid, research/llm/hypothesis.py's
+family->fields mapping) VOL_BREAKOUT already established.
 
 Deterministic, no free text, no LLM -- CLAUDE.md's own stated null
 hypothesis is that LLM-generated research loses to static baselines until
@@ -53,7 +57,9 @@ from pydantic import BaseModel, ConfigDict, model_validator
 FAMILY_MOMENTUM = "MOMENTUM"
 FAMILY_BOLLINGER = "BOLLINGER"
 FAMILY_VOL_BREAKOUT = "VOL_BREAKOUT"
-FAMILIES = (FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT)
+FAMILY_RSI = "RSI"
+FAMILY_MACD = "MACD"
+FAMILIES = (FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD)
 
 # Each family's own parameter fields -- the set a spec of that family MUST
 # have set, with every other family's fields left None. Enforced by
@@ -70,6 +76,8 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_MOMENTUM: ("fast_window", "slow_window"),
     FAMILY_BOLLINGER: ("lookback_window", "band_multiplier"),
     FAMILY_VOL_BREAKOUT: ("breakout_window", "exit_window"),
+    FAMILY_RSI: ("rsi_lookback", "rsi_oversold"),
+    FAMILY_MACD: ("macd_fast", "macd_slow", "macd_signal"),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -107,6 +115,15 @@ class StrategySpec(BaseModel):
     # longer entry window, a shorter exit window).
     breakout_window: int | None = None
     exit_window: int | None = None
+    # RSI (Wilder's own construction): long when RSI drops below the
+    # oversold threshold, flat otherwise.
+    rsi_lookback: int | None = None
+    rsi_oversold: float | None = None
+    # MACD (Gerald Appel's own construction): long when the fast/slow EMA
+    # difference crosses above its own signal-line EMA.
+    macd_fast: int | None = None
+    macd_slow: int | None = None
+    macd_signal: int | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -137,6 +154,8 @@ class StrategySpec(BaseModel):
             raise ValueError("slow_window must be greater than fast_window")
         if self.family == FAMILY_VOL_BREAKOUT and self.exit_window >= self.breakout_window:  # type: ignore[operator]
             raise ValueError("exit_window must be less than breakout_window")
+        if self.family == FAMILY_MACD and self.macd_fast >= self.macd_slow:  # type: ignore[operator]
+            raise ValueError("macd_fast must be less than macd_slow")
         return self
 
     @property
