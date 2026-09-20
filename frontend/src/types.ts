@@ -338,3 +338,46 @@ export interface ResearchPaperRow {
   abstract: string;
   ingested_at: string;
 }
+
+/** GET /paper/'s shape -- the Harbour. One entry per CHAMPION-status
+ * strategy (none today: every validated strategy so far is REJECT).
+ * equity_curve is real mark-to-market from actual fills
+ * (paper.reconciliation.compute_paper_equity_curve), not simulated. */
+export interface PaperEquityPoint {
+  date: string;
+  equity: number;
+}
+
+export interface PaperOrderRow {
+  id: string;
+  symbol: string;
+  side: string;
+  qty: number;
+  status: string;
+  expected_price: number;
+  avg_fill_price: number | null;
+  filled_qty: number;
+  submitted_at: string;
+  filled_at: string | null;
+}
+
+export interface PaperFindingRow {
+  id: number;
+  finding_type: string;
+  detail: Record<string, unknown>;
+  detected_at: string;
+}
+
+export interface PaperChampion {
+  strategy_id: string;
+  family: string;
+  symbol: string;
+  equity_curve: PaperEquityPoint[];
+  recent_orders: PaperOrderRow[];
+  recent_findings: PaperFindingRow[];
+}
+
+export interface PaperTradingResponse {
+  champions: PaperChampion[];
+  total: number;
+}

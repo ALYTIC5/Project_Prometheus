@@ -11,6 +11,7 @@ import { CostsSection } from './sections/CostsSection';
 import { DataSection } from './sections/DataSection';
 import { ExperimentsSection } from './sections/ExperimentsSection';
 import { LawsSection } from './sections/LawsSection';
+import { PaperTradingSection } from './sections/PaperTradingSection';
 import { QueueSection } from './sections/QueueSection';
 import { StrategiesSection } from './sections/StrategiesSection';
 import { SystemsTable } from './sections/SystemsTable';
@@ -73,6 +74,7 @@ export default function Dashboard() {
         <QueueSection />
         <ExperimentsSection />
         <BenchmarkChart />
+        <PaperTradingSection />
         <LawsSection world={world} isLoading={worldQuery.isLoading} />
         <DataSection />
         <CostsSection />

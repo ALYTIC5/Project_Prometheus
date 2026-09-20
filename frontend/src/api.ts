@@ -3,6 +3,7 @@ import type {
   BuildingWithCount,
   ExperimentDetail,
   ExperimentRow,
+  PaperTradingResponse,
   PipelineStatusResponse,
   QueueStatus,
   ResearchPaperRow,
@@ -83,6 +84,12 @@ export async function fetchPipelineStatus(): Promise<PipelineStatusResponse> {
 export async function fetchResearchPapers(): Promise<{ papers: ResearchPaperRow[]; total: number }> {
   const res = await fetch(`${API_BASE}/research-papers/`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Research papers fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchPaperTrading(): Promise<PaperTradingResponse> {
+  const res = await fetch(`${API_BASE}/paper/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Paper trading fetch failed: ${res.status}`);
   return res.json();
 }
 

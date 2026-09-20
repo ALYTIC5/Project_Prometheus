@@ -23,6 +23,7 @@ import {
   fetchBuildings,
   fetchExperimentDetail,
   fetchExperiments,
+  fetchPaperTrading,
   fetchPipelineStatus,
   fetchQueueStatus,
   fetchResearchPapers,
@@ -125,6 +126,14 @@ export function useResearchPapersQuery(intervalMs: number = POLL_INTERVAL_MS) {
   return useQuery({
     queryKey: ['research-papers'],
     queryFn: fetchResearchPapers,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function usePaperTradingQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['paper-trading'],
+    queryFn: fetchPaperTrading,
     refetchInterval: intervalMs,
   });
 }

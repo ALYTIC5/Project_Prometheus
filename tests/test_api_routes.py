@@ -147,3 +147,21 @@ def test_research_papers_response_shape() -> None:
     for paper in body["papers"]:
         for field in ("id", "arxiv_id", "title", "abstract", "ingested_at"):
             assert field in paper
+
+
+def test_paper_trading_response_shape() -> None:
+    with TestClient(app) as client:
+        response = client.get("/paper/")
+    assert response.status_code == 200
+    body = response.json()
+    assert "champions" in body
+    assert isinstance(body["total"], int)
+    # No strategy has ever reached CHAMPION status (every validated
+    # strategy so far is REJECT) -- an empty list is the honest, expected
+    # state today, not a bug. Shape asserted for whenever one exists.
+    for champion in body["champions"]:
+        for field in ("strategy_id", "family", "symbol", "equity_curve", "recent_orders", "recent_findings"):
+            assert field in champion
+        for point in champion["equity_curve"]:
+            assert "date" in point
+            assert "equity" in point
