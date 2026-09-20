@@ -22,6 +22,7 @@ const FAMILY_COLOR: Record<string, string> = {
   VOL_BREAKOUT: 'border-cyan-500/60 text-cyan-700 dark:text-cyan-400',
   RSI: 'border-rose-500/60 text-rose-700 dark:text-rose-400',
   MACD: 'border-lime-500/60 text-lime-700 dark:text-lime-400',
+  RANDOM_FOREST: 'border-sky-500/60 text-sky-700 dark:text-sky-400',
 };
 
 function familyClass(family: string | null): string {

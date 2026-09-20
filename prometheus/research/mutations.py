@@ -45,7 +45,7 @@ _TUNE_FRACTION_RANGE = (0.10, 0.35)
 _SMOOTHING_FIELDS = {
     "slow_window", "fast_window", "lookback_window", "breakout_window",
     "exit_window", "band_multiplier", "rsi_lookback", "macd_fast",
-    "macd_slow", "macd_signal",
+    "macd_slow", "macd_signal", "rf_train_window",
 }
 
 
