@@ -59,3 +59,12 @@ async def sync_from_yaml(
             },
         )
     return len(rows)
+
+
+async def load_universe_symbols_for_asset_class(
+    session: AsyncSession, asset_class: str
+) -> list[str]:
+    """Currently-active symbols for one asset class, from
+    universe_membership (not the YAML directly) -- the same
+    delisted_at-aware filter as_of() uses, evaluated at today's date."""
+    return await as_of(session, date.today(), asset_class)

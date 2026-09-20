@@ -1,0 +1,118 @@
+# ETF/index universe -- PROMPT 2 (multi-asset), the "honest equity path".
+# listed_at is each ETF's real inception date (stockanalysis.com,
+# spot-checked live for 10/28 rather than assumed from memory), not
+# invented -- Law 2's as_of() reconstruction is meaningless against
+# fabricated dates.
+symbols:
+  - symbol: SPY
+    exchange: alpaca
+    listed_at: 1993-01-22
+    delisted_at: null
+  - symbol: QQQ
+    exchange: alpaca
+    listed_at: 1999-03-10
+    delisted_at: null
+  - symbol: IWM
+    exchange: alpaca
+    listed_at: 2000-05-22
+    delisted_at: null
+  - symbol: DIA
+    exchange: alpaca
+    listed_at: 1998-01-14
+    delisted_at: null
+  - symbol: XLK
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLF
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLE
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLV
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLI
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLY
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLP
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLU
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLB
+    exchange: alpaca
+    listed_at: 1998-12-16
+    delisted_at: null
+  - symbol: XLRE
+    exchange: alpaca
+    listed_at: 2015-10-07
+    delisted_at: null
+  - symbol: XLC
+    exchange: alpaca
+    listed_at: 2018-06-18
+    delisted_at: null
+  - symbol: TLT
+    exchange: alpaca
+    listed_at: 2002-07-22
+    delisted_at: null
+  - symbol: IEF
+    exchange: alpaca
+    listed_at: 2002-07-22
+    delisted_at: null
+  - symbol: HYG
+    exchange: alpaca
+    listed_at: 2007-04-04
+    delisted_at: null
+  - symbol: LQD
+    exchange: alpaca
+    listed_at: 2002-07-22
+    delisted_at: null
+  - symbol: GLD
+    exchange: alpaca
+    listed_at: 2004-11-18
+    delisted_at: null
+  - symbol: SLV
+    exchange: alpaca
+    listed_at: 2006-04-21
+    delisted_at: null
+  - symbol: USO
+    exchange: alpaca
+    listed_at: 2006-04-10
+    delisted_at: null
+  - symbol: UNG
+    exchange: alpaca
+    listed_at: 2007-04-18
+    delisted_at: null
+  - symbol: UUP
+    exchange: alpaca
+    listed_at: 2007-02-20
+    delisted_at: null
+  - symbol: FXE
+    exchange: alpaca
+    listed_at: 2005-12-09
+    delisted_at: null
+  - symbol: EEM
+    exchange: alpaca
+    listed_at: 2003-04-07
+    delisted_at: null
+  - symbol: EFA
+    exchange: alpaca
+    listed_at: 2001-08-14
+    delisted_at: null
+  - symbol: VNQ
+    exchange: alpaca
+    listed_at: 2004-09-23
+    delisted_at: null

@@ -26,8 +26,12 @@ def _expected_bar_hours(timeframe: str) -> int:
     return _BAR_HOURS[timeframe]
 
 
-def check_gaps(frame: pl.DataFrame, timeframe: str) -> list[str]:
-    expected_hours = _expected_bar_hours(timeframe)
+def check_gaps(
+    frame: pl.DataFrame, timeframe: str, max_gap_hours: float | None = None
+) -> list[str]:
+    expected_hours = (
+        max_gap_hours if max_gap_hours is not None else _expected_bar_hours(timeframe)
+    )
     issues = []
     for symbol in frame["symbol"].unique().sort().to_list():
         sub = frame.filter(pl.col("symbol") == symbol).sort("event_time")
@@ -127,9 +131,11 @@ def check_stale_bars(frame: pl.DataFrame) -> list[str]:
     return issues
 
 
-def run_quality_checks(frame: pl.DataFrame, timeframe: str) -> QualityReport:
+def run_quality_checks(
+    frame: pl.DataFrame, timeframe: str, max_gap_hours: float | None = None
+) -> QualityReport:
     issues: list[str] = []
-    issues += check_gaps(frame, timeframe)
+    issues += check_gaps(frame, timeframe, max_gap_hours=max_gap_hours)
     issues += check_duplicate_timestamps(frame)
     issues += check_price_validity(frame)
     issues += check_ohlc_relationships(frame)

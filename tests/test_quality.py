@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import polars as pl
 
-from prometheus.data.quality import run_quality_checks
+from prometheus.data.quality import check_gaps, run_quality_checks
 
 _T0 = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -72,3 +72,33 @@ def test_volume_spike_flagged() -> None:
     report = run_quality_checks(pl.DataFrame(rows), "1h")
     assert not report.passed
     assert any("volume spike" in issue for issue in report.issues)
+
+
+def _frame_with_gap(gap_hours: float) -> pl.DataFrame:
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    return pl.DataFrame(
+        [
+            {"symbol": "TEST", "event_time": start, "close": 100.0},
+            {"symbol": "TEST", "event_time": start + timedelta(hours=gap_hours), "close": 101.0},
+        ]
+    )
+
+
+def test_check_gaps_default_behavior_is_unchanged_for_a_weekend_sized_gap() -> None:
+    """A 65-hour gap (a normal Friday-close-to-Monday-open span) must
+    still flag as a gap under the *default* threshold -- proving this
+    change doesn't silently loosen crypto's existing behavior."""
+    frame = _frame_with_gap(65.0)
+    assert check_gaps(frame, "1d") == ["TEST: 1 gap(s) larger than one 1d bar"]
+
+
+def test_check_gaps_with_override_tolerates_a_weekend_gap() -> None:
+    frame = _frame_with_gap(65.0)
+    assert check_gaps(frame, "1d", max_gap_hours=100.0) == []
+
+
+def test_check_gaps_with_override_still_catches_a_genuine_outage() -> None:
+    frame = _frame_with_gap(150.0)
+    assert check_gaps(frame, "1d", max_gap_hours=100.0) == [
+        "TEST: 1 gap(s) larger than one 1d bar"
+    ]

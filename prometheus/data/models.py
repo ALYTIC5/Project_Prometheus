@@ -78,7 +78,7 @@ class DataVersion(Base):
     row_count: Mapped[int] = mapped_column(sa.BigInteger)
     date_range_start: Mapped[date] = mapped_column(sa.Date)
     date_range_end: Mapped[date] = mapped_column(sa.Date)
-    source_versions: Mapped[dict[str, str]] = mapped_column(JSONB)
+    source_versions: Mapped[dict[str, dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.func.now()
     )
