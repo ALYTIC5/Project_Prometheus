@@ -92,3 +92,64 @@ def test_direction_never_predicted_falls_back_to_flat() -> None:
     bars = pl.DataFrame(rows)
     signaled = random_forest_signal(bars, 30, 10, 0.5)
     assert all(p == 0.0 for p in signaled["position"].to_list())
+
+
+def _sawtooth_rows(n: int) -> list[dict]:
+    """Same shape as _sawtooth_bars but returns the row dicts (not yet a
+    DataFrame) so a test can mutate individual rows (e.g. zero a bar's
+    volume) before building the frame."""
+    rows = []
+    price = 100.0
+    for i in range(n):
+        price = price + 1.0 if i % 2 == 0 else price - 1.0
+        rows.append(_bar_row(_SYMBOL, i, price))
+    return rows
+
+
+def test_zero_volume_bar_in_prediction_window_stays_flat_not_crash() -> None:
+    """f_vol_chg = volume.pct_change(1) is +inf for the bar immediately
+    following a zero-volume bar (a realistic illiquid-symbol/outage
+    case, not a contrived edge case). With train_window=40 and n=50,
+    there is exactly one checkpoint (at 40), so bars 40..49 are all
+    PREDICTION rows, never training rows. Zeroing volume at bar 44 makes
+    bar 45's f_vol_chg == +inf. This must not crash predict_proba(), and
+    the un-scoreable row must be left at the documented flat default:
+    raw[45] stays 0.0, so position[46] (= raw[45] via the final
+    shift(1)) is 0.0 -- the honest 'skipped, stayed flat' outcome."""
+    n = 50
+    rows = _sawtooth_rows(n)
+    rows[44]["volume"] = 0.0
+    bars = pl.DataFrame(rows)
+
+    import math
+
+    features = bars.with_columns(
+        pl.col("volume").pct_change(1).alias("_f_vol_chg")
+    )["_f_vol_chg"].to_list()
+    assert math.isinf(features[45]) and features[45] > 0
+
+    signaled = random_forest_signal(bars, 40, 10, 0.5)  # must not raise
+    assert signaled["position"].to_list()[46] == 0.0
+
+
+def test_zero_volume_bar_in_training_window_does_not_crash_backtest() -> None:
+    """Same +inf hazard as above, but the zero-volume bar (and the
+    resulting +inf f_vol_chg bar) both fall inside the TRAINING window
+    (rows 0..39 for the checkpoint at 40, and again in the training
+    windows of later checkpoints), not the prediction range. model.fit()
+    must not crash -- the isfinite mask must exclude both the
+    zero-volume row and the +inf row from training every time they
+    recur, and the walk-forward backtest must still complete. n=70 is
+    run_backtest's own minimum (_min_bars_for: rf_train_window + 30)."""
+    n = 70
+    rows = _sawtooth_rows(n)
+    rows[20]["volume"] = 0.0  # -> row 21's f_vol_chg is +inf, both < checkpoint 40
+    bars = pl.DataFrame(rows)
+
+    signaled = random_forest_signal(bars, 40, 10, 0.5)  # must not raise
+    assert signaled.height == n
+
+    pit = PointInTimeFrame(bars)
+    spec = _rf_spec(train_window=40, retrain_interval=10)
+    result = run_backtest(pit, spec, bars["available_at"][-1])  # must not raise
+    assert result is not None

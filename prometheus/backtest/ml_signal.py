@@ -53,9 +53,14 @@ def random_forest_signal(
         # first ~9 bars of ANY input frame, and the first checkpoint's
         # train_start is always 0, so the first training window always
         # contains NaN-valued FEATURE rows, not just NaN-labeled ones.
+        # np.isfinite (not np.isnan) is required here: f_vol_chg is
+        # volume.pct_change(1), which is +inf for any bar immediately
+        # following a zero-volume bar -- a realistic case (illiquid
+        # symbols, exchange outages, newly-listed pairs), not just NaN.
         # RandomForestClassifier.fit() raises ValueError: Input contains
-        # NaN on any such row, so both must be excluded together.
-        valid = ~np.isnan(train_labels) & ~np.isnan(train_features).any(axis=1)
+        # NaN/infinity on any such row, so both NaN and inf must be
+        # excluded together, on both labels and features.
+        valid = np.isfinite(train_labels) & np.isfinite(train_features).all(axis=1)
         train_features = train_features[valid]
         train_labels = train_labels[valid]
         if train_features.shape[0] < _MIN_TRAINING_ROWS:
@@ -76,9 +81,19 @@ def random_forest_signal(
         predict_features = features[checkpoint:predict_end]
         if predict_features.shape[0] == 0:
             continue
+        # Same non-finite hazard as the training side, but on the
+        # prediction slice: a row here with a non-finite feature (e.g.
+        # f_vol_chg == +inf right after a zero-volume bar) would crash
+        # model.predict_proba(). Rows that can't be scored are left at
+        # their default 0.0 -- the module's own documented "not enough
+        # signal here -> stay flat" posture, not a new behavior.
+        finite_rows = np.isfinite(predict_features).all(axis=1)
+        if not finite_rows.any():
+            continue
         up_index = list(model.classes_).index(1.0)
-        probabilities = model.predict_proba(predict_features)
-        for offset, prob_row in enumerate(probabilities):
+        probabilities = model.predict_proba(predict_features[finite_rows])
+        finite_offsets = np.flatnonzero(finite_rows)
+        for offset, prob_row in zip(finite_offsets, probabilities, strict=True):
             raw[checkpoint + offset] = 1.0 if prob_row[up_index] >= predict_threshold else 0.0
 
     raw_series = pl.Series("_raw_prediction", raw)
