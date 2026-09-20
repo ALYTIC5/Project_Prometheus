@@ -65,6 +65,7 @@ class UniverseMembership(Base):
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(sa.String(32))
     exchange: Mapped[str] = mapped_column(sa.String(32))
+    asset_class: Mapped[str] = mapped_column(sa.String(16))
     listed_at: Mapped[date] = mapped_column(sa.Date)
     delisted_at: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
 

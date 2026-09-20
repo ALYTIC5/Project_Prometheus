@@ -39,7 +39,7 @@ async def seeded_session() -> AsyncIterator[AsyncSession]:
     engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
     factory = async_sessionmaker(engine)
     async with factory() as session:
-        await sync_from_yaml(session, _UNIVERSE_YAML)
+        await sync_from_yaml(session, _UNIVERSE_YAML, asset_class="crypto")
         await session.commit()
         yield session
     await engine.dispose()
@@ -48,8 +48,8 @@ async def seeded_session() -> AsyncIterator[AsyncSession]:
 async def test_universe_as_of_2021_includes_a_since_delisted_symbol(
     seeded_session: AsyncSession,
 ) -> None:
-    symbols_2021 = set(await as_of(seeded_session, date(2021, 1, 1)))
-    symbols_today = set(await as_of(seeded_session, date.today()))
+    symbols_2021 = set(await as_of(seeded_session, date(2021, 1, 1), "crypto"))
+    symbols_today = set(await as_of(seeded_session, date.today(), "crypto"))
 
     # PAX/USDT: listed 2018-09-24, delisted 2021-05-01 — alive as of
     # 2021-01-01, dead today. This is the case Law 2 exists to catch.
@@ -64,3 +64,24 @@ async def test_universe_as_of_2021_includes_a_since_delisted_symbol(
 
     assert "BTC/USDT" in symbols_2021
     assert "BTC/USDT" in symbols_today
+
+
+async def test_as_of_never_mixes_asset_classes(seeded_session: AsyncSession) -> None:
+    """PROMPT 2 (multi-asset): an asset_class filter that silently did
+    nothing would let an ETF symbol leak into a crypto strategy's
+    universe (or vice versa) the moment a second asset class exists in
+    the same table. Seeds one ETF row directly (no ETF adapter exists
+    yet in this sub-project) to prove the filter itself works before
+    anything real depends on it."""
+    await sync_from_yaml(
+        seeded_session, "tests/fixtures/universe_etf_sample.yaml", asset_class="etf"
+    )
+    await seeded_session.commit()
+
+    crypto_symbols = set(await as_of(seeded_session, date.today(), "crypto"))
+    etf_symbols = set(await as_of(seeded_session, date.today(), "etf"))
+
+    assert "SPY" in etf_symbols
+    assert "SPY" not in crypto_symbols
+    assert "BTC/USDT" in crypto_symbols
+    assert "BTC/USDT" not in etf_symbols
