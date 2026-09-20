@@ -65,6 +65,7 @@ class UniverseMembership(Base):
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(sa.String(32))
     exchange: Mapped[str] = mapped_column(sa.String(32))
+    asset_class: Mapped[str] = mapped_column(sa.String(16))
     listed_at: Mapped[date] = mapped_column(sa.Date)
     delisted_at: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
 
@@ -77,7 +78,7 @@ class DataVersion(Base):
     row_count: Mapped[int] = mapped_column(sa.BigInteger)
     date_range_start: Mapped[date] = mapped_column(sa.Date)
     date_range_end: Mapped[date] = mapped_column(sa.Date)
-    source_versions: Mapped[dict[str, str]] = mapped_column(JSONB)
+    source_versions: Mapped[dict[str, dict[str, object]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), server_default=sa.func.now()
     )

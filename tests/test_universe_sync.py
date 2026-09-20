@@ -56,13 +56,13 @@ async def _row_count_for(session: AsyncSession, symbol: str, exchange: str, list
 
 async def test_sync_is_idempotent(factory: async_sessionmaker[AsyncSession]) -> None:
     async with factory() as session:
-        first_count = await sync_from_yaml(session, _FIXTURE_PATH)
+        first_count = await sync_from_yaml(session, _FIXTURE_PATH, asset_class="crypto")
         await session.commit()
         rows_after_first = await _row_count_for(
             session, "BTC/USDT", "binance", date(2017, 8, 1)
         )
 
-        second_count = await sync_from_yaml(session, _FIXTURE_PATH)
+        second_count = await sync_from_yaml(session, _FIXTURE_PATH, asset_class="crypto")
         await session.commit()
         rows_after_second = await _row_count_for(
             session, "BTC/USDT", "binance", date(2017, 8, 1)
@@ -79,10 +79,10 @@ async def test_sync_populates_real_as_of_queries(
     """The actual point of this module: as_of() must return real data once
     synced, not just in test_survivorship.py's own hand-built fixture."""
     async with factory() as session:
-        await sync_from_yaml(session, _FIXTURE_PATH)
+        await sync_from_yaml(session, _FIXTURE_PATH, asset_class="crypto")
         await session.commit()
 
-        symbols_today = await as_of(session, date.today())
+        symbols_today = await as_of(session, date.today(), "crypto")
     assert "BTC/USDT" in symbols_today
 
 
@@ -100,12 +100,18 @@ async def test_resyncing_a_delisting_updates_the_existing_row_not_a_duplicate(
     async with factory() as session:
         await session.execute(
             text(
-                "INSERT INTO universe_membership (symbol, exchange, listed_at, delisted_at) "
-                "VALUES (:symbol, :exchange, :listed_at, NULL) "
+                "INSERT INTO universe_membership "
+                "(symbol, exchange, asset_class, listed_at, delisted_at) "
+                "VALUES (:symbol, :exchange, :asset_class, :listed_at, NULL) "
                 "ON CONFLICT ON CONSTRAINT uq_universe_membership_symbol_exchange_listed_at "
-                "DO UPDATE SET delisted_at = NULL"
+                "DO UPDATE SET delisted_at = NULL, asset_class = EXCLUDED.asset_class"
             ),
-            {"symbol": symbol, "exchange": exchange, "listed_at": listed_at},
+            {
+                "symbol": symbol,
+                "exchange": exchange,
+                "asset_class": "crypto",
+                "listed_at": listed_at,
+            },
         )
         await session.commit()
         count_before = await _row_count_for(session, symbol, exchange, listed_at)
@@ -114,14 +120,17 @@ async def test_resyncing_a_delisting_updates_the_existing_row_not_a_duplicate(
         # Simulate a re-sync that now reports this symbol delisted.
         await session.execute(
             text(
-                "INSERT INTO universe_membership (symbol, exchange, listed_at, delisted_at) "
-                "VALUES (:symbol, :exchange, :listed_at, :delisted_at) "
+                "INSERT INTO universe_membership "
+                "(symbol, exchange, asset_class, listed_at, delisted_at) "
+                "VALUES (:symbol, :exchange, :asset_class, :listed_at, :delisted_at) "
                 "ON CONFLICT ON CONSTRAINT uq_universe_membership_symbol_exchange_listed_at "
-                "DO UPDATE SET delisted_at = EXCLUDED.delisted_at"
+                "DO UPDATE SET delisted_at = EXCLUDED.delisted_at, "
+                "asset_class = EXCLUDED.asset_class"
             ),
             {
                 "symbol": symbol,
                 "exchange": exchange,
+                "asset_class": "crypto",
                 "listed_at": listed_at,
                 "delisted_at": date(2030, 6, 1),
             },

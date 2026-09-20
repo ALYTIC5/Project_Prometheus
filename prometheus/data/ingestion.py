@@ -223,7 +223,7 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
         # config/universe.yaml's rows, including delisted ones, or as_of()
         # has nothing to reconstruct from. Runs first so a quality
         # quarantine further down never skips it.
-        await sync_from_yaml(session)
+        await sync_from_yaml(session, asset_class="crypto")
         # Same versioned-config treatment costs.yaml/universe.yaml get --
         # a change to holdout_start is itself an auditable config_snapshots
         # row, not a silent shift in what "holdout" means.
@@ -256,7 +256,13 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
                 frame,
                 date_range_start=since.date(),
                 date_range_end=datetime.now(UTC).date(),
-                source_versions={"binanceus": "ccxt/" + ccxt.__version__},
+                source_versions={
+                    "binanceus": {
+                        "version": "ccxt/" + ccxt.__version__,
+                        "survivorship_safe": True,
+                        "point_in_time": True,
+                    }
+                },
             )
             await session.commit()
 

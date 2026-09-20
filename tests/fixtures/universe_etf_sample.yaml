@@ -1,0 +1,5 @@
+symbols:
+  - symbol: SPY
+    exchange: alpaca
+    listed_at: 1993-01-22
+    delisted_at: null

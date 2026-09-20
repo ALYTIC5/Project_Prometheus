@@ -26,15 +26,18 @@ def _expected_bar_hours(timeframe: str) -> int:
     return _BAR_HOURS[timeframe]
 
 
-def check_gaps(frame: pl.DataFrame, timeframe: str) -> list[str]:
-    expected_hours = _expected_bar_hours(timeframe)
+def check_gaps(
+    frame: pl.DataFrame, timeframe: str, max_gap_hours: float | None = None
+) -> list[str]:
+    default_hours = _expected_bar_hours(timeframe)  # always validates timeframe
+    expected_hours = max_gap_hours if max_gap_hours is not None else default_hours
     issues = []
     for symbol in frame["symbol"].unique().sort().to_list():
         sub = frame.filter(pl.col("symbol") == symbol).sort("event_time")
         deltas = sub["event_time"].diff().drop_nulls()
         gap_count = (deltas.dt.total_hours() > expected_hours).sum()
         if gap_count:
-            issues.append(f"{symbol}: {gap_count} gap(s) larger than one {timeframe} bar")
+            issues.append(f"{symbol}: {gap_count} gap(s) larger than {expected_hours}h")
     return issues
 
 
@@ -127,9 +130,11 @@ def check_stale_bars(frame: pl.DataFrame) -> list[str]:
     return issues
 
 
-def run_quality_checks(frame: pl.DataFrame, timeframe: str) -> QualityReport:
+def run_quality_checks(
+    frame: pl.DataFrame, timeframe: str, max_gap_hours: float | None = None
+) -> QualityReport:
     issues: list[str] = []
-    issues += check_gaps(frame, timeframe)
+    issues += check_gaps(frame, timeframe, max_gap_hours=max_gap_hours)
     issues += check_duplicate_timestamps(frame)
     issues += check_price_validity(frame)
     issues += check_ohlc_relationships(frame)

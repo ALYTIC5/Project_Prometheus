@@ -47,7 +47,7 @@ async def record_data_version(
     frame: pl.DataFrame,
     date_range_start: date,
     date_range_end: date,
-    source_versions: dict[str, str],
+    source_versions: dict[str, dict[str, object]],
 ) -> DataVersion:
     version = DataVersion(
         content_hash=compute_content_hash(frame),
