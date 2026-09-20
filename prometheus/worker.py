@@ -66,9 +66,11 @@ from prometheus.data.loaders import load_point_in_time
 from prometheus.experiments.queue import enqueue, get_queue_settings, reap_stale_claims
 from prometheus.experiments.runner import (
     drain_queue,
-    enqueue_grid,
+    enqueue_baseline_grid,
+    enqueue_specs,
     latest_experiment_id_for_spec,
-    validate_grid,
+    validate_baseline_grid,
+    validate_specs,
 )
 from prometheus.paper.broker import PaperBroker
 from prometheus.paper.divergence import check_divergence
@@ -87,6 +89,7 @@ from prometheus.research.llm.hypothesis import (
     generate_hypothesis,
 )
 from prometheus.research.llm.ingestion import ingest_paper, search_arxiv
+from prometheus.research.ml.generate import generate_random_forest_grid
 from prometheus.research.mutations import parameter_tune, swap_family
 from prometheus.research.population import (
     select_for_cross_breeding,
@@ -124,7 +127,6 @@ def _anthropic_client() -> _AnthropicClientProtocol:
 _INGEST_CATCHUP_DAYS = 800
 _GRID_LOOKBACK_DAYS = 800
 _TIMEFRAME = "1d"
-_FAMILY = "MOMENTUM"
 _RUN_BACKTEST_KIND = "run_backtest"
 
 # A bounded compute budget for this cycle's evolution step -- the same
@@ -347,30 +349,34 @@ async def _run_llm_ingestion() -> list[str]:
 async def _run_research() -> list[str]:
     symbols = load_universe_symbols()
     for symbol in symbols:
-        await enqueue_grid(
-            symbol,
-            _TIMEFRAME,
-            _FAMILY,
+        await enqueue_baseline_grid(
+            symbol, _TIMEFRAME, _GRID_LOOKBACK_DAYS,
+            priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
+        )
+        await enqueue_specs(
+            symbol, _TIMEFRAME, generate_random_forest_grid(symbol, _TIMEFRAME),
             _GRID_LOOKBACK_DAYS,
-            priority=0,
-            expected_information_value=0.0,
-            estimated_cost=0.0,
-            max_attempts=3,
+            priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
         )
 
     ran = await drain_queue()
 
     # The Oracle (PROMPTS.md PROMPT 5): re-scores every symbol's grid
     # against real PBO/DSR/decay/regime evidence and writes
-    # validation_results -- the table that flips the Oracle from
-    # SCAFFOLDING to ACTIVE. Runs after drain_queue so a symbol's grid
-    # introduced THIS cycle already has real `experiments` rows to attach
-    # a verdict to, not just on the cycle after.
+    # validation_results. Every classic-template family AND
+    # RANDOM_FOREST, not just MOMENTUM -- see
+    # docs/superpowers/specs/2026-09-20-random-forest-strategy-design.md.
     validated: list[str] = []
     async with get_session() as session:
         for symbol in symbols:
             validated.extend(
-                await validate_grid(session, symbol, _TIMEFRAME, _FAMILY, _GRID_LOOKBACK_DAYS)
+                await validate_baseline_grid(session, symbol, _TIMEFRAME, _GRID_LOOKBACK_DAYS)
+            )
+            validated.extend(
+                await validate_specs(
+                    session, symbol, _TIMEFRAME,
+                    generate_random_forest_grid(symbol, _TIMEFRAME), _GRID_LOOKBACK_DAYS,
+                )
             )
 
     # PROMPT 7: one bounded evolution step, after validate_grid so this
