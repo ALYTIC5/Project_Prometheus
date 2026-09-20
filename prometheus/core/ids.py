@@ -86,7 +86,6 @@ async def next_strategy_id(family: str) -> str:
     async with get_engine().begin() as conn:
         result = await conn.execute(_UPSERT_COUNTER, {"scope": scope})
         n: int = result.scalar_one()
-    print(f"TEMP_DEBUG_CAP_CHECK n={n} cap=999999 family={family}")
     if n > 999_999:
         raise IdSequenceExhausted(f"strategy id sequence exhausted for family {family}")
     return f"{family}-{n:06d}"
