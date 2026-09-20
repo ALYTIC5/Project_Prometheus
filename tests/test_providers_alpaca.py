@@ -165,6 +165,28 @@ async def test_fetch_bars_sends_auth_headers_and_raw_adjustment() -> None:
     assert kwargs["headers"]["APCA-API-KEY-ID"] == "test-key"
     assert kwargs["headers"]["APCA-API-SECRET-KEY"] == "test-secret"
     assert kwargs["params"]["adjustment"] == "raw"
+    assert kwargs["params"]["feed"] == "iex"
+
+
+@patch.dict(
+    os.environ, {"ALPACA_API_KEY": "test-key", "ALPACA_SECRET_KEY": "test-secret"}
+)
+async def test_fetch_bars_tolerates_a_null_bars_body() -> None:
+    """Alpaca returns "bars": null (not {}) for a window with zero data --
+    e.g. a --days backfill reaching behind a symbol's actual listing date.
+    That must mean zero bars for this symbol/page, not an AttributeError
+    that aborts the whole backfill loop."""
+    null_bars_response = {"bars": None, "next_page_token": None}
+    with patch("httpx.AsyncClient", return_value=_mock_client(null_bars_response)):
+        provider = AlpacaProvider()
+        bars = await provider.fetch_bars(
+            ["XLC"],
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 5, tzinfo=UTC),
+            "1d",
+        )
+
+    assert bars == []
 
 
 async def test_fetch_bars_raises_a_clear_error_without_credentials() -> None:

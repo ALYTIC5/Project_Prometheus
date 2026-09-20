@@ -256,7 +256,13 @@ async def backfill(days: int, symbols: list[str] | None = None) -> None:
                 frame,
                 date_range_start=since.date(),
                 date_range_end=datetime.now(UTC).date(),
-                source_versions={"binanceus": "ccxt/" + ccxt.__version__},
+                source_versions={
+                    "binanceus": {
+                        "version": "ccxt/" + ccxt.__version__,
+                        "survivorship_safe": True,
+                        "point_in_time": True,
+                    }
+                },
             )
             await session.commit()
 

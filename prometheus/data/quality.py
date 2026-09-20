@@ -29,16 +29,15 @@ def _expected_bar_hours(timeframe: str) -> int:
 def check_gaps(
     frame: pl.DataFrame, timeframe: str, max_gap_hours: float | None = None
 ) -> list[str]:
-    expected_hours = (
-        max_gap_hours if max_gap_hours is not None else _expected_bar_hours(timeframe)
-    )
+    default_hours = _expected_bar_hours(timeframe)  # always validates timeframe
+    expected_hours = max_gap_hours if max_gap_hours is not None else default_hours
     issues = []
     for symbol in frame["symbol"].unique().sort().to_list():
         sub = frame.filter(pl.col("symbol") == symbol).sort("event_time")
         deltas = sub["event_time"].diff().drop_nulls()
         gap_count = (deltas.dt.total_hours() > expected_hours).sum()
         if gap_count:
-            issues.append(f"{symbol}: {gap_count} gap(s) larger than one {timeframe} bar")
+            issues.append(f"{symbol}: {gap_count} gap(s) larger than {expected_hours}h")
     return issues
 
 

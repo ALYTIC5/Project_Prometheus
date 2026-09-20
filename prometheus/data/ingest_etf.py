@@ -140,6 +140,11 @@ async def backfill_etf(
                 source_versions={
                     _SOURCE: {
                         "version": "v2",
+                        # Discoverable/auditable in data_versions: which
+                        # feed tier (e.g. Alpaca's free-tier "iex") the
+                        # bars actually came from. Not every provider
+                        # exposes this, hence the getattr guard.
+                        "feed": getattr(provider, "FEED", None),
                         **provider.capabilities(),
                     }
                 },

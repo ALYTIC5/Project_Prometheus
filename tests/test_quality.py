@@ -89,7 +89,7 @@ def test_check_gaps_default_behavior_is_unchanged_for_a_weekend_sized_gap() -> N
     still flag as a gap under the *default* threshold -- proving this
     change doesn't silently loosen crypto's existing behavior."""
     frame = _frame_with_gap(65.0)
-    assert check_gaps(frame, "1d") == ["TEST: 1 gap(s) larger than one 1d bar"]
+    assert check_gaps(frame, "1d") == ["TEST: 1 gap(s) larger than 24h"]
 
 
 def test_check_gaps_with_override_tolerates_a_weekend_gap() -> None:
@@ -100,5 +100,5 @@ def test_check_gaps_with_override_tolerates_a_weekend_gap() -> None:
 def test_check_gaps_with_override_still_catches_a_genuine_outage() -> None:
     frame = _frame_with_gap(150.0)
     assert check_gaps(frame, "1d", max_gap_hours=100.0) == [
-        "TEST: 1 gap(s) larger than one 1d bar"
+        "TEST: 1 gap(s) larger than 100.0h"
     ]

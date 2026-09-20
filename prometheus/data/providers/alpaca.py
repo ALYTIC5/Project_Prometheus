@@ -19,9 +19,17 @@ from prometheus.data.providers.base import MarketDataProvider, ProviderCapabilit
 _BASE_URL = "https://data.alpaca.markets/v2/stocks/bars"
 _TIMEFRAME_MAP = {"1d": "1Day"}
 _PAGE_LIMIT = 10000
+# Explicit, not implicit: a free-tier Alpaca account is IEX-only anyway,
+# but "adjustment" is already passed explicitly for the same reason --
+# never rely on an unstated default for something Law-adjacent (volume
+# reflects exactly this). Exposed as a public class attribute so callers
+# (ingest_etf.py) can put the actual feed used into source_versions.
+_FEED = "iex"
 
 
 class AlpacaProvider(MarketDataProvider):
+    FEED = _FEED
+
     def capabilities(self) -> ProviderCapabilities:
         return {
             "asset_classes": ["etf"],
@@ -54,6 +62,7 @@ class AlpacaProvider(MarketDataProvider):
                         "start": start.isoformat(),
                         "end": end.isoformat(),
                         "adjustment": "raw",
+                        "feed": _FEED,
                         "limit": _PAGE_LIMIT,
                     }
                     if page_token is not None:
@@ -61,7 +70,11 @@ class AlpacaProvider(MarketDataProvider):
                     response = await client.get(_BASE_URL, headers=headers, params=params)
                     response.raise_for_status()
                     body = response.json()
-                    for raw in body["bars"].get(symbol, []):
+                    # Alpaca returns "bars": null (not {}) for a window with
+                    # zero data (e.g. a --days backfill reaching behind a
+                    # symbol's listing date) -- treat that as zero bars for
+                    # this page, not an AttributeError that aborts the loop.
+                    for raw in (body.get("bars") or {}).get(symbol, []):
                         bars.append(
                             RawBar(
                                 symbol=symbol,

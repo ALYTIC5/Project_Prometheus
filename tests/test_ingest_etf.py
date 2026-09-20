@@ -69,10 +69,17 @@ class _FakeProvider(MarketDataProvider):
 
 @pytest.fixture()
 async def engine() -> AsyncIterator[AsyncEngine]:
+    old_database_url = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
     eng = create_async_engine(os.environ["TEST_DATABASE_URL"])
-    yield eng
-    await eng.dispose()
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
+        if old_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = old_database_url
 
 
 async def test_backfill_etf_writes_real_bars_through_the_existing_pipeline(
