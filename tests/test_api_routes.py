@@ -64,6 +64,11 @@ def test_experiments_response_carries_lineage_fields() -> None:
     for experiment in body["experiments"]:
         assert "hypothesis" in experiment
         assert "parent_experiment_id" in experiment
+        # From the latest results row -- null on the insufficient_data
+        # path (a Decision with no Result), an honest gap not an error.
+        assert "total_return_pct" in experiment
+        assert "benchmark_return_pct" in experiment
+        assert experiment["total_return_pct"] is None or isinstance(experiment["total_return_pct"], int | float)
 
 
 def test_queue_status_shape() -> None:

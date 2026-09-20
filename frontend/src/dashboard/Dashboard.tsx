@@ -6,6 +6,7 @@ import { LiveActivity } from './LiveActivity';
 import { PipelineStatus } from './PipelineStatus';
 import { ResearchSummary } from './ResearchSummary';
 import { ViolationsBanner } from './ViolationsBanner';
+import { BacktestScatterSection } from './sections/BacktestScatterSection';
 import { BenchmarkChart } from './sections/BenchmarkChart';
 import { CostsSection } from './sections/CostsSection';
 import { DataSection } from './sections/DataSection';
@@ -73,6 +74,7 @@ export default function Dashboard() {
         <StrategiesSection />
         <QueueSection />
         <ExperimentsSection />
+        <BacktestScatterSection />
         <BenchmarkChart />
         <PaperTradingSection />
         <LawsSection world={world} isLoading={worldQuery.isLoading} />

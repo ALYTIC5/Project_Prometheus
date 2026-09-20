@@ -17,7 +17,8 @@ router = APIRouter(prefix="/experiments", tags=["experiments"])
 _SELECT_ALL = text(
     """
     SELECT e.id, e.status, e.payload, e.hypothesis, e.parent_experiment_id, e.created_at,
-           latest_decision.decision
+           latest_decision.decision,
+           latest_result.payload AS result_payload
       FROM experiments e
       LEFT JOIN LATERAL (
           SELECT decision FROM decisions
@@ -25,6 +26,12 @@ _SELECT_ALL = text(
            ORDER BY created_at DESC, id DESC
            LIMIT 1
       ) latest_decision ON true
+      LEFT JOIN LATERAL (
+          SELECT payload FROM results
+           WHERE experiment_id = e.id
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1
+      ) latest_result ON true
      ORDER BY e.created_at DESC LIMIT 200
     """
 )
@@ -57,6 +64,11 @@ async def list_experiments() -> dict[str, Any]:
                 # replaces), same "latest wins" rule as
                 # experiments.lineage's latest_result fragment.
                 "decision": r.decision,
+                # None for the insufficient_data path (runner.py's except
+                # branch writes a Decision but no Result row) -- an honest
+                # gap, not a zero.
+                "total_return_pct": (r.result_payload or {}).get("total_return_pct"),
+                "benchmark_return_pct": (r.result_payload or {}).get("benchmark_return_pct"),
             }
             for r in result
         ]

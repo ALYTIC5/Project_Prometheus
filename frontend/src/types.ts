@@ -262,6 +262,10 @@ export interface ExperimentRow {
   parent_experiment_id: string | null;
   created_at: string;
   decision: DecisionPayload | null;
+  // From the experiment's latest results row -- null on the
+  // insufficient_data path, which writes a Decision but no Result.
+  total_return_pct: number | null;
+  benchmark_return_pct: number | null;
 }
 
 export interface ExperimentResultRow {
