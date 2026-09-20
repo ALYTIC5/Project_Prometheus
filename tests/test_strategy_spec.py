@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from prometheus.strategy.spec import StrategySpec
+from prometheus.strategy.spec import FAMILIES, FAMILY_RANDOM_FOREST, StrategySpec
 
 
 def test_valid_spec_constructs() -> None:
@@ -141,3 +141,49 @@ def test_with_updates_re_validates_unlike_model_copy() -> None:
 
     with pytest.raises(ValidationError):
         spec.with_updates(slow_window=5)
+
+
+def test_random_forest_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_RANDOM_FOREST, symbol="BTC/USDT", timeframe="1d",
+        rf_train_window=120, rf_retrain_interval=20, rf_predict_threshold=0.5,
+        expected_horizon=1,
+    )
+    assert spec.family == FAMILY_RANDOM_FOREST
+    assert spec.parameters == {
+        "rf_train_window": 120.0, "rf_retrain_interval": 20.0, "rf_predict_threshold": 0.5,
+    }
+
+
+def test_random_forest_missing_fields_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_RANDOM_FOREST, symbol="BTC/USDT", timeframe="1d", expected_horizon=1,
+        )
+
+
+def test_random_forest_retrain_interval_exceeding_train_window_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_RANDOM_FOREST, symbol="BTC/USDT", timeframe="1d",
+            rf_train_window=20, rf_retrain_interval=50, rf_predict_threshold=0.5,
+            expected_horizon=1,
+        )
+
+
+def test_random_forest_threshold_out_of_bounds_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_RANDOM_FOREST, symbol="BTC/USDT", timeframe="1d",
+            rf_train_window=120, rf_retrain_interval=20, rf_predict_threshold=1.5,
+            expected_horizon=1,
+        )
+
+
+def test_random_forest_deliberately_excluded_from_families_tuple() -> None:
+    """RANDOM_FOREST is a separate generation component (like evolution/
+    LLM hypotheses), not part of the classic-template baseline FAMILIES
+    tuple swap_family/the LLM system prompt draw from. This test
+    documents the exclusion so a future edit can't silently 'fix' it
+    into the tuple."""
+    assert FAMILY_RANDOM_FOREST not in FAMILIES

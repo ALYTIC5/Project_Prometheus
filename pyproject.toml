@@ -30,6 +30,12 @@ dependencies = [
     "numpy==2.4.6",
     "scipy==1.16.3",
     "cpz-quant==1.1.0",
+    "scikit-learn==1.9.1",
+    # scikit-learn's own transitive requirements -- see docs/DEPENDENCIES.md
+    # for why each is recorded here rather than left as unexplained size.
+    "joblib==1.6.0",
+    "narwhals==2.26.0",
+    "threadpoolctl==3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -87,6 +93,12 @@ ignore_missing_imports = true
 # imports scipy.stats.spearmanr directly (real correlation + p-value).
 [[tool.mypy.overrides]]
 module = ["scipy.*"]
+ignore_missing_imports = true
+
+# scikit-learn ships no py.typed marker either; prometheus.backtest.ml_signal
+# imports sklearn.ensemble.RandomForestClassifier directly (real model fit).
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

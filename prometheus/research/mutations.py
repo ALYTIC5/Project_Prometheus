@@ -45,7 +45,7 @@ _TUNE_FRACTION_RANGE = (0.10, 0.35)
 _SMOOTHING_FIELDS = {
     "slow_window", "fast_window", "lookback_window", "breakout_window",
     "exit_window", "band_multiplier", "rsi_lookback", "macd_fast",
-    "macd_slow", "macd_signal",
+    "macd_slow", "macd_signal", "rf_train_window",
 }
 
 
@@ -56,7 +56,21 @@ class Mutation:
     hypothesis: str
 
 
-def _clamp_positive(value: float, *, is_int: bool) -> float:
+# RANDOM_FOREST's rf_predict_threshold is the only tunable field whose
+# entire valid range (see spec.py's model_validator: 0.0 < x < 1.0) lies
+# below _clamp_positive's own floor of 1.0 -- every other field's valid
+# range starts at or above 1 (a window/lookback of at least 1 bar). Both
+# clamp bounds are exclusive to stay strictly inside the validator's own
+# open interval.
+_UNIT_INTERVAL_FIELDS = {"rf_predict_threshold"}
+_UNIT_INTERVAL_MIN = 0.01
+_UNIT_INTERVAL_MAX = 0.99
+
+
+def _clamp_positive(value: float, *, is_int: bool, field: str | None = None) -> float:
+    if field in _UNIT_INTERVAL_FIELDS:
+        value = min(max(value, _UNIT_INTERVAL_MIN), _UNIT_INTERVAL_MAX)
+        return round(value) if is_int else round(value, 4)
     value = max(value, 1.0)
     return round(value) if is_int else round(value, 4)
 
@@ -76,7 +90,9 @@ def parameter_tune(spec: StrategySpec, rng: random.Random) -> Mutation | None:
     for _attempt in range(5):
         fraction = rng.uniform(*_TUNE_FRACTION_RANGE)
         direction = rng.choice([1, -1])
-        new_value = _clamp_positive(old_value * (1 + direction * fraction), is_int=is_int)
+        new_value = _clamp_positive(
+            old_value * (1 + direction * fraction), is_int=is_int, field=field
+        )
         if new_value == old_value:
             continue
         try:
@@ -128,7 +144,16 @@ def swap_family(
     one anyway would be exactly the kind of invented claim CLAUDE.md
     warns against. lineage.py's own `change_set.get("predicted_direction")`
     already handles a missing key as "no hypothesis" (None), not an error.
+
+    A spec whose OWN family isn't in FAMILIES (currently only
+    RANDOM_FOREST -- deliberately excluded, see spec.py) has no valid
+    swap target: FAMILIES is the baseline-family ecosystem this operator
+    swaps within, and RANDOM_FOREST must never be reached by it, in
+    either direction (inbound as `new_family`, or outbound as the
+    source `spec.family` being replaced away from).
     """
+    if spec.family not in FAMILIES:
+        return None
     other_families = [f for f in FAMILIES if f != spec.family and seed_specs_by_family.get(f)]
     if not other_families:
         return None

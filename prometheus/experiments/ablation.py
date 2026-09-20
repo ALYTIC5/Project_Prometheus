@@ -65,6 +65,7 @@ from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.loaders import load_point_in_time
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.research.generate import generate_baseline_grid
+from prometheus.research.ml.generate import generate_random_forest_grid
 from prometheus.research.mutations import parameter_tune, swap_family
 from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.spec import FAMILIES, StrategySpec
@@ -624,6 +625,79 @@ async def register_evolution_component(
         component,
         version,
         list(FAMILIES),
+        n_trials_this_batch=n_trials,
+        n_failed_this_batch=n_failed,
+    )
+    await session.commit()
+    return result
+
+
+async def register_ml_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does the RANDOM_FOREST walk-forward model
+    (research/ml/generate.py) find anything the deterministic baseline
+    grid (research/generate.generate_baseline_grid) doesn't, on real
+    out-of-sample data. Same shape as register_evolution_component/
+    register_llm_component: per symbol, score every baseline-grid spec
+    and every RF-grid spec with the real backtest engine, record one
+    paired trial (enabled = best RF score, disabled = best grid score)
+    via record_trial, then reuse _recompute_registry for the real
+    verdict -- reported honestly, including a NEUTRAL or HARMFUL one."""
+    component = "random_forest"
+    n_trials = 0
+    n_failed = 0
+
+    def _score(pit: PointInTimeFrame, spec: StrategySpec) -> float | None:
+        try:
+            return run_backtest(pit, spec, end, cost_model=cost_model).total_return_pct
+        except ValueError:
+            return None
+
+    for symbol in symbols:
+        pit, _data_version_hash = await load_point_in_time(
+            session, [symbol], timeframe, start, end
+        )
+        grid_scores = [
+            score
+            for spec in generate_baseline_grid(symbol, timeframe)
+            if (score := _score(pit, spec)) is not None
+        ]
+        rf_scored = [
+            (spec, score)
+            for spec in generate_random_forest_grid(symbol, timeframe)
+            if (score := _score(pit, spec)) is not None
+        ]
+        if not grid_scores or not rf_scored:
+            n_failed += 1
+            continue
+        best_grid_score = max(grid_scores)
+        best_rf_spec, best_rf_score = max(rf_scored, key=lambda pair: pair[1])
+
+        await record_trial(
+            session,
+            component=component,
+            version=version,
+            symbol=symbol,
+            config_hash=best_rf_spec.config_hash(),
+            seed=derive_seed(component, version, symbol),
+            enabled_return_pct=best_rf_score,
+            disabled_return_pct=best_grid_score,
+        )
+        n_trials += 1
+
+    result = await _recompute_registry(
+        session,
+        component,
+        version,
+        ["RANDOM_FOREST"],
         n_trials_this_batch=n_trials,
         n_failed_this_batch=n_failed,
     )

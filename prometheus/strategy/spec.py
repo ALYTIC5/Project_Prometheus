@@ -59,6 +59,7 @@ FAMILY_BOLLINGER = "BOLLINGER"
 FAMILY_VOL_BREAKOUT = "VOL_BREAKOUT"
 FAMILY_RSI = "RSI"
 FAMILY_MACD = "MACD"
+FAMILY_RANDOM_FOREST = "RANDOM_FOREST"
 FAMILIES = (FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD)
 
 # Each family's own parameter fields -- the set a spec of that family MUST
@@ -78,6 +79,7 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_VOL_BREAKOUT: ("breakout_window", "exit_window"),
     FAMILY_RSI: ("rsi_lookback", "rsi_oversold"),
     FAMILY_MACD: ("macd_fast", "macd_slow", "macd_signal"),
+    FAMILY_RANDOM_FOREST: ("rf_train_window", "rf_retrain_interval", "rf_predict_threshold"),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -124,6 +126,14 @@ class StrategySpec(BaseModel):
     macd_fast: int | None = None
     macd_slow: int | None = None
     macd_signal: int | None = None
+    # RANDOM_FOREST: a walk-forward-retrained RandomForestClassifier
+    # predicting next-bar direction. Deliberately NOT in FAMILIES (see
+    # docs/superpowers/specs/2026-09-20-random-forest-strategy-design.md)
+    # -- a generation component measured against the baseline, not a
+    # member of it.
+    rf_train_window: int | None = None
+    rf_retrain_interval: int | None = None
+    rf_predict_threshold: float | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -156,6 +166,13 @@ class StrategySpec(BaseModel):
             raise ValueError("exit_window must be less than breakout_window")
         if self.family == FAMILY_MACD and self.macd_fast >= self.macd_slow:  # type: ignore[operator]
             raise ValueError("macd_fast must be less than macd_slow")
+        if self.family == FAMILY_RANDOM_FOREST:
+            if self.rf_train_window <= 0:  # type: ignore[operator]
+                raise ValueError("rf_train_window must be positive")
+            if not (0 < self.rf_retrain_interval <= self.rf_train_window):  # type: ignore[operator]
+                raise ValueError("rf_retrain_interval must be in (0, rf_train_window]")
+            if not (0.0 < self.rf_predict_threshold < 1.0):  # type: ignore[operator]
+                raise ValueError("rf_predict_threshold must be in (0, 1)")
         return self
 
     @property

@@ -382,6 +382,30 @@ and update the entry's status when it does.
   revisit whether either repo's approach would extend that result
   further; if it stays NEUTRAL/HARMFUL/UNPROVEN indefinitely, there is no
   reason to evaluate either.
+
+## RANDOM_FOREST strategy family (2026-09-21)
+
+- **`register_ml_component` (and the pre-existing `register_evolution_component`/
+  `register_llm_component`) are never invoked anywhere in production** —
+  no worker cadence, cron, or CLI entry point calls any of the three.
+  RANDOM_FOREST strategies flow through the real `enqueue`/`validate`/
+  `elect_champions`/paper-trade pipeline the moment they're generated,
+  with no ablation verdict ever having run to show the mechanism that
+  produced them beats the deterministic baseline. This is a pre-existing
+  systemic gap (the evolution and LLM mechanisms already carry the same
+  exposure) that this branch inherits rather than introduces — found
+  during the RANDOM_FOREST branch's final whole-branch review
+  (`docs/superpowers/plans/2026-09-20-random-forest-strategy.md`).
+  Deferred rather than fixed here: scheduling all three ablation
+  registrations is a cross-cutting worker-cadence design decision (how
+  often, on what data window, whether it should ever gate anything),
+  not a one-file fix scoped to this branch. **Trigger:** before treating
+  any of the three mechanisms' strategies as more than "unproven but
+  running," add a scheduled (or manually-run-and-recorded) cadence for
+  `register_evolution_component`/`register_llm_component`/
+  `register_ml_component` and surface their verdicts somewhere real
+  (the dashboard's Temple of Knowledge, or a periodic report) rather
+  than leaving them reachable only from tests.
 - **A general restricted DSL beyond the 3 existing `StrategySpec`
   families** — `strategy/spec.py`'s own docstring names a bigger surface
   (`features/signals/entry_rules/exit_rules/position_sizing/risk_rules`)

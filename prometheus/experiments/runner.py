@@ -48,7 +48,7 @@ from prometheus.data.loaders import load_point_in_time
 from prometheus.experiments.failure import classify_exception, classify_result
 from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
 from prometheus.experiments.violations import record_config_snapshot
-from prometheus.research.generate import generate_grid
+from prometheus.research.generate import generate_baseline_grid, generate_grid
 from prometheus.research.population import elect_champions, verdict_to_status
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.decay import compute_decay
@@ -290,8 +290,8 @@ def _pbo_n_splits(t_observations: int) -> int | None:
     return n_splits if n_splits >= 2 else None
 
 
-async def validate_grid(
-    session: AsyncSession, symbol: str, timeframe: str, family: str, days: int
+async def validate_specs(
+    session: AsyncSession, symbol: str, timeframe: str, specs: list[StrategySpec], days: int
 ) -> list[str]:
     """Re-evaluates the deterministic grid's already-run specs (each has
     an `experiments` row from run_one, found by config_hash -- this
@@ -313,7 +313,6 @@ async def validate_grid(
 
     Returns the list of experiment_ids that received a fresh verdict.
     """
-    specs = generate_grid(symbol, timeframe, family)
     end = datetime.now(UTC)
     start = end - timedelta(days=days)
 
@@ -420,6 +419,32 @@ async def validate_grid(
 
     await session.commit()
     return experiment_ids
+
+
+async def validate_grid(
+    session: AsyncSession, symbol: str, timeframe: str, family: str, days: int
+) -> list[str]:
+    """Re-evaluates `family`'s own deterministic grid against real PBO/
+    Deflated Sharpe/decay/regime evidence. Unchanged signature/behavior
+    -- now a thin wrapper over validate_specs; see validate_specs' own
+    docstring for the full re-scoring behavior."""
+    return await validate_specs(
+        session, symbol, timeframe, generate_grid(symbol, timeframe, family), days
+    )
+
+
+async def validate_baseline_grid(
+    session: AsyncSession, symbol: str, timeframe: str, days: int
+) -> list[str]:
+    """Every classic-template family, not just MOMENTUM -- the
+    Oracle-side fix paired with enqueue_baseline_grid above.
+    validate_grid's hardcoded family meant no non-MOMENTUM strategy
+    could ever reach 'VALIDATED' status
+    (population.verdict_to_status's only PROMOTE->VALIDATED path), and
+    therefore never CHAMPION, and therefore never paper-traded."""
+    return await validate_specs(
+        session, symbol, timeframe, generate_baseline_grid(symbol, timeframe), days
+    )
 
 
 async def _validate_one_spec(
@@ -532,10 +557,10 @@ async def _validate_one_spec(
 _RUN_BACKTEST_KIND = "run_backtest"
 
 
-async def enqueue_grid(
+async def enqueue_specs(
     symbol: str,
     timeframe: str,
-    family: str,
+    specs: list[StrategySpec],
     days: int,
     *,
     priority: int,
@@ -543,12 +568,11 @@ async def enqueue_grid(
     estimated_cost: float,
     max_attempts: int,
 ) -> list[str]:
-    """Enqueues one job per StrategySpec in the deterministic grid.
-    idempotency_key = sha256(kind, spec.config_hash(), days) -- re-running
-    enqueue_grid for an unchanged grid re-enqueues nothing (queue.enqueue's
-    ON CONFLICT DO NOTHING), rather than duplicating work already queued
-    or already run."""
-    specs = generate_grid(symbol, timeframe, family)
+    """Enqueues one job per given StrategySpec. idempotency_key =
+    sha256(kind, spec.config_hash(), days) -- re-running this for an
+    unchanged spec list re-enqueues nothing (queue.enqueue's ON CONFLICT
+    DO NOTHING), rather than duplicating work already queued or already
+    run. The real body enqueue_grid/enqueue_baseline_grid both wrap."""
     job_ids = []
     async with get_session() as session:
         for spec in specs:
@@ -572,6 +596,39 @@ async def enqueue_grid(
             )
         await session.commit()
     return job_ids
+
+
+async def enqueue_grid(
+    symbol: str, timeframe: str, family: str, days: int, *,
+    priority: int, expected_information_value: float, estimated_cost: float, max_attempts: int,
+) -> list[str]:
+    """Enqueues one job per StrategySpec in `family`'s own deterministic
+    grid. Unchanged signature/behavior -- now a thin wrapper over
+    enqueue_specs so every existing caller keeps working exactly as
+    before."""
+    return await enqueue_specs(
+        symbol, timeframe, generate_grid(symbol, timeframe, family), days,
+        priority=priority, expected_information_value=expected_information_value,
+        estimated_cost=estimated_cost, max_attempts=max_attempts,
+    )
+
+
+async def enqueue_baseline_grid(
+    symbol: str, timeframe: str, days: int, *,
+    priority: int, expected_information_value: float, estimated_cost: float, max_attempts: int,
+) -> list[str]:
+    """Every classic-template family's grid
+    (research.generate.generate_baseline_grid), not just MOMENTUM -- the
+    fix for the bug documented in
+    docs/superpowers/specs/2026-09-20-random-forest-strategy-design.md:
+    worker.py's _run_research() called enqueue_grid with a hardcoded
+    family, so BOLLINGER/VOL_BREAKOUT/RSI/MACD strategies were never
+    enqueued through this path at all."""
+    return await enqueue_specs(
+        symbol, timeframe, generate_baseline_grid(symbol, timeframe), days,
+        priority=priority, expected_information_value=expected_information_value,
+        estimated_cost=estimated_cost, max_attempts=max_attempts,
+    )
 
 
 async def _run_job(job: Job) -> str:
