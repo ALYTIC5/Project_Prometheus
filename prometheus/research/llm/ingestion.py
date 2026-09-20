@@ -124,6 +124,19 @@ async def _download_pdf(pdf_url: str) -> bytes:
     return response.content
 
 
+def _strip_nul(text: str) -> str:
+    """Postgres's text/varchar columns reject NUL bytes outright
+    (asyncpg.exceptions.CharacterNotInRepertoireError) even though they're
+    valid UTF-8 -- a real production crash, confirmed via
+    jobs.last_error/worker logs: pypdf's extract_text() (and, less often,
+    GROBID's TEI output) can emit an embedded 0x00 from a PDF's internal
+    encoding quirks. Applied at the one point every PDF-derived string
+    reaches the DB, not inside each extractor -- title/abstract come from
+    arXiv's own clean Atom XML and have never shown this, so they're left
+    alone rather than scrubbed on a hypothetical."""
+    return text.replace("\x00", "")
+
+
 def _extract_full_text(pdf_bytes: bytes) -> str:
     import io
 
@@ -203,8 +216,8 @@ async def ingest_paper(session: AsyncSession, arxiv_id: str) -> ResearchPaper:
         arxiv_id=arxiv_id,
         title=metadata["title"],
         abstract=metadata["abstract"],
-        full_text=full_text,
-        key_sections=key_sections,
+        full_text=_strip_nul(full_text),
+        key_sections=_strip_nul(key_sections),
     )
     session.add(paper)
     await session.flush()
