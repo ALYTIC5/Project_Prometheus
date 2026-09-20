@@ -204,7 +204,8 @@ widens its Python-side shape only, no column/migration change:
      (same fixed lag `ingestion._INGESTION_LAG` uses — a provider's daily
      bar is knowable shortly after close, not instantly), attach
      `source="alpaca"`, `revision=1`
-  5. `quality.run_quality_checks()` (reused unchanged) per symbol; a
+  5. `quality.run_quality_checks()` (small, targeted extension — see
+     below) per symbol; a
      failing symbol is quarantined (raw status recorded, no bars written)
      and ingestion continues to the next symbol, same as `ingest_symbol()`
   6. store passing bars into `ohlcv_bars` via the *existing*
@@ -243,6 +244,20 @@ widens its Python-side shape only, no column/migration change:
 
 ## Extended (small)
 
+- **`data/quality.py` — `check_gaps()`/`run_quality_checks()` gain an
+  optional `max_gap_hours: float | None = None` parameter (default
+  preserves today's crypto behavior exactly, zero risk to the existing
+  path).** Found while writing the implementation plan, not in the
+  original design: `check_gaps()`'s expected-hours-per-bar math
+  (`_BAR_HOURS["1d"] = 24`) assumes a bar every 24 hours, which is true
+  for crypto's 24/7 market but false for equities/ETFs — a normal Friday
+  close to Monday open gap is ~65 hours, and a 3-day holiday weekend is
+  ~96 hours. Calling `run_quality_checks()` truly unchanged against real
+  Alpaca daily bars would quarantine *every* real ingestion on its very
+  first weekend gap. `ingest_etf.py` passes `max_gap_hours=100.0`
+  (comfortably above a 3-day weekend, still catches a genuinely broken
+  4+ day outage) explicitly; every existing crypto call site passes
+  nothing and keeps its current, unchanged threshold.
 - **`data/versioning.py`** — `record_data_version()`'s `source_versions`
   parameter type widens as shown above. `compute_content_hash()` is
   unchanged (already asset-agnostic).
