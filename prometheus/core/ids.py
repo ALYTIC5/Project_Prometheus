@@ -26,7 +26,7 @@ from sqlalchemy import text
 from prometheus.core.db import get_engine
 
 EXPERIMENT_ID_RE = re.compile(r"^EXP-\d{4}-\d{6}$")
-STRATEGY_ID_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}-\d{3}$")
+STRATEGY_ID_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}-\d{6}$")
 JOB_ID_RE = re.compile(r"^JOB-\d{8}-\d{6}$")
 PAPER_ORDER_ID_RE = re.compile(r"^PAPER-\d{8}-\d{6}$")
 # Widened from [A-Z0-9]{1,9} (no underscore, 10 chars max) after a real
@@ -66,6 +66,19 @@ async def next_experiment_id(year: int | None = None) -> str:
 
 
 async def next_strategy_id(family: str) -> str:
+    """Widened from a 3-digit (999 total, ever) to a 6-digit (999,999
+    total, ever) suffix -- same headroom next_job_id()/next_experiment_id()/
+    next_paper_order_id() already use -- after a real production
+    exhaustion: this counter is cumulative per family for the family's
+    entire lifetime (not scoped per-day like next_job_id()), and the
+    deterministic grid alone produces close to 1000 MOMENTUM strategies in
+    one pass. It hit the old 999 cap on its very first run, and every
+    later grid re-run, evolution mutation, and LLM hypothesis for that
+    family failed at id generation -- before ever reaching a backtest --
+    for every cycle since. 999/family/ever was never real headroom for a
+    system meant to keep mutating and re-gridding indefinitely (PROMPT 7),
+    the same lesson next_job_id()'s own docstring already recorded once
+    for a different scope."""
     family = family.upper()
     if not _FAMILY_RE.match(family):
         raise ValueError(f"invalid strategy family: {family!r}")
@@ -73,9 +86,9 @@ async def next_strategy_id(family: str) -> str:
     async with get_engine().begin() as conn:
         result = await conn.execute(_UPSERT_COUNTER, {"scope": scope})
         n: int = result.scalar_one()
-    if n > 999:
+    if n > 999_999:
         raise IdSequenceExhausted(f"strategy id sequence exhausted for family {family}")
-    return f"{family}-{n:03d}"
+    return f"{family}-{n:06d}"
 
 
 async def next_job_id(day: date | None = None) -> str:
