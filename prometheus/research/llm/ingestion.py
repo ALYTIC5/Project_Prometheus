@@ -33,7 +33,7 @@ from prometheus.core.db import ResearchPaper
 
 logger = logging.getLogger(__name__)
 
-_ARXIV_API_BASE = "http://export.arxiv.org/api/query"
+_ARXIV_API_BASE = "https://export.arxiv.org/api/query"
 _ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom"}
 _TEI_NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 
