@@ -219,6 +219,11 @@ export interface StrategyRow {
   spec: Record<string, unknown>;
   status: string;
   created_at: string;
+  /** Resolved server-side from universe_membership by the spec's symbol
+   * (prometheus/api/routes/strategies.py's _enrich) -- null for a symbol
+   * with no universe_membership row, an honest "unknown", not "crypto"
+   * by default. */
+  asset_class: string | null;
   verdict: string | null;
   score: number | null;
   pbo: number | null;

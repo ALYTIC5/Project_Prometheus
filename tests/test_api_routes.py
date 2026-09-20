@@ -100,11 +100,16 @@ def test_strategies_response_carries_validation_and_lineage_fields() -> None:
         for field in (
             "verdict", "score", "pbo", "deflated_sharpe",
             "excess_return", "excess_sharpe", "reason_codes",
-            "generation", "parent", "mutation_label",
+            "generation", "parent", "mutation_label", "asset_class",
         ):
             assert field in strategy
         assert isinstance(strategy["generation"], int)
         assert strategy["generation"] >= 0
+        # asset_class is resolved from universe_membership, not the spec
+        # itself -- None is the honest state for a symbol with no
+        # universe_membership row (a spec built before that symbol was
+        # ever synced), not an invented default.
+        assert strategy["asset_class"] is None or isinstance(strategy["asset_class"], str)
 
 
 def test_benchmark_drilldown_carries_curve() -> None:

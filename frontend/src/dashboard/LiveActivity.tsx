@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQueueQuery, useResearchPapersQuery, useStrategiesQuery } from '../data/queries';
 import type { InFlightJob, ResearchPaperRow, StrategyRow } from '../types';
+import { assetClassBadgeClass, assetClassLabel } from './assetClass';
 import { DetailModal, type DetailTarget } from './DetailModal';
 
 const DASHBOARD_POLL_MS = 10000;
@@ -58,6 +59,9 @@ function MutationRow({ strategy, onClick }: { strategy: StrategyRow; onClick: ()
       onClick={onClick}
       className="flex cursor-pointer items-center gap-2 rounded py-1 font-mono text-xs hover:bg-muted/40"
     >
+      <span className={`shrink-0 rounded border px-1.5 py-0.5 ${assetClassBadgeClass(strategy.asset_class)}`}>
+        {assetClassLabel(strategy.asset_class)}
+      </span>
       <span className={`shrink-0 rounded border px-1.5 py-0.5 ${familyClass(strategy.family)}`}>
         {strategy.parent ?? '?'}
       </span>
@@ -77,6 +81,9 @@ function HypothesisRow({ strategy, onClick }: { strategy: StrategyRow; onClick: 
       onClick={onClick}
       className="flex cursor-pointer items-center gap-2 rounded py-1 font-mono text-xs hover:bg-muted/40"
     >
+      <span className={`shrink-0 rounded border px-1.5 py-0.5 ${assetClassBadgeClass(strategy.asset_class)}`}>
+        {assetClassLabel(strategy.asset_class)}
+      </span>
       <span className={`shrink-0 rounded border px-1.5 py-0.5 ${familyClass(strategy.family)}`}>
         {strategy.id}
       </span>

@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 import { useStrategiesQuery } from '../../data/queries';
 import type { StrategyRow } from '../../types';
+import { assetClassBadgeClass, assetClassLabel } from '../assetClass';
 import { Section } from './Section';
 
 const DASHBOARD_POLL_MS = 10000;
@@ -77,6 +78,7 @@ export function StrategiesSection() {
             <thead>
               <tr className="border-b border-border text-muted-foreground uppercase">
                 <th className="py-1.5 pr-4 font-medium">ID</th>
+                <th className="py-1.5 pr-4 font-medium">Asset</th>
                 <th className="py-1.5 pr-4 font-medium">Family</th>
                 <th className="py-1.5 pr-4 font-medium">Verdict</th>
                 <th className="py-1.5 pr-4 font-medium">Score</th>
@@ -99,6 +101,13 @@ export function StrategiesSection() {
                       className="cursor-pointer border-b border-border/50 hover:bg-muted/40"
                     >
                       <td className="py-1.5 pr-4">{s.id}</td>
+                      <td className="py-1.5 pr-4">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 ${assetClassBadgeClass(s.asset_class)}`}
+                        >
+                          {assetClassLabel(s.asset_class)}
+                        </span>
+                      </td>
                       <td className="py-1.5 pr-4">{s.family}</td>
                       <td className={`py-1.5 pr-4 ${verdictClass(s.verdict)}`}>
                         {s.verdict ?? 'UNVALIDATED'}
@@ -144,7 +153,7 @@ export function StrategiesSection() {
                     </tr>
                     {expanded && (
                       <tr className="border-b border-border/50">
-                        <td colSpan={9}>
+                        <td colSpan={10}>
                           <ExpandedRow strategy={s} />
                         </td>
                       </tr>

@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Row
 
 from prometheus.core.db import get_session_factory
@@ -60,6 +60,18 @@ _SELECT_LATEST_VALIDATION = text(
       ) vr ON true
     """
 )
+
+# expanding=True lets SQLAlchemy safely bind a Python tuple/list against
+# an IN clause -- same fix ingestion.py's _SELECT_BARS_FOR_VERSIONING
+# already uses for the identical reason.
+_SELECT_ASSET_CLASS_BY_SYMBOL = text(
+    """
+    SELECT DISTINCT ON (symbol) symbol, asset_class
+      FROM universe_membership
+     WHERE symbol IN :symbols
+     ORDER BY symbol, listed_at DESC
+    """
+).bindparams(bindparam("symbols", expanding=True))
 
 # mutation_type -> a short, human label for the "recent activity" dashboard
 # view -- change_set is the real record research/mutations.py, crossover.py,
@@ -127,6 +139,22 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
     validation_rows = (await session.execute(_SELECT_LATEST_VALIDATION)).fetchall()
     validation_by_strategy_id = {v.strategy_id: v for v in validation_rows}
 
+    # asset_class lives on universe_membership (per-symbol), not on the
+    # strategy/spec itself -- PROMPT 2's multi-asset work. DISTINCT ON
+    # symbol, most-recent listing first: a symbol's asset_class doesn't
+    # change across re-listings in practice, but this is the honest
+    # "which row wins" tiebreak rather than an arbitrary one. A symbol
+    # with no universe_membership row (e.g. a spec built before that
+    # symbol was ever synced) maps to None -- an honest unknown, not an
+    # invented default.
+    symbols = {specs_by_id[r.id].symbol for r in rows}
+    asset_class_by_symbol: dict[str, str] = {}
+    if symbols:
+        asset_class_rows = (
+            await session.execute(_SELECT_ASSET_CLASS_BY_SYMBOL, {"symbols": tuple(symbols)})
+        ).fetchall()
+        asset_class_by_symbol = {r.symbol: r.asset_class for r in asset_class_rows}
+
     enriched: list[dict[str, Any]] = []
     for row in rows:
         validation = validation_by_strategy_id.get(row.id)
@@ -140,6 +168,7 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
                 "spec": row.spec,
                 "status": row.status,
                 "created_at": row.created_at.isoformat(),
+                "asset_class": asset_class_by_symbol.get(specs_by_id[row.id].symbol),
                 "verdict": validation.verdict if validation is not None else None,
                 "score": validation.score if validation is not None else None,
                 "pbo": validation.pbo if validation is not None else None,

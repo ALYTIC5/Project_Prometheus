@@ -38,6 +38,7 @@ function StrategyDetail({ id }: { id: string }) {
   return (
     <div className="space-y-3 font-mono text-xs">
       <div>
+        <Row label="Asset class" value={data.asset_class ?? 'unknown'} />
         <Row label="Family" value={data.family} />
         <Row label="Status" value={data.status} />
         <Row label="Verdict" value={data.verdict ?? '—'} />
