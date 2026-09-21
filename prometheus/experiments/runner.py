@@ -28,6 +28,7 @@ import asyncio
 import hashlib
 import time
 import uuid
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -40,17 +41,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchmark_curve
 from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
 from prometheus.backtest.engine import run_backtest
+from prometheus.backtest.portfolio_engine import run_portfolio_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, ValidationResult, get_session
 from prometheus.core.ids import next_experiment_id, next_strategy_id
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
+from prometheus.data.universe import membership_windows
 from prometheus.experiments.failure import classify_exception, classify_result
 from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
 from prometheus.research.population import elect_champions, verdict_to_status
+from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.decay import compute_decay
 from prometheus.validation.decision import Evidence, decide
@@ -67,7 +71,7 @@ def _build_experiment(
     *,
     experiment_id: str,
     strategy_id: str,
-    spec: StrategySpec,
+    spec: StrategySpec | RotationSpec,
     seed: int,
     resolved_code_sha: str,
     data_version_hash: str,
@@ -94,7 +98,7 @@ def _build_experiment(
 
 async def run_one(
     session: AsyncSession,
-    spec: StrategySpec,
+    spec: StrategySpec | RotationSpec,
     start: datetime,
     end: datetime,
     *,
@@ -121,10 +125,11 @@ async def run_one(
     cost_config, cost_config_hash = load_cost_config()
     cost_model = make_cost_model(cost_config)
 
+    universe_symbols = [spec.symbol] if isinstance(spec, StrategySpec) else list(spec.universe)
     pit, data_version_hash = await load_point_in_time(
-        session, [spec.symbol], spec.timeframe, start, end
+        session, universe_symbols, spec.timeframe, start, end
     )
-    seed = derive_seed(spec.symbol, spec.timeframe, spec.config_hash())
+    seed = derive_seed(*sorted(universe_symbols), spec.timeframe, spec.config_hash())
     resolved_code_sha = code_sha()
 
     strategy_id = await next_strategy_id(spec.family)
@@ -141,11 +146,17 @@ async def run_one(
     # usually-true-because-the-caller-remembered-to), but runner.py also
     # needs the raw curve to record for the world view, so passing it in
     # avoids computing it twice.
-    benchmark_result = compute_benchmark_curve(pit, [spec.symbol], end, cost_model=cost_model)
+    benchmark_result = compute_benchmark_curve(pit, universe_symbols, end, cost_model=cost_model)
     try:
-        strategy_result = run_backtest(
-            pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
-        )
+        if isinstance(spec, RotationSpec):
+            membership = await membership_windows(session, "etf", list(spec.universe))
+            strategy_result = run_portfolio_backtest(
+                pit, spec, membership, end, cost_model=cost_model, benchmark_result=benchmark_result
+            )
+        else:
+            strategy_result = run_backtest(
+                pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
+            )
     except ValueError as exc:
         session.add(
             _build_experiment(
@@ -597,7 +608,7 @@ _RUN_BACKTEST_KIND = "run_backtest"
 async def enqueue_specs(
     symbol: str,
     timeframe: str,
-    specs: list[StrategySpec],
+    specs: Sequence[StrategySpec | RotationSpec],
     days: int,
     *,
     priority: int,
@@ -605,11 +616,17 @@ async def enqueue_specs(
     estimated_cost: float,
     max_attempts: int,
 ) -> list[str]:
-    """Enqueues one job per given StrategySpec. idempotency_key =
+    """Enqueues one job per given StrategySpec/RotationSpec. idempotency_key =
     sha256(kind, spec.config_hash(), days) -- re-running this for an
     unchanged spec list re-enqueues nothing (queue.enqueue's ON CONFLICT
     DO NOTHING), rather than duplicating work already queued or already
-    run. The real body enqueue_grid/enqueue_baseline_grid both wrap."""
+    run. The real body enqueue_grid/enqueue_baseline_grid/
+    enqueue_rotation_grid all wrap. `symbol`/`timeframe` are accepted but
+    unused inside this function's own body -- kept only so this stays a
+    drop-in replacement for callers that pass them (enqueue_grid,
+    enqueue_baseline_grid); enqueue_rotation_grid passes empty strings
+    since a RotationSpec's universe, not a single (symbol, timeframe)
+    pair, is what identifies its grid."""
     job_ids = []
     async with get_session() as session:
         for spec in specs:
@@ -620,7 +637,11 @@ async def enqueue_specs(
                 await enqueue(
                     session,
                     kind=_RUN_BACKTEST_KIND,
-                    payload={"spec": spec.model_dump(), "days": days},
+                    payload={
+                        "spec": spec.model_dump(),
+                        "spec_kind": "rotation" if isinstance(spec, RotationSpec) else "strategy",
+                        "days": days,
+                    },
                     idempotency_key=idempotency_key,
                     priority=priority,
                     expected_information_value=expected_information_value,
@@ -668,6 +689,23 @@ async def enqueue_baseline_grid(
     )
 
 
+async def enqueue_rotation_grid(
+    generate_grid_fn: Callable[[], list[RotationSpec]], days: int, *,
+    priority: int, expected_information_value: float, estimated_cost: float, max_attempts: int,
+) -> list[str]:
+    """Enqueues one rotation family's own grid -- no (symbol, timeframe)
+    args, unlike enqueue_grid/enqueue_baseline_grid, because a
+    RotationSpec's universe is fixed by its own grid generator, not
+    supplied per-call the way a single-symbol grid needs a symbol.
+    symbol/timeframe are passed as "" -- verified unused inside
+    enqueue_specs's own body (see its docstring)."""
+    return await enqueue_specs(
+        "", "", generate_grid_fn(), days,
+        priority=priority, expected_information_value=expected_information_value,
+        estimated_cost=estimated_cost, max_attempts=max_attempts,
+    )
+
+
 async def _run_job(job: Job) -> str:
     """Executes one claimed job's payload against real data -- the only
     kind this worker understands is run_backtest. A separate session from
@@ -682,7 +720,12 @@ async def _run_job(job: Job) -> str:
     just the payload -> kwargs bridge, not new lineage logic."""
     if job.kind != _RUN_BACKTEST_KIND:
         raise ValueError(f"unknown job kind: {job.kind!r}")
-    spec = StrategySpec.model_validate(job.payload["spec"])
+    spec_kind = job.payload.get("spec_kind", "strategy")
+    spec: StrategySpec | RotationSpec
+    if spec_kind == "rotation":
+        spec = RotationSpec.model_validate(job.payload["spec"])
+    else:
+        spec = StrategySpec.model_validate(job.payload["spec"])
     days = job.payload["days"]
     end = datetime.now(UTC)
     start = end - timedelta(days=days)
