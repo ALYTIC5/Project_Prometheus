@@ -57,8 +57,21 @@ def trailing_return(bars: pl.DataFrame, as_of: date, lookback_days: int) -> floa
     a ranking decision at `as_of` never reads a bar not yet available on
     that date). None when there aren't enough prior bars -- an
     honestly-excluded symbol for this ranking cycle, not a fabricated
-    0.0 that would make it look like a flat, tied-for-worst performer."""
-    rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.min.time()))
+    0.0 that would make it look like a flat, tied-for-worst performer.
+
+    I2 (final-review fix wave): the cutoff is the END of `as_of`, not
+    midnight. Production ETF bars carry `available_at = event_time +
+    5 minutes` (data/ingest_etf.py's _INGESTION_LAG), so a midnight
+    cutoff excluded the bar dated `as_of` from its OWN decision --
+    every ranking family saw one fewer bar than `lookback_days`
+    required and returned None for every symbol on the first
+    rebalance. Still Law-1-safe: `all_dates` itself is derived from
+    real `available_at` timestamps already filtered by
+    `pit.as_of(as_of_cutoff)`, and this cutoff still admits no bar
+    whose `available_at` falls on a date AFTER `as_of` -- only bars
+    dated `as_of` itself, whatever time of day their availability
+    lag lands on."""
+    rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.max.time()))
     if rows.height <= lookback_days:
         return None
     closes: list[float] = rows["close"].to_list()
@@ -149,14 +162,17 @@ def weights_for_gtaa_sma(
     `lookback_days` available bars is skipped (its slice sits in cash)
     -- an honestly-unjudged asset, not a fabricated in/out call. Empty
     `eligible` -> empty weights (100% cash), same convention as
-    `weights_for_equal_weight`."""
+    `weights_for_equal_weight`.
+
+    The `available_at` cutoff is the END of `as_of`, for exactly the
+    reason `trailing_return`'s own docstring gives (I2)."""
     if not eligible:
         return {}
     share = 1.0 / len(eligible)
     weights: dict[str, float] = {}
     for symbol in eligible:
         bars = bars_by_symbol[symbol]
-        rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.min.time()))
+        rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.max.time()))
         if rows.height < lookback_days:
             continue
         closes: list[float] = rows["close"].to_list()
@@ -247,17 +263,35 @@ def _drift(
     close_by_symbol_date: dict[str, dict[date, float]],
     prev_date: date,
     curr_date: date,
-) -> None:
+) -> float:
     """Each held symbol's dollar allocation drifts with its own daily
     return between rebalances -- no daily rebalancing drag. Mutates
-    `dollar_alloc` in place. A symbol missing a close on either date
-    (no price data) is left un-drifted rather than raising -- it simply
-    holds its last known dollar value, the same way cash would."""
+    `dollar_alloc` in place and returns the dollar value released back
+    to cash.
+
+    Promoted-minor #3 (final-review fix wave): a symbol with no bar on
+    `curr_date` (a real data gap, not just a membership lapse) is
+    REMOVED from the allocation and its last known value returned to
+    the caller as cash, rather than left in place at a frozen,
+    non-drifting value. A frozen leg is a silent fabrication: it
+    reports a position whose value provably stopped tracking anything
+    real, and it is most load-bearing in EQUAL_WEIGHT_BASELINE -- the
+    spec's own designated baseline every other rotation family is
+    measured against, so one frozen leg there distorts every family's
+    comparison, not just its own. A symbol missing only the PREVIOUS
+    date's close (the first bar after a gap) is held un-drifted for
+    that single step -- there is no honest return to apply across a
+    gap, and it is a real, present position again from here on."""
+    released = 0.0
     for symbol in list(dollar_alloc):
-        prev_close = close_by_symbol_date.get(symbol, {}).get(prev_date)
         curr_close = close_by_symbol_date.get(symbol, {}).get(curr_date)
-        if prev_close and curr_close:
+        if not curr_close:
+            released += dollar_alloc.pop(symbol)
+            continue
+        prev_close = close_by_symbol_date.get(symbol, {}).get(prev_date)
+        if prev_close:
             dollar_alloc[symbol] *= curr_close / prev_close
+    return released
 
 
 def run_portfolio_backtest(
@@ -274,6 +308,23 @@ def run_portfolio_backtest(
     if not all_dates:
         raise ValueError(f"no bars for universe {spec.universe} as of {as_of_cutoff}")
 
+    warmup = spec.lookback_days or 0
+    # I1 (final-review fix wave): the insufficient-history guard
+    # run_backtest has always had (engine.py raises whenever
+    # bars.height < _min_bars_for(spec)) and this engine did not. Without
+    # it, a universe with fewer dates than `lookback_days` never reaches
+    # its first rebalance and this function returns a fabricated flat
+    # EUR1,000 curve -- which run_one then records as a genuine REJECT
+    # decision in the APPEND-ONLY `decisions` table (Law 6: never
+    # correctable). Raising ValueError instead is what
+    # experiments.failure.classify_exception turns into
+    # FailureMode.INSUFFICIENT_DATA, the honest classification.
+    if len(all_dates) <= warmup:
+        raise ValueError(
+            f"not enough bars for universe {spec.universe} as of {as_of_cutoff}: "
+            f"need > {warmup}, have {len(all_dates)}"
+        )
+
     bars_by_symbol: dict[str, pl.DataFrame] = {
         symbol: frame.filter(pl.col("symbol") == symbol).sort("available_at")
         for symbol in spec.universe
@@ -283,7 +334,6 @@ def run_portfolio_backtest(
         for symbol, bars in bars_by_symbol.items()
     }
 
-    warmup = spec.lookback_days or 0
     first_idx = warmup
     rebalance_indices = _rebalance_indices(len(all_dates), first_idx, spec.rebalance_frequency_days)
 
@@ -308,11 +358,25 @@ def run_portfolio_backtest(
         if idx >= first_idx:
             if idx > first_idx:
                 prev_date = all_dates[idx - 1]
-                _drift(dollar_alloc, close_by_symbol_date, prev_date, as_of)
-                _drift(gross_dollar_alloc, close_by_symbol_date, prev_date, as_of)
+                cash += _drift(dollar_alloc, close_by_symbol_date, prev_date, as_of)
+                gross_cash += _drift(
+                    gross_dollar_alloc, close_by_symbol_date, prev_date, as_of
+                )
 
             if idx in rebalance_indices:
-                eligible = _eligible_symbols(spec.universe, membership, as_of)
+                # Promoted-minor #3: membership eligibility (Law 2) is
+                # necessary but not sufficient -- a symbol whose bar is
+                # genuinely missing on this date has no price to size,
+                # trade or mark a position against, so it is not
+                # allocatable today no matter what its membership window
+                # says. Excluding it here is what keeps its slice in cash
+                # rather than handing it a weight that would immediately
+                # become a frozen, non-drifting leg.
+                eligible = [
+                    symbol
+                    for symbol in _eligible_symbols(spec.universe, membership, as_of)
+                    if close_by_symbol_date.get(symbol, {}).get(as_of)
+                ]
                 target_weights = _weights_for(spec, eligible, bars_by_symbol, as_of)
 
                 # Net: size against pre-trade equity, charge cost on the
