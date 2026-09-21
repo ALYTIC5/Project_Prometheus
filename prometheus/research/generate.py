@@ -16,17 +16,27 @@ from __future__ import annotations
 from prometheus.strategy.spec import (
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
+    FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
+    FAMILY_CONSECUTIVE_DOWN,
+    FAMILY_GAP_FADE,
+    FAMILY_IBS,
     FAMILY_KELTNER,
+    FAMILY_KELTNER_REVERSION,
     FAMILY_MACD,
+    FAMILY_MFI,
     FAMILY_MOMENTUM,
+    FAMILY_N_DAY_LOW,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
+    FAMILY_SMA_DISTANCE,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_TRIX,
+    FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
     FAMILY_WILLIAMS_R,
+    FAMILY_ZSCORE,
     StrategySpec,
 )
 
@@ -103,6 +113,52 @@ _SUPERTREND_MULTIPLIERS = (2.0, 3.0, 4.0)
 # does; 15 is the most commonly seen period in practitioner literature,
 # included with two nearby variants -- same grid shape RSI uses.
 _TRIX_LOOKBACKS = (9, 15, 21)
+
+# Larry Connors' own published RSI(2) construction ("Short-Term Trading
+# Strategies That Work", 2008): a 2-period RSI, extreme oversold
+# thresholds (well below Wilder's classic 30) -- 10 and 5 are Connors'
+# own two most commonly cited variants.
+_RSI2_OVERSOLD_LEVELS = (10.0, 5.0)
+
+# Same grid shape KELTNER's own breakout bands use -- KELTNER_REVERSION
+# is the identical ATR-band construction, just the opposite direction.
+_KELTNER_REVERSION_LOOKBACKS = (10, 20, 30)
+_KELTNER_REVERSION_MULTIPLIERS = (1.5, 2.0, 2.5)
+
+# Same lookback/band shape BOLLINGER uses; %B's own oversold threshold
+# is a fraction of the band width (0.2 and 0.0 are John Bollinger's own
+# commonly cited "near/at the lower band" zones).
+_PCTB_LOOKBACKS = (10, 20, 30)
+_PCTB_MULTIPLIERS = (1.5, 2.0, 2.5)
+_PCTB_OVERSOLD_LEVELS = (0.2, 0.0)
+
+_ZSCORE_LOOKBACKS = (10, 20, 30)
+_ZSCORE_OVERSOLD_LEVELS = (-1.5, -2.0, -2.5)
+
+# IBS has no lookback (a single-bar ratio); 0.2 and 0.1 are the
+# commonly cited "near the day's low" thresholds in the IBS literature.
+_IBS_OVERSOLD_LEVELS = (0.2, 0.1)
+
+_N_DAY_LOW_LOOKBACKS = (10, 20, 50)
+
+_CONSECUTIVE_DOWN_RUN_LENGTHS = (2, 3, 4)
+
+# The classic use case is a 200-day SMA; 50 and 100 are included as
+# nearby, shorter-horizon variants of the same distance-from-trend
+# construction.
+_SMA_DISTANCE_LOOKBACKS = (50, 100, 200)
+_SMA_DISTANCE_OVERSOLD_LEVELS = (0.05, 0.1)
+
+# Larry Williams' own published 7/14/28 Ultimate Oscillator convention --
+# a single fixed triple, not a swept grid dimension, since the 4:2:1
+# weighting is itself defined relative to this exact ratio.
+_UO_WINDOWS = (7, 14, 28)
+_UO_OVERSOLD_LEVELS = (30.0, 20.0)
+
+_MFI_LOOKBACKS = (14, 21)
+_MFI_OVERSOLD_LEVELS = (20.0, 30.0)
+
+_GAP_FADE_THRESHOLDS = (0.01, 0.02, 0.03)
 
 
 def generate_grid(symbol: str, timeframe: str, family: str = FAMILY_MOMENTUM) -> list[StrategySpec]:
@@ -348,6 +404,200 @@ def generate_trix_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     return specs
 
 
+def generate_rsi2_connors_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    """Larry Connors' own RSI(2) construction (STRATEGIES_100.md #21) --
+    a distinct, cited parameter regime from the classic RSI grid above
+    (2-period lookback, extreme <10 oversold zones vs Wilder's classic
+    30), pre-registered as its own grid rather than silently folded into
+    _RSI_LOOKBACKS -- widening an existing family's grid range after the
+    fact is exactly the p-hacking Law 7/docs/strategies/README.md's
+    pre-registration convention exists to prevent; this is a genuinely
+    new, separately-cited grid, not a widening of the old one."""
+    specs = []
+    for oversold in _RSI2_OVERSOLD_LEVELS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_RSI,
+                symbol=symbol,
+                timeframe=timeframe,
+                rsi_lookback=2,
+                rsi_oversold=oversold,
+                expected_horizon=2,
+            )
+        )
+    return specs
+
+
+def generate_keltner_reversion_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _KELTNER_REVERSION_LOOKBACKS:
+        for multiplier in _KELTNER_REVERSION_MULTIPLIERS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_KELTNER_REVERSION,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    keltner_rev_lookback=lookback,
+                    keltner_rev_multiplier=multiplier,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_bollinger_pctb_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _PCTB_LOOKBACKS:
+        for multiplier in _PCTB_MULTIPLIERS:
+            for oversold in _PCTB_OVERSOLD_LEVELS:
+                specs.append(
+                    StrategySpec(
+                        family=FAMILY_BOLLINGER_PCTB,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        pctb_lookback=lookback,
+                        pctb_multiplier=multiplier,
+                        pctb_oversold=oversold,
+                        expected_horizon=lookback,
+                    )
+                )
+    return specs
+
+
+def generate_zscore_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _ZSCORE_LOOKBACKS:
+        for oversold in _ZSCORE_OVERSOLD_LEVELS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_ZSCORE,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    zscore_lookback=lookback,
+                    zscore_oversold=oversold,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_ibs_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for oversold in _IBS_OVERSOLD_LEVELS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_IBS,
+                symbol=symbol,
+                timeframe=timeframe,
+                ibs_oversold=oversold,
+                # IBS is a single-bar ratio -- its own horizon claim is
+                # the shortest meaningful one, one bar ahead.
+                expected_horizon=1,
+            )
+        )
+    return specs
+
+
+def generate_n_day_low_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _N_DAY_LOW_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_N_DAY_LOW,
+                symbol=symbol,
+                timeframe=timeframe,
+                ndaylow_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_consecutive_down_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for run_length in _CONSECUTIVE_DOWN_RUN_LENGTHS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_CONSECUTIVE_DOWN,
+                symbol=symbol,
+                timeframe=timeframe,
+                consecutive_down_days=run_length,
+                expected_horizon=run_length,
+            )
+        )
+    return specs
+
+
+def generate_sma_distance_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _SMA_DISTANCE_LOOKBACKS:
+        for oversold in _SMA_DISTANCE_OVERSOLD_LEVELS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_SMA_DISTANCE,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    sma_dist_lookback=lookback,
+                    sma_dist_oversold=oversold,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_ultimate_oscillator_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    short, mid, long = _UO_WINDOWS
+    specs = []
+    for oversold in _UO_OVERSOLD_LEVELS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_ULTIMATE_OSCILLATOR,
+                symbol=symbol,
+                timeframe=timeframe,
+                uo_short=short,
+                uo_mid=mid,
+                uo_long=long,
+                uo_oversold=oversold,
+                expected_horizon=mid,
+            )
+        )
+    return specs
+
+
+def generate_mfi_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _MFI_LOOKBACKS:
+        for oversold in _MFI_OVERSOLD_LEVELS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_MFI,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    mfi_lookback=lookback,
+                    mfi_oversold=oversold,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_gap_fade_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for threshold in _GAP_FADE_THRESHOLDS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_GAP_FADE,
+                symbol=symbol,
+                timeframe=timeframe,
+                gap_fade_threshold=threshold,
+                # A gap-fade signal's own claim is intraday-to-next-close,
+                # the shortest meaningful horizon.
+                expected_horizon=1,
+            )
+        )
+    return specs
+
+
 def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     """Every classic-template family's grid, combined -- the full
     baseline every future component must beat. Carry (PROMPTS.md's
@@ -368,4 +618,15 @@ def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
         *generate_awesome_oscillator_grid(symbol, timeframe),
         *generate_supertrend_grid(symbol, timeframe),
         *generate_trix_grid(symbol, timeframe),
+        *generate_rsi2_connors_grid(symbol, timeframe),
+        *generate_keltner_reversion_grid(symbol, timeframe),
+        *generate_bollinger_pctb_grid(symbol, timeframe),
+        *generate_zscore_grid(symbol, timeframe),
+        *generate_ibs_grid(symbol, timeframe),
+        *generate_n_day_low_grid(symbol, timeframe),
+        *generate_consecutive_down_grid(symbol, timeframe),
+        *generate_sma_distance_grid(symbol, timeframe),
+        *generate_ultimate_oscillator_grid(symbol, timeframe),
+        *generate_mfi_grid(symbol, timeframe),
+        *generate_gap_fade_grid(symbol, timeframe),
     ]

@@ -76,10 +76,23 @@ FAMILY_CCI = "CCI"
 FAMILY_AWESOME_OSCILLATOR = "AWESOME_OSCILLATOR"
 FAMILY_SUPERTREND = "SUPERTREND"
 FAMILY_TRIX = "TRIX"
+FAMILY_KELTNER_REVERSION = "KELTNER_REVERSION"
+FAMILY_BOLLINGER_PCTB = "BOLLINGER_PCTB"
+FAMILY_ZSCORE = "ZSCORE"
+FAMILY_IBS = "IBS"
+FAMILY_N_DAY_LOW = "N_DAY_LOW"
+FAMILY_CONSECUTIVE_DOWN = "CONSECUTIVE_DOWN"
+FAMILY_SMA_DISTANCE = "SMA_DISTANCE"
+FAMILY_ULTIMATE_OSCILLATOR = "ULTIMATE_OSCILLATOR"
+FAMILY_MFI = "MFI"
+FAMILY_GAP_FADE = "GAP_FADE"
 FAMILIES = (
     FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
     FAMILY_STOCHASTIC, FAMILY_PARABOLIC_SAR, FAMILY_KELTNER,
     FAMILY_WILLIAMS_R, FAMILY_CCI, FAMILY_AWESOME_OSCILLATOR, FAMILY_SUPERTREND, FAMILY_TRIX,
+    FAMILY_KELTNER_REVERSION, FAMILY_BOLLINGER_PCTB, FAMILY_ZSCORE, FAMILY_IBS,
+    FAMILY_N_DAY_LOW, FAMILY_CONSECUTIVE_DOWN, FAMILY_SMA_DISTANCE,
+    FAMILY_ULTIMATE_OSCILLATOR, FAMILY_MFI, FAMILY_GAP_FADE,
 )
 
 # Each family's own parameter fields -- the set a spec of that family MUST
@@ -111,6 +124,16 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_AWESOME_OSCILLATOR: ("ao_fast", "ao_slow"),
     FAMILY_SUPERTREND: ("supertrend_lookback", "supertrend_multiplier"),
     FAMILY_TRIX: ("trix_lookback",),
+    FAMILY_KELTNER_REVERSION: ("keltner_rev_lookback", "keltner_rev_multiplier"),
+    FAMILY_BOLLINGER_PCTB: ("pctb_lookback", "pctb_multiplier", "pctb_oversold"),
+    FAMILY_ZSCORE: ("zscore_lookback", "zscore_oversold"),
+    FAMILY_IBS: ("ibs_oversold",),
+    FAMILY_N_DAY_LOW: ("ndaylow_lookback",),
+    FAMILY_CONSECUTIVE_DOWN: ("consecutive_down_days",),
+    FAMILY_SMA_DISTANCE: ("sma_dist_lookback", "sma_dist_oversold"),
+    FAMILY_ULTIMATE_OSCILLATOR: ("uo_short", "uo_mid", "uo_long", "uo_oversold"),
+    FAMILY_MFI: ("mfi_lookback", "mfi_oversold"),
+    FAMILY_GAP_FADE: ("gap_fade_threshold",),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -223,6 +246,63 @@ class StrategySpec(BaseModel):
     # TRIX: the rate of change of a triple-smoothed EMA. Long on a
     # zero-line crossover (TRIX > 0).
     trix_lookback: int | None = None
+    # KELTNER_REVERSION: the inverse of KELTNER -- same ATR-normalized
+    # band construction, but long when price drops BELOW the lower band
+    # (mean reversion) rather than above the upper band (breakout).
+    keltner_rev_lookback: int | None = None
+    keltner_rev_multiplier: float | None = None
+    # BOLLINGER_PCTB: John Bollinger's own %B = (close - lower_band) /
+    # (upper_band - lower_band), a continuous 0-1 (typically) normalized
+    # position within the bands -- distinct from BOLLINGER's own binary
+    # "below the lower band" touch. Long when %B drops below its own
+    # oversold threshold.
+    pctb_lookback: int | None = None
+    pctb_multiplier: float | None = None
+    pctb_oversold: float | None = None
+    # ZSCORE: (close - SMA(close, lookback)) / rolling_std(close,
+    # lookback) -- a standard rolling z-score of price itself (not an
+    # oscillator built from a scaled indicator). Long when the z-score
+    # drops below its own oversold threshold.
+    zscore_lookback: int | None = None
+    zscore_oversold: float | None = None
+    # IBS (Internal Bar Strength): (close - low) / (high - low), a
+    # cited single-bar mean-reversion construction (no lookback --
+    # it is a per-bar ratio). Long when IBS drops below its own
+    # oversold threshold (a value in (0, 1)).
+    ibs_oversold: float | None = None
+    # N_DAY_LOW: long whenever today's close makes a new N-day low
+    # (close <= rolling_min(close, lookback)) -- the classic "buy the
+    # dip at a fresh low" mean-reversion construction.
+    ndaylow_lookback: int | None = None
+    # CONSECUTIVE_DOWN: long after `consecutive_down_days` consecutive
+    # down-closes in a row -- a run-length mean-reversion construction.
+    consecutive_down_days: int | None = None
+    # SMA_DISTANCE: long when close is more than `sma_dist_oversold`
+    # fraction BELOW its own rolling SMA(sma_dist_lookback) -- distance-
+    # from-trend mean reversion (the classic use case is a 200-day SMA,
+    # not fixed here since the lookback itself is swept).
+    sma_dist_lookback: int | None = None
+    sma_dist_oversold: float | None = None
+    # ULTIMATE_OSCILLATOR (Larry Williams' own construction, 1976): a
+    # weighted average of buying-pressure/true-range ratios across three
+    # timeframes (uo_short/uo_mid/uo_long -- his own published 7/14/28
+    # convention), weighted 4:2:1 short-to-long. Long when UO drops
+    # below its own oversold threshold (Williams' own <30 zone).
+    uo_short: int | None = None
+    uo_mid: int | None = None
+    uo_long: int | None = None
+    uo_oversold: float | None = None
+    # MFI (Money Flow Index): a volume-weighted RSI -- typical price *
+    # volume splits into positive/negative money flow by day-over-day
+    # typical-price direction, then the same RSI-style ratio-to-0-100
+    # scaling Wilder's RSI uses. Long when MFI drops below its own
+    # oversold threshold.
+    mfi_lookback: int | None = None
+    mfi_oversold: float | None = None
+    # GAP_FADE: long when today's open gaps DOWN from yesterday's close
+    # by more than `gap_fade_threshold` (a fraction), fading the gap on
+    # the expectation of an intraday-to-next-close reversion back up.
+    gap_fade_threshold: float | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -296,6 +376,25 @@ class StrategySpec(BaseModel):
             raise ValueError("cci_oversold must be negative")
         if self.family == FAMILY_AWESOME_OSCILLATOR and self.ao_fast >= self.ao_slow:  # type: ignore[operator]
             raise ValueError("ao_fast must be less than ao_slow")
+        if self.family == FAMILY_BOLLINGER_PCTB and not (0.0 <= self.pctb_oversold < 1.0):  # type: ignore[operator]
+            raise ValueError("pctb_oversold must be in [0, 1)")
+        if self.family == FAMILY_ZSCORE and self.zscore_oversold >= 0.0:  # type: ignore[operator]
+            raise ValueError("zscore_oversold must be negative")
+        if self.family == FAMILY_IBS and not (0.0 < self.ibs_oversold < 1.0):  # type: ignore[operator]
+            raise ValueError("ibs_oversold must be in (0, 1)")
+        if self.family == FAMILY_CONSECUTIVE_DOWN and self.consecutive_down_days <= 0:  # type: ignore[operator]
+            raise ValueError("consecutive_down_days must be positive")
+        if self.family == FAMILY_SMA_DISTANCE and not (0.0 < self.sma_dist_oversold < 1.0):  # type: ignore[operator]
+            raise ValueError("sma_dist_oversold must be in (0, 1)")
+        if self.family == FAMILY_ULTIMATE_OSCILLATOR:
+            if not (self.uo_short < self.uo_mid < self.uo_long):  # type: ignore[operator]
+                raise ValueError("uo_short must be < uo_mid must be < uo_long")
+            if not (0.0 < self.uo_oversold < 100.0):  # type: ignore[operator]
+                raise ValueError("uo_oversold must be in (0, 100)")
+        if self.family == FAMILY_MFI and not (0.0 < self.mfi_oversold < 100.0):  # type: ignore[operator]
+            raise ValueError("mfi_oversold must be in (0, 100)")
+        if self.family == FAMILY_GAP_FADE and self.gap_fade_threshold <= 0.0:  # type: ignore[operator]
+            raise ValueError("gap_fade_threshold must be positive")
         return self
 
     @property

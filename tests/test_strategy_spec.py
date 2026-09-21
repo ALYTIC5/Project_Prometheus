@@ -6,14 +6,24 @@ from pydantic import ValidationError
 from prometheus.strategy.spec import (
     FAMILIES,
     FAMILY_AWESOME_OSCILLATOR,
+    FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
+    FAMILY_CONSECUTIVE_DOWN,
+    FAMILY_GAP_FADE,
+    FAMILY_IBS,
     FAMILY_KELTNER,
+    FAMILY_KELTNER_REVERSION,
+    FAMILY_MFI,
+    FAMILY_N_DAY_LOW,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
+    FAMILY_SMA_DISTANCE,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_TRIX,
+    FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_WILLIAMS_R,
+    FAMILY_ZSCORE,
     StrategySpec,
 )
 
@@ -311,3 +321,157 @@ def test_trix_valid_spec_constructs() -> None:
     )
     assert spec.family == FAMILY_TRIX
     assert FAMILY_TRIX in FAMILIES
+
+
+def test_keltner_reversion_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_KELTNER_REVERSION, symbol="BTC/USDT", timeframe="1d",
+        keltner_rev_lookback=20, keltner_rev_multiplier=2.0, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_KELTNER_REVERSION
+    assert FAMILY_KELTNER_REVERSION in FAMILIES
+
+
+def test_bollinger_pctb_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_BOLLINGER_PCTB, symbol="BTC/USDT", timeframe="1d",
+        pctb_lookback=20, pctb_multiplier=2.0, pctb_oversold=0.2, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_BOLLINGER_PCTB
+    assert FAMILY_BOLLINGER_PCTB in FAMILIES
+
+
+def test_bollinger_pctb_oversold_out_of_range_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_BOLLINGER_PCTB, symbol="BTC/USDT", timeframe="1d",
+            pctb_lookback=20, pctb_multiplier=2.0, pctb_oversold=1.5, expected_horizon=20,
+        )
+
+
+def test_zscore_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_ZSCORE, symbol="BTC/USDT", timeframe="1d",
+        zscore_lookback=20, zscore_oversold=-2.0, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_ZSCORE
+    assert FAMILY_ZSCORE in FAMILIES
+
+
+def test_zscore_positive_oversold_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_ZSCORE, symbol="BTC/USDT", timeframe="1d",
+            zscore_lookback=20, zscore_oversold=2.0, expected_horizon=20,
+        )
+
+
+def test_ibs_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_IBS, symbol="BTC/USDT", timeframe="1d",
+        ibs_oversold=0.2, expected_horizon=1,
+    )
+    assert spec.family == FAMILY_IBS
+    assert FAMILY_IBS in FAMILIES
+
+
+def test_ibs_oversold_out_of_range_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_IBS, symbol="BTC/USDT", timeframe="1d",
+            ibs_oversold=1.5, expected_horizon=1,
+        )
+
+
+def test_n_day_low_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_N_DAY_LOW, symbol="BTC/USDT", timeframe="1d",
+        ndaylow_lookback=20, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_N_DAY_LOW
+    assert FAMILY_N_DAY_LOW in FAMILIES
+
+
+def test_consecutive_down_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_CONSECUTIVE_DOWN, symbol="BTC/USDT", timeframe="1d",
+        consecutive_down_days=3, expected_horizon=3,
+    )
+    assert spec.family == FAMILY_CONSECUTIVE_DOWN
+    assert FAMILY_CONSECUTIVE_DOWN in FAMILIES
+
+
+def test_consecutive_down_non_positive_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_CONSECUTIVE_DOWN, symbol="BTC/USDT", timeframe="1d",
+            consecutive_down_days=0, expected_horizon=3,
+        )
+
+
+def test_sma_distance_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_SMA_DISTANCE, symbol="BTC/USDT", timeframe="1d",
+        sma_dist_lookback=200, sma_dist_oversold=0.1, expected_horizon=200,
+    )
+    assert spec.family == FAMILY_SMA_DISTANCE
+    assert FAMILY_SMA_DISTANCE in FAMILIES
+
+
+def test_sma_distance_oversold_out_of_range_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_SMA_DISTANCE, symbol="BTC/USDT", timeframe="1d",
+            sma_dist_lookback=200, sma_dist_oversold=1.5, expected_horizon=200,
+        )
+
+
+def test_ultimate_oscillator_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_ULTIMATE_OSCILLATOR, symbol="BTC/USDT", timeframe="1d",
+        uo_short=7, uo_mid=14, uo_long=28, uo_oversold=30.0, expected_horizon=14,
+    )
+    assert spec.family == FAMILY_ULTIMATE_OSCILLATOR
+    assert FAMILY_ULTIMATE_OSCILLATOR in FAMILIES
+
+
+def test_ultimate_oscillator_out_of_order_windows_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_ULTIMATE_OSCILLATOR, symbol="BTC/USDT", timeframe="1d",
+            uo_short=28, uo_mid=14, uo_long=7, uo_oversold=30.0, expected_horizon=14,
+        )
+
+
+def test_mfi_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_MFI, symbol="BTC/USDT", timeframe="1d",
+        mfi_lookback=14, mfi_oversold=20.0, expected_horizon=14,
+    )
+    assert spec.family == FAMILY_MFI
+    assert FAMILY_MFI in FAMILIES
+
+
+def test_mfi_oversold_out_of_range_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_MFI, symbol="BTC/USDT", timeframe="1d",
+            mfi_lookback=14, mfi_oversold=200.0, expected_horizon=14,
+        )
+
+
+def test_gap_fade_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_GAP_FADE, symbol="BTC/USDT", timeframe="1d",
+        gap_fade_threshold=0.02, expected_horizon=1,
+    )
+    assert spec.family == FAMILY_GAP_FADE
+    assert FAMILY_GAP_FADE in FAMILIES
+
+
+def test_gap_fade_non_positive_threshold_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_GAP_FADE, symbol="BTC/USDT", timeframe="1d",
+            gap_fade_threshold=0.0, expected_horizon=1,
+        )

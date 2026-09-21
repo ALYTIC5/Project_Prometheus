@@ -48,21 +48,31 @@ from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
+    FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
+    FAMILY_CONSECUTIVE_DOWN,
+    FAMILY_GAP_FADE,
     FAMILY_GRADIENT_BOOSTING,
+    FAMILY_IBS,
     FAMILY_KELTNER,
+    FAMILY_KELTNER_REVERSION,
     FAMILY_LOGISTIC_REGRESSION,
     FAMILY_MACD,
+    FAMILY_MFI,
     FAMILY_MOMENTUM,
+    FAMILY_N_DAY_LOW,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
     FAMILY_RSI,
+    FAMILY_SMA_DISTANCE,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_SVM,
     FAMILY_TRIX,
+    FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
     FAMILY_WILLIAMS_R,
+    FAMILY_ZSCORE,
     StrategySpec,
 )
 
@@ -571,6 +581,246 @@ def _trix_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     )
 
 
+def _keltner_reversion_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.DataFrame:
+    """The inverse of _keltner_signal's breakout logic -- same ATR-
+    normalized band around an EMA midline, but long when close drops
+    BELOW the lower band (mean reversion), flat once it recovers back
+    above the midline. Stateless per-bar condition (not persist-until-exit
+    like the breakout version), same shape _bollinger_signal/_cci_signal
+    already use for their own mean-reversion families."""
+    prev_close = pl.col("close").shift(1)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    return (
+        bars.with_columns(
+            pl.col("close").ewm_mean(span=lookback, adjust=False).alias("_mid"),
+            true_range.ewm_mean(span=lookback, adjust=False).alias("_atr"),
+        )
+        .with_columns((pl.col("_mid") - multiplier * pl.col("_atr")).alias("_lower"))
+        .with_columns(
+            (pl.col("close") < pl.col("_lower"))
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _bollinger_pctb_signal(
+    bars: pl.DataFrame, lookback: int, multiplier: float, oversold: float
+) -> pl.DataFrame:
+    """John Bollinger's own %B: (close - lower_band) / (upper_band -
+    lower_band) -- a continuous normalized position within the bands,
+    distinct from _bollinger_signal's binary "closed below the lower
+    band" touch. Long when %B drops below its own oversold threshold.
+    %B is undefined (0/0) when upper==lower (zero rolling std, a flat
+    price run); polars' NaN there compares false to `< oversold`, the
+    same "never trades on flat prices" behavior every other family's
+    null case exercises."""
+    return (
+        bars.with_columns(
+            pl.col("close").rolling_mean(lookback).alias("_mid"),
+            pl.col("close").rolling_std(lookback).alias("_std"),
+        )
+        .with_columns(
+            (pl.col("_mid") - multiplier * pl.col("_std")).alias("_lower"),
+            (pl.col("_mid") + multiplier * pl.col("_std")).alias("_upper"),
+        )
+        .with_columns(
+            ((pl.col("close") - pl.col("_lower")) / (pl.col("_upper") - pl.col("_lower")))
+            .alias("_pctb")
+        )
+        .with_columns(
+            (pl.col("_pctb") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _zscore_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """A standard rolling z-score of price itself: (close -
+    SMA(close, lookback)) / rolling_std(close, lookback). Long when the
+    z-score drops below its own (negative) oversold threshold -- a
+    direct "how many standard deviations below its own recent mean"
+    mean-reversion signal, distinct from CCI (which z-scores the typical
+    price against mean ABSOLUTE deviation, not std) or Bollinger (which
+    thresholds on the band edge, not the z-score value itself)."""
+    return (
+        bars.with_columns(
+            pl.col("close").rolling_mean(lookback).alias("_mean"),
+            pl.col("close").rolling_std(lookback).alias("_std"),
+        )
+        .with_columns(((pl.col("close") - pl.col("_mean")) / pl.col("_std")).alias("_zscore"))
+        .with_columns(
+            (pl.col("_zscore") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _ibs_signal(bars: pl.DataFrame, oversold: float) -> pl.DataFrame:
+    """Internal Bar Strength: (close - low) / (high - low) -- a cited
+    single-bar mean-reversion construction (no lookback window; it is a
+    per-bar ratio of where today's close landed within today's own
+    range). Long when IBS drops below its own oversold threshold.
+    Undefined (0/0) on a zero-range bar (high == low); treated the same
+    "NaN never trades" way every other family's degenerate case is."""
+    return bars.with_columns(
+        ((pl.col("close") - pl.col("low")) / (pl.col("high") - pl.col("low"))).alias("_ibs")
+    ).with_columns(
+        (pl.col("_ibs") < oversold).cast(pl.Float64).shift(1).fill_null(0.0).alias("position")
+    )
+
+
+def _n_day_low_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """Long whenever today's close makes a new N-day low (close <=
+    rolling_min(close, lookback), the window INCLUDING today's own close
+    -- a fresh low is a fresh low the day it happens). Stateless per-bar
+    condition, same shape as every other mean-reversion family here."""
+    return bars.with_columns(
+        pl.col("close").rolling_min(lookback).alias("_rolling_low")
+    ).with_columns(
+        (pl.col("close") <= pl.col("_rolling_low"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _consecutive_down_signal(bars: pl.DataFrame, run_length: int) -> pl.DataFrame:
+    """Long after `run_length` consecutive down-closes in a row -- a
+    run-length mean-reversion construction. The run is counted via a
+    rolling sum over a boolean "closed down" series: `run_length`
+    consecutive down-days sums to exactly `run_length` over that window
+    only when every bar in it was itself a down-day."""
+    is_down = (pl.col("close") < pl.col("close").shift(1)).cast(pl.Int64).fill_null(0)
+    return bars.with_columns(is_down.alias("_down")).with_columns(
+        pl.col("_down").rolling_sum(run_length).alias("_down_run")
+    ).with_columns(
+        (pl.col("_down_run") >= run_length)
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _sma_distance_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """Distance-from-trend mean reversion: long when close is more than
+    `oversold` (a fraction) BELOW its own rolling SMA(lookback) -- e.g.
+    oversold=0.1 means "more than 10% below its own N-day average".
+    The classic use case cites a 200-day SMA; the lookback itself is a
+    swept grid parameter here, not fixed to 200, so this family covers
+    any distance-from-trend horizon a grid registers."""
+    return bars.with_columns(
+        pl.col("close").rolling_mean(lookback).alias("_sma")
+    ).with_columns(
+        (((pl.col("_sma") - pl.col("close")) / pl.col("_sma")) > oversold)
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _ultimate_oscillator_signal(
+    bars: pl.DataFrame, short: int, mid: int, long: int, oversold: float
+) -> pl.DataFrame:
+    """Larry Williams' own Ultimate Oscillator (1976): buying pressure
+    (close - min(low, prior_close)) over true range, summed across three
+    timeframes (his own published short/mid/long convention, typically
+    7/14/28) and weighted 4:2:1 short-to-long -- his own published
+    weighting, not invented. Long when UO drops below its own oversold
+    threshold (Williams' own <30 zone)."""
+    prev_close = pl.col("close").shift(1)
+    buying_pressure = pl.col("close") - pl.min_horizontal(pl.col("low"), prev_close)
+    true_range = pl.max_horizontal(pl.col("high"), prev_close) - pl.min_horizontal(
+        pl.col("low"), prev_close
+    )
+    frame = bars.with_columns(
+        buying_pressure.alias("_bp"), true_range.alias("_tr")
+    )
+    avgs = {}
+    for window in (short, mid, long):
+        frame = frame.with_columns(
+            (pl.col("_bp").rolling_sum(window) / pl.col("_tr").rolling_sum(window)).alias(
+                f"_avg_{window}"
+            )
+        )
+        avgs[window] = f"_avg_{window}"
+    return frame.with_columns(
+        (
+            (4.0 * pl.col(avgs[short]) + 2.0 * pl.col(avgs[mid]) + pl.col(avgs[long])) / 7.0 * 100.0
+        ).alias("_uo")
+    ).with_columns(
+        (pl.col("_uo") < oversold).cast(pl.Float64).shift(1).fill_null(0.0).alias("position")
+    )
+
+
+def _mfi_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """Money Flow Index: a volume-weighted RSI. Typical price * volume
+    is raw money flow; it's "positive" money flow on a day the typical
+    price rose from the prior day, "negative" on a day it fell. MFI is
+    then the same RSI-style 100 - 100/(1+ratio) scaling Wilder's RSI
+    uses, applied to the ratio of positive to negative money flow sums
+    instead of average gain/loss. Long when MFI drops below its own
+    oversold threshold."""
+    typical_price = (pl.col("high") + pl.col("low") + pl.col("close")) / 3.0
+    raw_money_flow = typical_price * pl.col("volume")
+    typical_price_rose = typical_price > typical_price.shift(1)
+    positive_flow = pl.when(typical_price_rose).then(raw_money_flow).otherwise(0.0)
+    negative_flow = pl.when(typical_price_rose).then(0.0).otherwise(raw_money_flow)
+    return (
+        bars.with_columns(
+            positive_flow.alias("_pos_flow"), negative_flow.alias("_neg_flow")
+        )
+        .with_columns(
+            pl.col("_pos_flow").rolling_sum(lookback).alias("_pos_sum"),
+            pl.col("_neg_flow").rolling_sum(lookback).alias("_neg_sum"),
+        )
+        .with_columns(
+            (100.0 - 100.0 / (1.0 + pl.col("_pos_sum") / pl.col("_neg_sum"))).alias("_mfi")
+        )
+        .with_columns(
+            (pl.col("_mfi") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _gap_fade_signal(bars: pl.DataFrame, threshold: float) -> pl.DataFrame:
+    """Long when today's open gaps DOWN from yesterday's close by more
+    than `threshold` (a fraction) -- fading the gap on the expectation
+    of a reversion back up. Uses the bar's own open against the PRIOR
+    bar's close (never today's own close), so the raw condition is
+    already only using information available at today's open; the usual
+    shift(1) still applies for consistency with every other family's
+    execution-timing convention (position acts on tomorrow's bar)."""
+    prev_close = pl.col("close").shift(1)
+    gap = (pl.col("open") - prev_close) / prev_close
+    return bars.with_columns(gap.alias("_gap")).with_columns(
+        (pl.col("_gap") < -threshold)
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
 def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     """Public seam validation/metrics.py's information-coefficient
     calculation needs: IC is a property of the SIGNAL (does it predict
@@ -660,6 +910,53 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     if spec.family == FAMILY_TRIX:
         assert spec.trix_lookback is not None
         return _trix_signal(bars, spec.trix_lookback)
+    if spec.family == FAMILY_KELTNER_REVERSION:
+        assert (
+            spec.keltner_rev_lookback is not None and spec.keltner_rev_multiplier is not None
+        )
+        return _keltner_reversion_signal(
+            bars, spec.keltner_rev_lookback, spec.keltner_rev_multiplier
+        )
+    if spec.family == FAMILY_BOLLINGER_PCTB:
+        assert (
+            spec.pctb_lookback is not None
+            and spec.pctb_multiplier is not None
+            and spec.pctb_oversold is not None
+        )
+        return _bollinger_pctb_signal(
+            bars, spec.pctb_lookback, spec.pctb_multiplier, spec.pctb_oversold
+        )
+    if spec.family == FAMILY_ZSCORE:
+        assert spec.zscore_lookback is not None and spec.zscore_oversold is not None
+        return _zscore_signal(bars, spec.zscore_lookback, spec.zscore_oversold)
+    if spec.family == FAMILY_IBS:
+        assert spec.ibs_oversold is not None
+        return _ibs_signal(bars, spec.ibs_oversold)
+    if spec.family == FAMILY_N_DAY_LOW:
+        assert spec.ndaylow_lookback is not None
+        return _n_day_low_signal(bars, spec.ndaylow_lookback)
+    if spec.family == FAMILY_CONSECUTIVE_DOWN:
+        assert spec.consecutive_down_days is not None
+        return _consecutive_down_signal(bars, spec.consecutive_down_days)
+    if spec.family == FAMILY_SMA_DISTANCE:
+        assert spec.sma_dist_lookback is not None and spec.sma_dist_oversold is not None
+        return _sma_distance_signal(bars, spec.sma_dist_lookback, spec.sma_dist_oversold)
+    if spec.family == FAMILY_ULTIMATE_OSCILLATOR:
+        assert (
+            spec.uo_short is not None
+            and spec.uo_mid is not None
+            and spec.uo_long is not None
+            and spec.uo_oversold is not None
+        )
+        return _ultimate_oscillator_signal(
+            bars, spec.uo_short, spec.uo_mid, spec.uo_long, spec.uo_oversold
+        )
+    if spec.family == FAMILY_MFI:
+        assert spec.mfi_lookback is not None and spec.mfi_oversold is not None
+        return _mfi_signal(bars, spec.mfi_lookback, spec.mfi_oversold)
+    if spec.family == FAMILY_GAP_FADE:
+        assert spec.gap_fade_threshold is not None
+        return _gap_fade_signal(bars, spec.gap_fade_threshold)
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -719,6 +1016,34 @@ def _min_bars_for(spec: StrategySpec) -> int:
     if spec.family == FAMILY_TRIX:
         assert spec.trix_lookback is not None
         return spec.trix_lookback + 2
+    if spec.family == FAMILY_KELTNER_REVERSION:
+        assert spec.keltner_rev_lookback is not None
+        return spec.keltner_rev_lookback + 2
+    if spec.family == FAMILY_BOLLINGER_PCTB:
+        assert spec.pctb_lookback is not None
+        return spec.pctb_lookback + 2
+    if spec.family == FAMILY_ZSCORE:
+        assert spec.zscore_lookback is not None
+        return spec.zscore_lookback + 2
+    if spec.family == FAMILY_IBS:
+        return 3  # a single-bar ratio -- just the shift(1)/diff headroom
+    if spec.family == FAMILY_N_DAY_LOW:
+        assert spec.ndaylow_lookback is not None
+        return spec.ndaylow_lookback + 2
+    if spec.family == FAMILY_CONSECUTIVE_DOWN:
+        assert spec.consecutive_down_days is not None
+        return spec.consecutive_down_days + 2
+    if spec.family == FAMILY_SMA_DISTANCE:
+        assert spec.sma_dist_lookback is not None
+        return spec.sma_dist_lookback + 2
+    if spec.family == FAMILY_ULTIMATE_OSCILLATOR:
+        assert spec.uo_long is not None
+        return spec.uo_long + 2
+    if spec.family == FAMILY_MFI:
+        assert spec.mfi_lookback is not None
+        return spec.mfi_lookback + 2
+    if spec.family == FAMILY_GAP_FADE:
+        return 3  # a single-bar gap condition -- just the shift(1)/diff headroom
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 
