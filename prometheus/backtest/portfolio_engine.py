@@ -28,7 +28,13 @@ from prometheus.backtest.benchmark import (
 from prometheus.backtest.costs import CostModel, apply_cost
 from prometheus.backtest.engine import STARTING_CAPITAL, BacktestResult
 from prometheus.data.schema import PointInTimeFrame
-from prometheus.strategy.rotation_spec import ROTATION_FAMILY_EQUAL_WEIGHT, RotationSpec
+from prometheus.strategy.rotation_spec import (
+    ROTATION_FAMILY_EQUAL_WEIGHT,
+    ROTATION_FAMILY_RELATIVE_STRENGTH_TOP3,
+    ROTATION_FAMILY_SECTOR_MEAN_REVERSION,
+    ROTATION_FAMILY_SECTOR_MOMENTUM,
+    RotationSpec,
+)
 
 Membership = dict[str, tuple[date, date | None]]
 
@@ -41,6 +47,55 @@ def weights_for_equal_weight(eligible_symbols: list[str]) -> dict[str, float]:
         return {}
     share = 1.0 / len(eligible_symbols)
     return {symbol: share for symbol in eligible_symbols}
+
+
+def trailing_return(bars: pl.DataFrame, as_of: date, lookback_days: int) -> float | None:
+    """Close-to-close return from `lookback_days` bars before `as_of` to
+    `as_of` itself, using only rows with available_at <= as_of (Law 1 --
+    a ranking decision at `as_of` never reads a bar not yet available on
+    that date). None when there aren't enough prior bars -- an
+    honestly-excluded symbol for this ranking cycle, not a fabricated
+    0.0 that would make it look like a flat, tied-for-worst performer."""
+    rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.min.time()))
+    if rows.height <= lookback_days:
+        return None
+    closes: list[float] = rows["close"].to_list()
+    start_close = closes[-(lookback_days + 1)]
+    end_close = closes[-1]
+    if start_close == 0:
+        return None
+    return (end_close - start_close) / start_close
+
+
+def weights_for_top_n_momentum(
+    eligible: list[str],
+    bars_by_symbol: dict[str, pl.DataFrame],
+    as_of: date,
+    lookback_days: int,
+    top_n: int,
+    *,
+    worst: bool = False,
+) -> dict[str, float]:
+    """Shared ranking primitive for #49 (best-N), #51 (best-3, top_n
+    fixed by the caller's spec), and #52 (worst-N, worst=True) -- #52 is
+    literally #49's own mechanism with the sort direction flipped, per
+    the design doc's "inverse of #49" framing, not a separate algorithm.
+    Symbols with no `trailing_return` (insufficient history) are excluded
+    from ranking entirely. Fewer scored symbols than `top_n` -> every
+    scored symbol is used, equal-weighted among just those. No scored
+    symbols at all -> empty weights (100% cash), same convention as
+    `weights_for_equal_weight`."""
+    scored: list[tuple[str, float]] = []
+    for symbol in eligible:
+        ret = trailing_return(bars_by_symbol[symbol], as_of, lookback_days)
+        if ret is not None:
+            scored.append((symbol, ret))
+    if not scored:
+        return {}
+    scored.sort(key=lambda pair: pair[1], reverse=not worst)
+    chosen = scored[: min(top_n, len(scored))]
+    share = 1.0 / len(chosen)
+    return {symbol: share for symbol, _ in chosen}
 
 
 def _eligible_symbols(universe: tuple[str, ...], membership: Membership, as_of: date) -> list[str]:
@@ -61,17 +116,31 @@ def _weights_for(
     spec: RotationSpec,
     eligible: list[str],
     bars_by_symbol: dict[str, pl.DataFrame],
-    as_of_idx: int,
+    as_of: date,
 ) -> dict[str, float]:
     """Single dispatch point every family's weight function is called
-    through, keyed on spec.family. Tasks 4-6 add branches here for the
-    remaining five ROTATION_FAMILIES; each of those weight functions
-    takes (eligible_symbols, price_history_by_symbol, lookback_days,
-    top_n) -- `bars_by_symbol`/`as_of_idx` are threaded through now so
-    this task doesn't need to change signature later."""
+    through, keyed on spec.family. Tasks 5-6 add branches here for the
+    remaining two ROTATION_FAMILIES. `as_of` (not the loop's integer
+    index) is threaded through so ranking families can compute
+    `trailing_return` against real dates without reaching back into the
+    caller's loop state."""
     if spec.family == ROTATION_FAMILY_EQUAL_WEIGHT:
         return weights_for_equal_weight(eligible)
-    raise ValueError(f"no weight function wired for family {spec.family!r}")  # Tasks 4-6 extend this
+    if spec.family in (ROTATION_FAMILY_SECTOR_MOMENTUM, ROTATION_FAMILY_RELATIVE_STRENGTH_TOP3):
+        lookback_days = spec.lookback_days
+        top_n = spec.top_n
+        if lookback_days is None or top_n is None:
+            raise ValueError(f"family {spec.family!r} requires lookback_days and top_n")
+        return weights_for_top_n_momentum(eligible, bars_by_symbol, as_of, lookback_days, top_n)
+    if spec.family == ROTATION_FAMILY_SECTOR_MEAN_REVERSION:
+        lookback_days = spec.lookback_days
+        top_n = spec.top_n
+        if lookback_days is None or top_n is None:
+            raise ValueError(f"family {spec.family!r} requires lookback_days and top_n")
+        return weights_for_top_n_momentum(
+            eligible, bars_by_symbol, as_of, lookback_days, top_n, worst=True,
+        )
+    raise ValueError(f"no weight function wired for family {spec.family!r}")  # Tasks 5-6 extend this
 
 
 def _rebalance_indices(num_dates: int, first_idx: int, rebalance_frequency_days: int) -> set[int]:
@@ -156,7 +225,7 @@ def run_portfolio_backtest(
 
             if idx in rebalance_indices:
                 eligible = _eligible_symbols(spec.universe, membership, as_of)
-                target_weights = _weights_for(spec, eligible, bars_by_symbol, idx)
+                target_weights = _weights_for(spec, eligible, bars_by_symbol, as_of)
 
                 # Net: size against pre-trade equity, charge cost on the
                 # notional actually traded, then realize the post-cost

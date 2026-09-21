@@ -8,7 +8,9 @@ import pytest
 
 from prometheus.backtest.portfolio_engine import (
     run_portfolio_backtest,
+    trailing_return,
     weights_for_equal_weight,
+    weights_for_top_n_momentum,
 )
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.rotation_spec import ROTATION_FAMILY_EQUAL_WEIGHT, RotationSpec
@@ -91,3 +93,59 @@ def test_equal_weight_excludes_symbol_before_its_listed_at() -> None:
     # the real assertion is that this doesn't raise and returns ~0%,
     # proving B's exclusion didn't leave a dangling/NaN allocation.
     assert result.total_return_pct == pytest.approx(0.0, abs=0.01)
+
+
+def test_trailing_return_none_when_insufficient_history() -> None:
+    bars = pl.DataFrame(
+        {"available_at": [datetime(2020, 1, 1), datetime(2020, 1, 2)], "close": [100.0, 101.0]}
+    )
+    assert trailing_return(bars, date(2020, 1, 2), lookback_days=10) is None
+
+
+def test_trailing_return_computes_pct_change_over_lookback() -> None:
+    dates = [datetime(2020, 1, i + 1) for i in range(5)]
+    closes = [100.0, 101.0, 102.0, 103.0, 110.0]
+    bars = pl.DataFrame({"available_at": dates, "close": closes})
+    # From day 1 (100.0) to day 5 (110.0), lookback_days=4 (index span).
+    assert trailing_return(bars, date(2020, 1, 5), lookback_days=4) == pytest.approx(0.10)
+
+
+def test_weights_for_top_n_momentum_picks_best_n_equal_weighted() -> None:
+    dates = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    bars_by_symbol = {
+        "A": pl.DataFrame({"available_at": dates, "close": [100.0, 105.0]}),  # +5%
+        "B": pl.DataFrame({"available_at": dates, "close": [100.0, 90.0]}),   # -10%
+        "C": pl.DataFrame({"available_at": dates, "close": [100.0, 120.0]}),  # +20% best
+    }
+    weights = weights_for_top_n_momentum(
+        ["A", "B", "C"], bars_by_symbol, date(2020, 1, 2), lookback_days=1, top_n=2,
+    )
+    assert set(weights) == {"A", "C"}  # top 2 by return: C then A
+    assert weights["A"] == pytest.approx(0.5)
+    assert weights["C"] == pytest.approx(0.5)
+
+
+def test_weights_for_top_n_momentum_worst_picks_bottom_n() -> None:
+    dates = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    bars_by_symbol = {
+        "A": pl.DataFrame({"available_at": dates, "close": [100.0, 105.0]}),
+        "B": pl.DataFrame({"available_at": dates, "close": [100.0, 90.0]}),
+        "C": pl.DataFrame({"available_at": dates, "close": [100.0, 120.0]}),
+    }
+    weights = weights_for_top_n_momentum(
+        ["A", "B", "C"], bars_by_symbol, date(2020, 1, 2),
+        lookback_days=1, top_n=1, worst=True,
+    )
+    assert set(weights) == {"B"}  # worst performer
+    assert weights["B"] == pytest.approx(1.0)
+
+
+def test_weights_for_top_n_momentum_fewer_eligible_than_top_n_uses_all_eligible() -> None:
+    dates = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    bars_by_symbol = {
+        "A": pl.DataFrame({"available_at": dates, "close": [100.0, 105.0]}),
+    }
+    weights = weights_for_top_n_momentum(
+        ["A"], bars_by_symbol, date(2020, 1, 2), lookback_days=1, top_n=3,
+    )
+    assert weights == {"A": pytest.approx(1.0)}
