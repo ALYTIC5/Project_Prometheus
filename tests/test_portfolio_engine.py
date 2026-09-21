@@ -246,9 +246,12 @@ def test_gem_dispatch_guard_fires_when_defensive_leg_ineligible() -> None:
 def test_gtaa_sma_holds_only_assets_above_their_own_sma() -> None:
     dates = [datetime(2020, 1, i + 1) for i in range(4)]
     bars_by_symbol = {
-        # SMA(3) as of day 4: mean(100,100,100)=100, close=110 -> above -> IN
+        # Anchor-inclusive SMA(3) as of day 4 (closes[-3:] = last 3
+        # closes, including the anchor bar itself): mean(100,100,110)
+        # ~= 103.33, close=110 -> above -> IN.
         "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 110.0]}),
-        # SMA(3) as of day 4: mean(100,100,100)=100, close=90 -> below -> OUT
+        # Anchor-inclusive SMA(3): mean(100,100,90) ~= 96.67, close=90
+        # -> below -> OUT.
         "TLT": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 90.0]}),
     }
     weights = weights_for_gtaa_sma(
@@ -265,4 +268,27 @@ def test_gtaa_sma_all_out_returns_empty_weights() -> None:
         "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 90.0]}),
     }
     weights = weights_for_gtaa_sma(["SPY"], bars_by_symbol, date(2020, 1, 4), lookback_days=3)
+    assert weights == {}
+
+
+def test_gtaa_sma_uses_anchor_inclusive_window_not_anchor_exclusive() -> None:
+    # Chosen so the code's actual anchor-inclusive SMA (closes[-3:],
+    # which includes the anchor/close bar itself) and a hypothetical
+    # anchor-exclusive SMA (the 3 bars strictly BEFORE the anchor)
+    # disagree on the IN/OUT verdict -- pinning down which convention
+    # is actually implemented, rather than relying on both agreeing.
+    dates = [datetime(2020, 1, i + 1) for i in range(4)]
+    # closes: day1=50, day2=110, day3=110, day4(anchor/close)=105.
+    bars_by_symbol = {
+        "GLD": pl.DataFrame({"available_at": dates, "close": [50.0, 110.0, 110.0, 105.0]}),
+    }
+    weights = weights_for_gtaa_sma(["GLD"], bars_by_symbol, date(2020, 1, 4), lookback_days=3)
+    # Anchor-inclusive SMA(3) = mean(110, 110, 105) = 325/3 ~= 108.33.
+    # close=105 is NOT above 108.33 -> OUT -> {} (this is what the
+    # code, correctly, computes).
+    #
+    # An anchor-exclusive SMA(3) would instead be mean(50, 110, 110)
+    # = 270/3 = 90.0. close=105 IS above 90.0 -> would be IN ->
+    # {"GLD": 1.0}. A regression to that convention would fail this
+    # assertion.
     assert weights == {}
