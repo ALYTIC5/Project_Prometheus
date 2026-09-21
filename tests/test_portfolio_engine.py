@@ -9,6 +9,7 @@ import pytest
 from prometheus.backtest.portfolio_engine import (
     run_portfolio_backtest,
     trailing_return,
+    weights_for_dual_momentum_gem,
     weights_for_equal_weight,
     weights_for_top_n_momentum,
 )
@@ -149,3 +150,44 @@ def test_weights_for_top_n_momentum_fewer_eligible_than_top_n_uses_all_eligible(
         ["A"], bars_by_symbol, date(2020, 1, 2), lookback_days=1, top_n=3,
     )
     assert weights == {"A": pytest.approx(1.0)}
+
+
+def test_gem_picks_stronger_positive_equity_leg() -> None:
+    dates = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    bars_by_symbol = {
+        "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 110.0]}),  # +10%
+        "EFA": pl.DataFrame({"available_at": dates, "close": [100.0, 103.0]}),  # +3%
+        "TLT": pl.DataFrame({"available_at": dates, "close": [100.0, 101.0]}),  # defensive
+    }
+    weights = weights_for_dual_momentum_gem(
+        ["SPY", "EFA", "TLT"], bars_by_symbol, date(2020, 1, 2), lookback_days=1,
+    )
+    assert weights == {"SPY": pytest.approx(1.0)}
+
+
+def test_gem_falls_back_to_defensive_when_both_equity_legs_negative() -> None:
+    dates = [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    bars_by_symbol = {
+        "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 95.0]}),   # -5%
+        "EFA": pl.DataFrame({"available_at": dates, "close": [100.0, 90.0]}),   # -10%, worse
+        "TLT": pl.DataFrame({"available_at": dates, "close": [100.0, 101.0]}),  # defensive
+    }
+    weights = weights_for_dual_momentum_gem(
+        ["SPY", "EFA", "TLT"], bars_by_symbol, date(2020, 1, 2), lookback_days=1,
+    )
+    assert weights == {"TLT": pytest.approx(1.0)}
+
+
+def test_gem_missing_defensive_leg_history_returns_empty() -> None:
+    # If even the defensive leg lacks lookback history, no honest
+    # decision can be made this cycle -- empty (100% cash), not a crash.
+    dates = [datetime(2020, 1, 1)]
+    bars_by_symbol = {
+        "SPY": pl.DataFrame({"available_at": dates, "close": [100.0]}),
+        "EFA": pl.DataFrame({"available_at": dates, "close": [100.0]}),
+        "TLT": pl.DataFrame({"available_at": dates, "close": [100.0]}),
+    }
+    weights = weights_for_dual_momentum_gem(
+        ["SPY", "EFA", "TLT"], bars_by_symbol, date(2020, 1, 1), lookback_days=5,
+    )
+    assert weights == {}

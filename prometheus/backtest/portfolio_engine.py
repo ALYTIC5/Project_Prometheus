@@ -29,6 +29,7 @@ from prometheus.backtest.costs import CostModel, apply_cost
 from prometheus.backtest.engine import STARTING_CAPITAL, BacktestResult
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.rotation_spec import (
+    ROTATION_FAMILY_DUAL_MOMENTUM_GEM,
     ROTATION_FAMILY_EQUAL_WEIGHT,
     ROTATION_FAMILY_RELATIVE_STRENGTH_TOP3,
     ROTATION_FAMILY_SECTOR_MEAN_REVERSION,
@@ -98,6 +99,42 @@ def weights_for_top_n_momentum(
     return {symbol: share for symbol, _ in chosen}
 
 
+def weights_for_dual_momentum_gem(
+    eligible: list[str], bars_by_symbol: dict[str, pl.DataFrame], as_of: date, lookback_days: int,
+) -> dict[str, float]:
+    """Antonacci's own published GEM rule (#50): among the equity legs
+    (every symbol in `eligible` except the final, defensive one -- this
+    family's own universe convention, `universe = (equity_leg_1, ...,
+    defensive_leg)`, stated in docs/strategies/dual_momentum_gem.md),
+    hold the strongest equity leg only if ITS OWN trailing return is
+    positive (absolute momentum); otherwise hold the defensive leg.
+    Empty (100% cash) only when there isn't enough history to judge at
+    all -- an honestly-skipped rebalance, not a fabricated decision.
+
+    Callers relying on `eligible[-1]` being the defensive leg must first
+    confirm the defensive symbol is actually present in `eligible` --
+    `_weights_for`'s dispatch does this by checking `spec.universe[-1]`
+    membership before calling this function, since `_eligible_symbols`
+    preserves universe order but can drop the defensive leg entirely if
+    it fails point-in-time membership on `as_of`, which would otherwise
+    silently point `eligible[-1]` at the wrong (equity) symbol."""
+    if len(eligible) < 2:
+        return {}
+    *equity_legs, defensive_leg = eligible
+    equity_returns = [
+        (symbol, trailing_return(bars_by_symbol[symbol], as_of, lookback_days))
+        for symbol in equity_legs
+    ]
+    scored_equity_returns = [(s, r) for s, r in equity_returns if r is not None]
+    defensive_return = trailing_return(bars_by_symbol[defensive_leg], as_of, lookback_days)
+    if not scored_equity_returns or defensive_return is None:
+        return {}
+    best_symbol, best_return = max(scored_equity_returns, key=lambda pair: pair[1])
+    if best_return > 0:
+        return {best_symbol: 1.0}
+    return {defensive_leg: 1.0}
+
+
 def _eligible_symbols(universe: tuple[str, ...], membership: Membership, as_of: date) -> list[str]:
     """Law 2: reconstruct membership as of `as_of`, not today's listing.
     A symbol absent from `membership` entirely is never eligible."""
@@ -140,7 +177,23 @@ def _weights_for(
         return weights_for_top_n_momentum(
             eligible, bars_by_symbol, as_of, lookback_days, top_n, worst=True,
         )
-    raise ValueError(f"no weight function wired for family {spec.family!r}")  # Tasks 5-6 extend this
+    if spec.family == ROTATION_FAMILY_DUAL_MOMENTUM_GEM:
+        lookback_days = spec.lookback_days
+        if lookback_days is None:
+            raise ValueError(f"family {spec.family!r} requires lookback_days")
+        # spec.universe[-1] is the defensive leg by this family's own
+        # convention (docs/strategies/dual_momentum_gem.md). `eligible`
+        # preserves universe order (see _eligible_symbols) but can drop
+        # the defensive leg entirely if it fails point-in-time
+        # membership -- checking its membership explicitly here, rather
+        # than trusting `eligible[-1]`, is what keeps that guarantee
+        # honest: once confirmed present, universe order forces it to
+        # also be the last element of `eligible`, since nothing follows
+        # it in `spec.universe`.
+        if spec.universe[-1] not in eligible:
+            return {}
+        return weights_for_dual_momentum_gem(eligible, bars_by_symbol, as_of, lookback_days)
+    raise ValueError(f"no weight function wired for family {spec.family!r}")  # Task 6 extends this
 
 
 def _rebalance_indices(num_dates: int, first_idx: int, rebalance_frequency_days: int) -> set[int]:
