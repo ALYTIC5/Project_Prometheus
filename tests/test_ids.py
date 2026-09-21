@@ -72,3 +72,9 @@ async def test_next_strategy_id_exhausts_only_past_999_999(engine: AsyncEngine) 
         )
     with pytest.raises(IdSequenceExhausted, match="strategy id sequence exhausted"):
         await next_strategy_id(family)
+
+
+async def test_next_strategy_id_accepts_rotation_family_names() -> None:
+    # SECTOR_MOMENTUM_ROTATION is 24 chars -- exceeds the old 20-char cap.
+    strategy_id = await next_strategy_id("SECTOR_MOMENTUM_ROTATION")
+    assert strategy_id.startswith("SECTOR_MOMENTUM_ROTATION-")

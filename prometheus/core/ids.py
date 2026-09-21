@@ -36,7 +36,14 @@ PAPER_ORDER_ID_RE = re.compile(r"^PAPER-\d{8}-\d{6}$")
 # caught by CI's real-Postgres db-tests job, not locally (no local
 # Postgres in this environment). Allows underscores and up to 20 chars,
 # double the longest real FAMILIES entry today, not an unlimited pattern.
-_FAMILY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
+# Widened again (cross-sectional rotation) after SECTOR_MOMENTUM_ROTATION
+# (24 chars), RELATIVE_STRENGTH_TOP3 (22), SECTOR_MEAN_REVERSION (21), and
+# EQUAL_WEIGHT_BASELINE (21) all exceeded the old 20-char cap -- same bug
+# class as the VOL_BREAKOUT fix above, caught this time before shipping
+# rather than after. 32 chars matches strategies.family's own VARCHAR(32)
+# width (migration 0015) so this regex can never accept a family name the
+# database would then reject.
+_FAMILY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,31}$")
 
 _UPSERT_COUNTER = text(
     """
