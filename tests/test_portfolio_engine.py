@@ -14,7 +14,11 @@ from prometheus.backtest.portfolio_engine import (
     weights_for_top_n_momentum,
 )
 from prometheus.data.schema import PointInTimeFrame
-from prometheus.strategy.rotation_spec import ROTATION_FAMILY_EQUAL_WEIGHT, RotationSpec
+from prometheus.strategy.rotation_spec import (
+    ROTATION_FAMILY_DUAL_MOMENTUM_GEM,
+    ROTATION_FAMILY_EQUAL_WEIGHT,
+    RotationSpec,
+)
 
 
 def test_weights_for_equal_weight_splits_evenly() -> None:
@@ -191,3 +195,48 @@ def test_gem_missing_defensive_leg_history_returns_empty() -> None:
         ["SPY", "EFA", "TLT"], bars_by_symbol, date(2020, 1, 1), lookback_days=5,
     )
     assert weights == {}
+
+
+def test_gem_dispatch_guard_fires_when_defensive_leg_ineligible() -> None:
+    # TLT (the real defensive leg, spec.universe[-1]) is never "listed"
+    # per membership -- it must never be silently swapped in for by
+    # eligible[-1] once _eligible_symbols drops it. SPY's own trailing
+    # return is negative at the rebalance, so if the guard were absent,
+    # `weights_for_dual_momentum_gem` would be called with
+    # eligible == ["SPY", "EFA"] and would mis-treat EFA (a real equity
+    # leg, +8% and rising) as the "defensive" fallback, returning
+    # {"EFA": 1.0} -- a real, nonzero position built on a
+    # misidentification. `_weights_for`'s guard must instead recognize
+    # TLT's absence from `eligible` and return {} (100% cash) before
+    # ever calling the family function, so the final result is flat
+    # despite EFA's large, real price move.
+    start = datetime(2020, 1, 1)
+    pit = _synthetic_pit(
+        {
+            "SPY": [100.0, 95.0, 90.0],   # -5% at rebalance, then further down
+            "EFA": [100.0, 108.0, 110.0],  # +8% at rebalance, then further up
+            "TLT": [100.0, 101.0, 102.0],
+        },
+        start,
+    )
+    membership = {
+        "SPY": (date(2019, 1, 1), None),
+        "EFA": (date(2019, 1, 1), None),
+        "TLT": (date(2020, 6, 1), None),  # listed well after this whole window
+    }
+    spec = RotationSpec(
+        family=ROTATION_FAMILY_DUAL_MOMENTUM_GEM,
+        universe=("SPY", "EFA", "TLT"),
+        timeframe="1d",
+        lookback_days=1,
+        rebalance_frequency_days=100,  # exactly one rebalance in this window
+        expected_horizon=21,
+    )
+    result = run_portfolio_backtest(
+        pit, spec, membership, start + timedelta(days=2),
+        cost_model=lambda notional: 0.0,
+    )
+    # If the guard were absent/wrong, EFA's real +10% move (108 -> 110
+    # post-rebalance) would show up as a nonzero return. Flat 0% proves
+    # the rebalance was honestly skipped instead.
+    assert result.total_return_pct == pytest.approx(0.0, abs=0.01)
