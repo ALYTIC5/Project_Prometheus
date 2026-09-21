@@ -119,7 +119,7 @@ class Strategy(Base):
     __tablename__ = "strategies"
 
     id: Mapped[str] = mapped_column(primary_key=True)
-    family: Mapped[str] = mapped_column(sa.String(16))
+    family: Mapped[str] = mapped_column(sa.String(32))
     spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(default="pending")
     created_at: Mapped[datetime] = mapped_column(
