@@ -11,6 +11,7 @@ from prometheus.backtest.portfolio_engine import (
     trailing_return,
     weights_for_dual_momentum_gem,
     weights_for_equal_weight,
+    weights_for_gtaa_sma,
     weights_for_top_n_momentum,
 )
 from prometheus.data.schema import PointInTimeFrame
@@ -240,3 +241,28 @@ def test_gem_dispatch_guard_fires_when_defensive_leg_ineligible() -> None:
     # post-rebalance) would show up as a nonzero return. Flat 0% proves
     # the rebalance was honestly skipped instead.
     assert result.total_return_pct == pytest.approx(0.0, abs=0.01)
+
+
+def test_gtaa_sma_holds_only_assets_above_their_own_sma() -> None:
+    dates = [datetime(2020, 1, i + 1) for i in range(4)]
+    bars_by_symbol = {
+        # SMA(3) as of day 4: mean(100,100,100)=100, close=110 -> above -> IN
+        "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 110.0]}),
+        # SMA(3) as of day 4: mean(100,100,100)=100, close=90 -> below -> OUT
+        "TLT": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 90.0]}),
+    }
+    weights = weights_for_gtaa_sma(
+        ["SPY", "TLT"], bars_by_symbol, date(2020, 1, 4), lookback_days=3,
+    )
+    # Each asset's SLICE is always 1/N of capital -- an OUT asset's slice
+    # is simply absent (cash), never redistributed to the IN asset.
+    assert weights == {"SPY": pytest.approx(0.5)}
+
+
+def test_gtaa_sma_all_out_returns_empty_weights() -> None:
+    dates = [datetime(2020, 1, i + 1) for i in range(4)]
+    bars_by_symbol = {
+        "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 90.0]}),
+    }
+    weights = weights_for_gtaa_sma(["SPY"], bars_by_symbol, date(2020, 1, 4), lookback_days=3)
+    assert weights == {}

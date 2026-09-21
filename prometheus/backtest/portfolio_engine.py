@@ -31,6 +31,7 @@ from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.rotation_spec import (
     ROTATION_FAMILY_DUAL_MOMENTUM_GEM,
     ROTATION_FAMILY_EQUAL_WEIGHT,
+    ROTATION_FAMILY_GTAA_SMA,
     ROTATION_FAMILY_RELATIVE_STRENGTH_TOP3,
     ROTATION_FAMILY_SECTOR_MEAN_REVERSION,
     ROTATION_FAMILY_SECTOR_MOMENTUM,
@@ -135,6 +136,36 @@ def weights_for_dual_momentum_gem(
     return {defensive_leg: 1.0}
 
 
+def weights_for_gtaa_sma(
+    eligible: list[str], bars_by_symbol: dict[str, pl.DataFrame], as_of: date, lookback_days: int,
+) -> dict[str, float]:
+    """Faber's own published GTAA rule (#53): each of `len(eligible)`
+    assets independently gets a FIXED 1/N slice of capital if its own
+    close is above its own trailing `lookback_days`-bar SMA, else that
+    slice is simply absent (cash) -- never redistributed to the assets
+    still in, unlike a ranking family's top-N reallocation. Each
+    symbol's in/out decision reads only that symbol's own bars, so
+    there is no cross-asset comparison. A symbol with fewer than
+    `lookback_days` available bars is skipped (its slice sits in cash)
+    -- an honestly-unjudged asset, not a fabricated in/out call. Empty
+    `eligible` -> empty weights (100% cash), same convention as
+    `weights_for_equal_weight`."""
+    if not eligible:
+        return {}
+    share = 1.0 / len(eligible)
+    weights: dict[str, float] = {}
+    for symbol in eligible:
+        bars = bars_by_symbol[symbol]
+        rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.min.time()))
+        if rows.height < lookback_days:
+            continue
+        closes: list[float] = rows["close"].to_list()
+        sma = sum(closes[-lookback_days:]) / lookback_days
+        if closes[-1] > sma:
+            weights[symbol] = share
+    return weights
+
+
 def _eligible_symbols(universe: tuple[str, ...], membership: Membership, as_of: date) -> list[str]:
     """Law 2: reconstruct membership as of `as_of`, not today's listing.
     A symbol absent from `membership` entirely is never eligible."""
@@ -156,11 +187,10 @@ def _weights_for(
     as_of: date,
 ) -> dict[str, float]:
     """Single dispatch point every family's weight function is called
-    through, keyed on spec.family. Tasks 5-6 add branches here for the
-    remaining two ROTATION_FAMILIES. `as_of` (not the loop's integer
-    index) is threaded through so ranking families can compute
-    `trailing_return` against real dates without reaching back into the
-    caller's loop state."""
+    through, keyed on spec.family. All 6 ROTATION_FAMILIES are wired
+    here. `as_of` (not the loop's integer index) is threaded through so
+    ranking families can compute `trailing_return` against real dates
+    without reaching back into the caller's loop state."""
     if spec.family == ROTATION_FAMILY_EQUAL_WEIGHT:
         return weights_for_equal_weight(eligible)
     if spec.family in (ROTATION_FAMILY_SECTOR_MOMENTUM, ROTATION_FAMILY_RELATIVE_STRENGTH_TOP3):
@@ -193,7 +223,12 @@ def _weights_for(
         if spec.universe[-1] not in eligible:
             return {}
         return weights_for_dual_momentum_gem(eligible, bars_by_symbol, as_of, lookback_days)
-    raise ValueError(f"no weight function wired for family {spec.family!r}")  # Task 6 extends this
+    if spec.family == ROTATION_FAMILY_GTAA_SMA:
+        lookback_days = spec.lookback_days
+        if lookback_days is None:
+            raise ValueError(f"family {spec.family!r} requires lookback_days")
+        return weights_for_gtaa_sma(eligible, bars_by_symbol, as_of, lookback_days)
+    raise ValueError(f"no weight function wired for family {spec.family!r}")
 
 
 def _rebalance_indices(num_dates: int, first_idx: int, rebalance_frequency_days: int) -> set[int]:
