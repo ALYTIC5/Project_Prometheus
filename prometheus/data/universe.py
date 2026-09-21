@@ -36,6 +36,25 @@ async def as_of(session: AsyncSession, as_of_date: date, asset_class: str) -> li
     return [row[0] for row in result.all()]
 
 
+async def membership_windows(
+    session: AsyncSession, asset_class: str, symbols: list[str]
+) -> dict[str, tuple[date, date | None]]:
+    """One (listed_at, delisted_at) window per symbol under
+    `asset_class`, fetched once so a caller doing point-in-time universe
+    reconstruction across many dates (run_portfolio_backtest's many
+    rebalance dates) does one query, not one per date. A symbol with no
+    matching row is absent from the result -- it was never part of this
+    asset class's universe at all, under any date."""
+    stmt = select(
+        UniverseMembership.symbol, UniverseMembership.listed_at, UniverseMembership.delisted_at
+    ).where(
+        UniverseMembership.asset_class == asset_class,
+        UniverseMembership.symbol.in_(symbols),
+    )
+    result = await session.execute(stmt)
+    return {row.symbol: (row.listed_at, row.delisted_at) for row in result.all()}
+
+
 async def sync_from_yaml(
     session: AsyncSession, path: str = _DEFAULT_UNIVERSE_YAML, *, asset_class: str
 ) -> int:
