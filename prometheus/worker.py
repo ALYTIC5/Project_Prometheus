@@ -73,6 +73,7 @@ from prometheus.core.cadence import (
 from prometheus.core.db import get_session
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed, rng_for
+from prometheus.data.ingest_etf import backfill_etf
 from prometheus.data.ingestion import backfill, load_universe_symbols
 from prometheus.data.loaders import load_point_in_time
 from prometheus.experiments.ablation import (
@@ -87,9 +88,11 @@ from prometheus.experiments.queue import enqueue, get_queue_settings, reap_stale
 from prometheus.experiments.runner import (
     drain_queue,
     enqueue_baseline_grid,
+    enqueue_rotation_grid,
     enqueue_specs,
     latest_experiment_id_for_spec,
     validate_baseline_grid,
+    validate_rotation_specs,
     validate_specs,
 )
 from prometheus.paper.broker import PaperBroker
@@ -122,6 +125,7 @@ from prometheus.research.population import (
     select_for_exploration,
 )
 from prometheus.research.prioritisation import ParentContext, expected_information_value
+from prometheus.research.rotation_generate import ROTATION_GRID_GENERATORS
 from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.spec import FAMILIES, StrategySpec
 
@@ -357,6 +361,16 @@ async def _run_ingest() -> None:
     # run_once()'s top so it runs every tick regardless of cadence; see
     # that function for the full reasoning.
     await backfill(_INGEST_CATCHUP_DAYS)
+    # Cross-sectional rotation families (sector/GEM/GTAA) trade a FIXED
+    # ETF universe, not the crypto universe backfill() above covers --
+    # without this, ohlcv_bars never gets ETF rows and every rotation
+    # run_one raises ValueError("not enough bars"), harmlessly but
+    # pointlessly, every research cycle. Same _INGEST_CATCHUP_DAYS window
+    # as the crypto backfill above for consistency, and because it
+    # matches _GRID_LOOKBACK_DAYS -- the rotation grid's own lookback --
+    # for the same "wide enough that a fresh DB always has enough bars"
+    # reasoning documented on _INGEST_CATCHUP_DAYS itself.
+    await backfill_etf(_INGEST_CATCHUP_DAYS)
 
 
 async def _run_llm_ingestion() -> list[str]:
@@ -479,6 +493,19 @@ async def _run_research() -> list[str]:
                 priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
             )
 
+    # Cross-sectional rotation families (sector momentum, relative
+    # strength, sector mean reversion, dual momentum, GTAA, equal-weight
+    # baseline): each generator carries its OWN fixed universe, unlike
+    # the per-symbol crypto grids above, so this runs once per family
+    # per cycle -- outside the `for symbol in symbols:` loop, not once
+    # per crypto symbol (that would be redundant: the same fixed ETF
+    # universe enqueued len(symbols) times over).
+    for generate_rotation_grid in ROTATION_GRID_GENERATORS:
+        await enqueue_rotation_grid(
+            generate_rotation_grid, _GRID_LOOKBACK_DAYS,
+            priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
+        )
+
     ran = await drain_queue()
 
     # The Oracle (PROMPTS.md PROMPT 5): re-scores every symbol's grid
@@ -500,6 +527,16 @@ async def _run_research() -> list[str]:
                         generate_ml_grid(symbol, _TIMEFRAME), _GRID_LOOKBACK_DAYS,
                     )
                 )
+
+        # Same fixed-universe-per-family reasoning as the enqueue loop
+        # above: outside the `for symbol in symbols:` loop, once per
+        # rotation family per cycle, not once per crypto symbol.
+        for generate_rotation_grid in ROTATION_GRID_GENERATORS:
+            validated.extend(
+                await validate_rotation_specs(
+                    session, generate_rotation_grid(), _GRID_LOOKBACK_DAYS
+                )
+            )
 
     # PROMPT 7: one bounded evolution step, after validate_grid so this
     # cycle's mutation/crossover parents are selected using freshly
