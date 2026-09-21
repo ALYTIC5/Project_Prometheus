@@ -1,0 +1,24 @@
+# Fixed OpenAlex query set for research/sources/openalex.py's search_openalex.
+# Fixed here, not derived from strategy state -- same "ingestion must not
+# depend on research outcomes" rule worker.py's own arXiv query constant
+# already follows (see worker.py's _LLM_ARXIV_QUERY comment).
+#
+# Not yet read by worker.py: OpenAlex ingestion's DB-write path is blocked
+# on a research_papers schema migration (no DOI/publication_date/
+# cited_by_count/source/oa_pdf_url columns exist yet -- see docs/DEFERRED.md).
+# This file exists so the query set itself is pre-registered before any
+# ingestion runs, same discipline as docs/strategies/README.md's
+# pre-registration convention.
+schema_version: 1
+queries:
+  - query: "momentum anomaly equity returns"
+    source_id: null
+  - query: "mean reversion trading strategy"
+    source_id: null
+  - query: "cross-sectional stock return predictability"
+    source_id: null
+  - query: "algorithmic trading strategy backtesting"
+    source_id: "S4210172589"  # SSRN
+  - query: "factor investing machine learning"
+    source_id: "S4210172589"  # SSRN
+max_results_per_query: 10
