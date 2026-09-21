@@ -1,7 +1,7 @@
 """tests/test_portfolio_engine.py"""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import polars as pl
 import pytest
@@ -99,7 +99,7 @@ def test_equal_weight_two_symbols_no_rebalance_drift_matches_hand_calc() -> None
     # buy-and-hold-of-equal-weight drift with a hand-computable answer:
     # start $1000 equally split ($500/$500), zero cost model, B's leg
     # grows 10% -> $550, A's leg flat -> $500, total $1050 = +5.0%.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {"A": [100.0] * 6, "B": [100.0, 100.0, 100.0, 100.0, 100.0, 110.0]}, start
     )
@@ -124,7 +124,7 @@ def test_equal_weight_two_symbols_no_rebalance_drift_matches_hand_calc() -> None
 def test_equal_weight_excludes_symbol_before_its_listed_at() -> None:
     # B isn't "listed" (per membership) until day 3 -- a rebalance at
     # day 0 must be 100% A, not split with a not-yet-eligible B.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit({"A": [100.0] * 4, "B": [100.0] * 4}, start)
     membership = {
         "A": (date(2019, 1, 1), None),
@@ -149,13 +149,13 @@ def test_equal_weight_excludes_symbol_before_its_listed_at() -> None:
 
 def test_trailing_return_none_when_insufficient_history() -> None:
     bars = pl.DataFrame(
-        {"available_at": _lagged_days(datetime(2020, 1, 1), 2), "close": [100.0, 101.0]}
+        {"available_at": _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 2), "close": [100.0, 101.0]}
     )
     assert trailing_return(bars, date(2020, 1, 2), lookback_days=10) is None
 
 
 def test_trailing_return_computes_pct_change_over_lookback() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 5)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 5)
     closes = [100.0, 101.0, 102.0, 103.0, 110.0]
     bars = pl.DataFrame({"available_at": dates, "close": closes})
     # From day 1 (100.0) to day 5 (110.0), lookback_days=4 (index span).
@@ -172,7 +172,7 @@ def test_trailing_return_counts_the_bar_dated_as_of_despite_its_availability_lag
     production while every midnight-stamped test fixture still passed."""
     bars = pl.DataFrame(
         {
-            "available_at": _lagged_days(datetime(2020, 1, 1), 5),
+            "available_at": _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 5),
             "close": [100.0, 101.0, 102.0, 103.0, 110.0],
         }
     )
@@ -183,7 +183,7 @@ def test_trailing_return_counts_the_bar_dated_as_of_despite_its_availability_lag
 
 
 def test_weights_for_top_n_momentum_picks_best_n_equal_weighted() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 2)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 2)
     bars_by_symbol = {
         "A": pl.DataFrame({"available_at": dates, "close": [100.0, 105.0]}),  # +5%
         "B": pl.DataFrame({"available_at": dates, "close": [100.0, 90.0]}),   # -10%
@@ -198,7 +198,7 @@ def test_weights_for_top_n_momentum_picks_best_n_equal_weighted() -> None:
 
 
 def test_weights_for_top_n_momentum_worst_picks_bottom_n() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 2)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 2)
     bars_by_symbol = {
         "A": pl.DataFrame({"available_at": dates, "close": [100.0, 105.0]}),
         "B": pl.DataFrame({"available_at": dates, "close": [100.0, 90.0]}),
@@ -213,7 +213,7 @@ def test_weights_for_top_n_momentum_worst_picks_bottom_n() -> None:
 
 
 def test_weights_for_top_n_momentum_fewer_eligible_than_top_n_uses_all_eligible() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 2)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 2)
     bars_by_symbol = {
         "A": pl.DataFrame({"available_at": dates, "close": [100.0, 105.0]}),
     }
@@ -224,7 +224,7 @@ def test_weights_for_top_n_momentum_fewer_eligible_than_top_n_uses_all_eligible(
 
 
 def test_gem_picks_stronger_positive_equity_leg() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 2)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 2)
     bars_by_symbol = {
         "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 110.0]}),  # +10%
         "EFA": pl.DataFrame({"available_at": dates, "close": [100.0, 103.0]}),  # +3%
@@ -237,7 +237,7 @@ def test_gem_picks_stronger_positive_equity_leg() -> None:
 
 
 def test_gem_falls_back_to_defensive_when_both_equity_legs_negative() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 2)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 2)
     bars_by_symbol = {
         "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 95.0]}),   # -5%
         "EFA": pl.DataFrame({"available_at": dates, "close": [100.0, 90.0]}),   # -10%, worse
@@ -252,7 +252,7 @@ def test_gem_falls_back_to_defensive_when_both_equity_legs_negative() -> None:
 def test_gem_missing_defensive_leg_history_returns_empty() -> None:
     # If even the defensive leg lacks lookback history, no honest
     # decision can be made this cycle -- empty (100% cash), not a crash.
-    dates = _lagged_days(datetime(2020, 1, 1), 1)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 1)
     bars_by_symbol = {
         "SPY": pl.DataFrame({"available_at": dates, "close": [100.0]}),
         "EFA": pl.DataFrame({"available_at": dates, "close": [100.0]}),
@@ -277,7 +277,7 @@ def test_gem_dispatch_guard_fires_when_defensive_leg_ineligible() -> None:
     # TLT's absence from `eligible` and return {} (100% cash) before
     # ever calling the family function, so the final result is flat
     # despite EFA's large, real price move.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {
             "SPY": [100.0, 95.0, 90.0],   # -5% at rebalance, then further down
@@ -310,7 +310,7 @@ def test_gem_dispatch_guard_fires_when_defensive_leg_ineligible() -> None:
 
 
 def test_gtaa_sma_holds_only_assets_above_their_own_sma() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 4)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 4)
     bars_by_symbol = {
         # Anchor-inclusive SMA(3) as of day 4 (closes[-3:] = last 3
         # closes, including the anchor bar itself): mean(100,100,110)
@@ -329,7 +329,7 @@ def test_gtaa_sma_holds_only_assets_above_their_own_sma() -> None:
 
 
 def test_gtaa_sma_all_out_returns_empty_weights() -> None:
-    dates = _lagged_days(datetime(2020, 1, 1), 4)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 4)
     bars_by_symbol = {
         "SPY": pl.DataFrame({"available_at": dates, "close": [100.0, 100.0, 100.0, 90.0]}),
     }
@@ -343,7 +343,7 @@ def test_gtaa_sma_uses_anchor_inclusive_window_not_anchor_exclusive() -> None:
     # anchor-exclusive SMA (the 3 bars strictly BEFORE the anchor)
     # disagree on the IN/OUT verdict -- pinning down which convention
     # is actually implemented, rather than relying on both agreeing.
-    dates = _lagged_days(datetime(2020, 1, 1), 4)
+    dates = _lagged_days(datetime(2020, 1, 1, tzinfo=UTC), 4)
     # closes: day1=50, day2=110, day3=110, day4(anchor/close)=105.
     bars_by_symbol = {
         "GLD": pl.DataFrame({"available_at": dates, "close": [50.0, 110.0, 110.0, 105.0]}),
@@ -391,7 +391,7 @@ def test_sector_momentum_rotation_end_to_end_holds_only_the_strongest() -> None:
     #   B: 100 ->  90 = -10%
     #   C: 100 -> 110 = +10%
     # Day 3: A moves 120 -> 132 (+10%). 1,000 fully in A -> 1,100.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {
             "A": [100.0, 100.0, 120.0, 132.0],
@@ -424,7 +424,7 @@ def test_relative_strength_top3_end_to_end_splits_across_the_best_three() -> Non
     # Day 3: A +10% (120 -> 132), B and C flat, D doubles (90 -> 180).
     # 333.33*1.1 + 333.33 + 333.33 = 1,033.33 -> +10/3 %.
     # D's doubling must not appear anywhere in the result.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {
             "A": [100.0, 100.0, 120.0, 132.0],
@@ -455,7 +455,7 @@ def test_sector_mean_reversion_end_to_end_holds_the_worst_performer() -> None:
     # day 2, B is the WORST (-20%) and is the single holding. Day 3 it
     # rebounds 80 -> 88 (+10%) -> 1,100. If this family accidentally
     # ranked best-first it would hold A (flat on day 3) and return 0%.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {
             "A": [100.0, 100.0, 120.0, 120.0],
@@ -490,7 +490,7 @@ def test_gtaa_sma_timing_end_to_end_leaves_an_out_asset_slice_in_cash() -> None:
     # Day 4: A 130 -> 143 (+10%) -> 550 + 500 cash = 1,050 = +5%.
     # B doubles on day 4 (90 -> 180) and must contribute nothing; a
     # redistributing implementation would instead show +10%.
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {
             "A": [100.0, 100.0, 100.0, 130.0, 143.0],
@@ -522,7 +522,7 @@ def test_run_portfolio_backtest_raises_when_history_is_shorter_than_lookback() -
     equivalent situation; this engine must too, so
     experiments.failure.classify_exception can class it
     INSUFFICIENT_DATA."""
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit({"A": [100.0, 101.0, 102.0], "B": [100.0, 101.0, 102.0]}, start)
     spec = RotationSpec(
         family=ROTATION_FAMILY_SECTOR_MOMENTUM,
@@ -556,7 +556,7 @@ def test_symbol_whose_bars_stop_is_released_to_cash_not_frozen_in_the_allocation
     baseline is the spec's own designated benchmark for every other
     rotation family, so a frozen leg here silently distorts every
     family's comparison."""
-    start = datetime(2020, 1, 1)
+    start = datetime(2020, 1, 1, tzinfo=UTC)
     pit = _synthetic_pit(
         {
             "A": [100.0, 100.0, 100.0, 200.0],

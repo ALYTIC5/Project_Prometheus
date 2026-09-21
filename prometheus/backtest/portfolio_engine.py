@@ -16,7 +16,7 @@ See docs/superpowers/specs/2026-09-21-cross-sectional-rotation-design.md.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import polars as pl
 
@@ -71,7 +71,9 @@ def trailing_return(bars: pl.DataFrame, as_of: date, lookback_days: int) -> floa
     whose `available_at` falls on a date AFTER `as_of` -- only bars
     dated `as_of` itself, whatever time of day their availability
     lag lands on."""
-    rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.max.time()))
+    rows = bars.filter(
+        pl.col("available_at") <= datetime.combine(as_of, datetime.max.time(), UTC)
+    )
     if rows.height <= lookback_days:
         return None
     closes: list[float] = rows["close"].to_list()
@@ -172,7 +174,9 @@ def weights_for_gtaa_sma(
     weights: dict[str, float] = {}
     for symbol in eligible:
         bars = bars_by_symbol[symbol]
-        rows = bars.filter(pl.col("available_at") <= datetime.combine(as_of, datetime.max.time()))
+        rows = bars.filter(
+        pl.col("available_at") <= datetime.combine(as_of, datetime.max.time(), UTC)
+    )
         if rows.height < lookback_days:
             continue
         closes: list[float] = rows["close"].to_list()

@@ -593,3 +593,21 @@ change).
   migration plus a change to every read path
   (`api/routes/world.py`'s benchmark drilldown, the dashboard's
   benchmark chart) and wants its own spec.
+
+- **I6: a rotation strategy can reach CHAMPION and appear on
+  `GET /paper/` with a permanently empty equity curve.** `elect_champions`
+  is family-agnostic and doesn't exclude `ROTATION_FAMILIES` --
+  `api/routes/paper.py` and `worker.py`'s `_run_paper` were fixed (final
+  review's C1) to handle a rotation-family CHAMPION row gracefully rather
+  than crash, but neither excludes it from CHAMPION status itself. The
+  curve is honestly empty (no fills exist, since rotation strategies have
+  no paper-trading execution path -- see the design doc's own explicit
+  "Explicitly out of scope for this pass: Live paper-trading execution"
+  section), not fabricated, so this is a display gap, not a correctness
+  bug. **Trigger:** either wire real multi-leg paper execution for
+  rotation strategies (a new order-diffing generator, same fork
+  `paper/execution.py`'s single-symbol logic already needs generalizing
+  for), or exclude `ROTATION_FAMILIES` from `elect_champions` explicitly
+  until that execution path exists -- a real behavior decision on the
+  function that gates live paper trading, deliberately not made
+  unattended in the final-review fix wave.
