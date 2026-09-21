@@ -26,6 +26,27 @@ _RANDOM_FOREST = StrategySpec(
     rf_train_window=40, rf_retrain_interval=10, rf_predict_threshold=0.5,
     expected_horizon=1,
 )
+_GRADIENT_BOOSTING = StrategySpec(
+    family="GRADIENT_BOOSTING", symbol="BTC/USDT", timeframe="1d",
+    gb_train_window=40, gb_retrain_interval=10, gb_predict_threshold=0.5,
+    expected_horizon=1,
+)
+_LOGISTIC_REGRESSION = StrategySpec(
+    family="LOGISTIC_REGRESSION", symbol="BTC/USDT", timeframe="1d",
+    lr_train_window=40, lr_retrain_interval=10, lr_predict_threshold=0.5,
+    expected_horizon=1,
+)
+_SVM = StrategySpec(
+    family="SVM", symbol="BTC/USDT", timeframe="1d",
+    svm_train_window=40, svm_retrain_interval=10, svm_predict_threshold=0.5,
+    expected_horizon=1,
+)
+_ML_SPECS = {
+    "RANDOM_FOREST": (_RANDOM_FOREST, "rf_predict_threshold"),
+    "GRADIENT_BOOSTING": (_GRADIENT_BOOSTING, "gb_predict_threshold"),
+    "LOGISTIC_REGRESSION": (_LOGISTIC_REGRESSION, "lr_predict_threshold"),
+    "SVM": (_SVM, "svm_predict_threshold"),
+}
 
 
 def test_with_updates_rejects_an_invalid_update() -> None:
@@ -105,33 +126,38 @@ def test_swap_family_never_picks_the_same_family() -> None:
         assert mutation.child.family != "MOMENTUM"
 
 
-def test_parameter_tune_can_succeed_on_rf_predict_threshold() -> None:
-    """rf_predict_threshold's entire valid range (0, 1) lies below
-    _clamp_positive's old floor of 1.0 -- before the fix, every tune of
-    this field clamped to exactly 1.0, which spec.py's own validator
-    rejects (0.0 < rf_predict_threshold < 1.0), exhausting all 5 retries
-    and returning None every time. After the fix, at least one seed (of
-    many, since which field parameter_tune picks is itself random) must
-    produce a real mutation with a threshold still strictly inside
-    (0, 1)."""
+@pytest.mark.parametrize("family", list(_ML_SPECS))
+def test_parameter_tune_can_succeed_on_predict_threshold_every_ml_family(family) -> None:
+    """Every *_predict_threshold field's entire valid range (0, 1) lies
+    below _clamp_positive's old floor of 1.0 -- before the fix, every
+    tune of this field clamped to exactly 1.0, which spec.py's own
+    validator rejects, exhausting all 5 retries and returning None every
+    time. After the fix, at least one seed (of many, since which field
+    parameter_tune picks is itself random) must produce a real mutation
+    with a threshold still strictly inside (0, 1), for every ML family
+    sharing this shape, not just RANDOM_FOREST."""
+    spec, threshold_field = _ML_SPECS[family]
     field_was_tuned = False
     for seed in range(200):
-        mutation = parameter_tune(_RANDOM_FOREST, rng_for(seed))
-        if mutation is None or mutation.change_set["field"] != "rf_predict_threshold":
+        mutation = parameter_tune(spec, rng_for(seed))
+        if mutation is None or mutation.change_set["field"] != threshold_field:
             continue
         field_was_tuned = True
-        new_threshold = mutation.child.rf_predict_threshold
+        new_threshold = getattr(mutation.child, threshold_field)
         assert new_threshold is not None
         assert 0.0 < new_threshold < 1.0
-    assert field_was_tuned, "rf_predict_threshold was never successfully tuned across 200 seeds"
+    assert field_was_tuned, f"{threshold_field} was never successfully tuned across 200 seeds"
 
 
-def test_swap_family_returns_none_for_random_forest_spec() -> None:
-    """RANDOM_FOREST is deliberately excluded from FAMILIES (spec.py) so
-    it is never a swap TARGET; swap_family must also refuse to use it as
-    a swap SOURCE -- an RF spec has no valid swap target in the
-    baseline-family ecosystem swap_family operates over, regardless of
-    seed or what templates are available."""
+@pytest.mark.parametrize("family", list(_ML_SPECS))
+def test_swap_family_returns_none_for_every_ml_family_spec(family) -> None:
+    """Every ML family (RANDOM_FOREST/GRADIENT_BOOSTING/
+    LOGISTIC_REGRESSION/SVM) is deliberately excluded from FAMILIES
+    (spec.py) so none is ever a swap TARGET; swap_family must also
+    refuse to use any of them as a swap SOURCE -- none has a valid swap
+    target in the baseline-family ecosystem swap_family operates over,
+    regardless of seed or what templates are available."""
+    spec, _threshold_field = _ML_SPECS[family]
     for seed in range(50):
-        mutation = swap_family(_RANDOM_FOREST, rng_for(seed), seed_specs_by_family=_TEMPLATES)
+        mutation = swap_family(spec, rng_for(seed), seed_specs_by_family=_TEMPLATES)
         assert mutation is None

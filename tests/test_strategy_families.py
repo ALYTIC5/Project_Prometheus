@@ -1,5 +1,6 @@
-"""backtest/engine.py's BOLLINGER, VOL_BREAKOUT, RSI, and MACD signal
-generators (PROMPT 6's classic templates, RSI/MACD added later with the
+"""backtest/engine.py's BOLLINGER, VOL_BREAKOUT, RSI, MACD, STOCHASTIC,
+PARABOLIC_SAR, and KELTNER signal generators (PROMPT 6's classic
+templates; every family after the first three added later with the
 same justification). Real synthetic price paths, same _bar_row pattern
 tests/test_null_strategies.py already establishes."""
 from __future__ import annotations
@@ -56,6 +57,40 @@ def _macd_spec(fast: int = 12, slow: int = 26, signal: int = 9) -> StrategySpec:
         macd_slow=slow,
         macd_signal=signal,
         expected_horizon=slow,
+    )
+
+
+def _stochastic_spec(lookback: int = 14, oversold: float = 20.0) -> StrategySpec:
+    return StrategySpec(
+        family="STOCHASTIC",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        stoch_lookback=lookback,
+        stoch_oversold=oversold,
+        expected_horizon=lookback,
+    )
+
+
+def _sar_spec(af_start: float = 0.02, af_increment: float = 0.02, af_max: float = 0.2) -> StrategySpec:
+    return StrategySpec(
+        family="PARABOLIC_SAR",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        sar_af_start=af_start,
+        sar_af_increment=af_increment,
+        sar_af_max=af_max,
+        expected_horizon=10,
+    )
+
+
+def _keltner_spec(lookback: int = 20, multiplier: float = 2.0) -> StrategySpec:
+    return StrategySpec(
+        family="KELTNER",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        keltner_lookback=lookback,
+        keltner_multiplier=multiplier,
+        expected_horizon=lookback,
     )
 
 
@@ -229,7 +264,103 @@ def test_macd_no_lookahead_planted_future_spike_is_unreachable() -> None:
     assert all(p == 0.0 for p in positions_before_plant)
 
 
-def test_engine_agrees_with_signal_for_across_all_five_families() -> None:
+def test_stochastic_never_dipping_never_trades() -> None:
+    bars = _flat_bars(40)
+    spec = _stochastic_spec()
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover == 0.0
+    assert result.total_return_pct == 0.0
+
+
+def test_stochastic_enters_long_on_a_real_dip() -> None:
+    prices = [100.0] * 15 + [80.0] * 5 + [100.0] * 15
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _stochastic_spec(lookback=14, oversold=20.0)
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, rows[-1]["available_at"])
+    assert result.turnover > 0.0
+
+
+def test_stochastic_no_lookahead_planted_future_dip_is_unreachable() -> None:
+    prices = [100.0] * 30 + [1.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _stochastic_spec(lookback=14, oversold=20.0)
+    signaled = signal_for(bars, spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    assert all(p == 0.0 for p in positions_before_plant)
+
+
+def test_sar_starts_long_and_flips_on_a_real_breakdown() -> None:
+    """A sustained uptrend keeps SAR in an uptrend (position 1.0);
+    a sharp, sustained breakdown must flip it to downtrend (0.0) --
+    proving the reversal condition actually fires, not just the
+    always-long default."""
+    prices = [100.0 + i for i in range(20)] + [120.0 - i * 3 for i in range(1, 16)]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _sar_spec()
+    signaled = signal_for(bars, spec)
+    positions = signaled["position"].to_list()
+    assert positions[5] == 1.0
+    assert positions[-1] == 0.0
+
+
+def test_sar_no_lookahead_planted_future_spike_is_unreachable() -> None:
+    prices = [100.0] * 30 + [1000.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _sar_spec()
+    signaled = signal_for(bars, spec)
+    baseline_rows = [_bar_row(_SYMBOL, i, 100.0) for i in range(31)]
+    baseline_signaled = signal_for(pl.DataFrame(baseline_rows), spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    baseline_positions_before_plant = baseline_signaled["position"].to_list()[:-1]
+    assert positions_before_plant == baseline_positions_before_plant
+
+
+def test_keltner_never_breaking_out_never_trades() -> None:
+    bars = _flat_bars(40)
+    spec = _keltner_spec()
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover == 0.0
+    assert result.total_return_pct == 0.0
+
+
+def test_keltner_enters_long_on_a_real_breakout_and_persists() -> None:
+    prices = [100.0] * 25 + [150.0] + [150.0] * 14
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _keltner_spec(lookback=20, multiplier=1.5)
+    signaled = signal_for(bars, spec)
+    positions = signaled["position"].to_list()
+    assert sum(positions) > 0.0
+    assert positions[-1] == 1.0
+
+
+def test_keltner_exits_on_a_real_breakdown() -> None:
+    prices = [100.0] * 25 + [150.0] * 15 + [50.0] * 15
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _keltner_spec(lookback=20, multiplier=1.5)
+    signaled = signal_for(bars, spec)
+    assert signaled["position"].to_list()[-1] == 0.0
+
+
+def test_keltner_no_lookahead_planted_future_breakout_is_unreachable() -> None:
+    prices = [100.0] * 30 + [1000.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _keltner_spec(lookback=20, multiplier=1.5)
+    signaled = signal_for(bars, spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    assert all(p == 0.0 for p in positions_before_plant)
+
+
+def test_engine_agrees_with_signal_for_across_all_eight_families() -> None:
     """run_backtest's own turnover must equal the sum of |position
     changes| in signal_for()'s own output -- a real end-to-end
     consistency check that the engine trades exactly the position series
@@ -238,7 +369,10 @@ def test_engine_agrees_with_signal_for_across_all_five_families() -> None:
     rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
     bars = pl.DataFrame(rows)
     pit = PointInTimeFrame(bars)
-    for spec in (_bollinger_spec(), _breakout_spec(), _rsi_spec(), _macd_spec()):
+    for spec in (
+        _bollinger_spec(), _breakout_spec(), _rsi_spec(), _macd_spec(),
+        _stochastic_spec(), _sar_spec(), _keltner_spec(),
+    ):
         result = run_backtest(pit, spec, rows[-1]["available_at"])
         positions = signal_for(bars, spec)["position"].to_list()
         expected_turnover = sum(

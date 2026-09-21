@@ -37,14 +37,25 @@ from prometheus.backtest.benchmark import (
     compute_vs_benchmark,
 )
 from prometheus.backtest.costs import CostModel, apply_cost
-from prometheus.backtest.ml_signal import random_forest_signal
+from prometheus.backtest.ml_signal import (
+    gradient_boosting_signal,
+    logistic_regression_signal,
+    random_forest_signal,
+    svm_signal,
+)
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
     FAMILY_BOLLINGER,
+    FAMILY_GRADIENT_BOOSTING,
+    FAMILY_KELTNER,
+    FAMILY_LOGISTIC_REGRESSION,
     FAMILY_MACD,
     FAMILY_MOMENTUM,
+    FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
     FAMILY_RSI,
+    FAMILY_STOCHASTIC,
+    FAMILY_SVM,
     FAMILY_VOL_BREAKOUT,
     StrategySpec,
 )
@@ -225,6 +236,147 @@ def _macd_signal(bars: pl.DataFrame, fast: int, slow: int, signal: int) -> pl.Da
     )
 
 
+def _stochastic_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """Lane's own Stochastic Oscillator: %K = 100 * (close - lowest_low_n)
+    / (highest_high_n - lowest_low_n). Long whenever %K drops below the
+    oversold threshold, flat otherwise -- a fresh condition re-evaluated
+    every bar, same stateless shape as _rsi_signal, just a different
+    oscillator. Same shift(1) discipline: the raw condition uses today's
+    own high/low/close, then the whole condition is shifted one bar
+    before it becomes an execution position.
+
+    A flat, never-moving price series makes highest_high == lowest_low,
+    so %K is 0/0 == NaN in polars -- `NaN < oversold` is false for every
+    bar, the same "never trades on flat prices" behavior every other
+    family's null case exercises."""
+    return (
+        bars.with_columns(
+            pl.col("high").rolling_max(lookback).alias("_highest_high"),
+            pl.col("low").rolling_min(lookback).alias("_lowest_low"),
+        )
+        .with_columns(
+            (
+                100.0
+                * (pl.col("close") - pl.col("_lowest_low"))
+                / (pl.col("_highest_high") - pl.col("_lowest_low"))
+            ).alias("_pct_k")
+        )
+        .with_columns(
+            (pl.col("_pct_k") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _parabolic_sar_signal(
+    bars: pl.DataFrame, af_start: float, af_increment: float, af_max: float
+) -> pl.DataFrame:
+    """Wilder's own Parabolic SAR ("New Concepts in Technical Trading
+    Systems", 1978): a trend-following stop-and-reverse whose stop level
+    accelerates toward price as the trend extends. Genuinely sequential
+    -- SAR_i depends on SAR_{i-1}, the current trend direction, and the
+    running extreme point, none of which are expressible as a pure
+    column expression -- so, like ml_signal.py's walk-forward loop, this
+    is computed with a real Python loop over numpy arrays, not a polars
+    expression chain.
+
+    Long-only mapping: uptrend -> position 1.0, downtrend -> position
+    0.0 (this backtest engine has no short leg). The raw trend for bar i
+    is decided using bar i's own high/low (Wilder's own reversal check
+    compares today's extreme against yesterday's SAR); the final
+    shift(1) then means today's DECIDED trend becomes tomorrow's held
+    position, same discipline every other family's signal ends with."""
+    highs = bars["high"].to_numpy()
+    lows = bars["low"].to_numpy()
+    n = len(highs)
+    raw = [0.0] * n
+    if n < 2:
+        return bars.with_columns(pl.Series("position", raw))
+
+    uptrend = True
+    sar = float(lows[0])
+    ep = float(highs[0])
+    af = af_start
+    raw[0] = 1.0
+
+    for i in range(1, n):
+        sar = sar + af * (ep - sar)
+        if uptrend:
+            floor_low = lows[i - 2] if i >= 2 else lows[i - 1]
+            sar = min(sar, float(lows[i - 1]), float(floor_low))
+            if lows[i] < sar:
+                uptrend = False
+                sar = ep
+                ep = float(lows[i])
+                af = af_start
+            elif highs[i] > ep:
+                ep = float(highs[i])
+                af = min(af + af_increment, af_max)
+        else:
+            ceil_high = highs[i - 2] if i >= 2 else highs[i - 1]
+            sar = max(sar, float(highs[i - 1]), float(ceil_high))
+            if highs[i] > sar:
+                uptrend = True
+                sar = ep
+                ep = float(highs[i])
+                af = af_start
+            elif lows[i] < ep:
+                ep = float(lows[i])
+                af = min(af + af_increment, af_max)
+        raw[i] = 1.0 if uptrend else 0.0
+
+    raw_series = pl.Series("_raw_trend", raw)
+    return bars.with_columns(raw_series.shift(1).fill_null(0.0).alias("position"))
+
+
+def _keltner_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.DataFrame:
+    """Keltner Channel breakout: an ATR-normalized volatility band around
+    an EMA midline (Chester Keltner's original construction, with Linda
+    Bradford Raschke's later ATR-based band width, which is the variant
+    in standard use today). Same Turtle-style entry/persist/exit shape
+    _vol_breakout_signal uses: enter long on a close above the upper
+    band, exit on a close back below the midline EMA, otherwise persist
+    the previous position.
+
+    True range and the midline EMA are both computed from today's own
+    high/low/close (matching every other family's "raw condition uses
+    today's own bar" convention); the whole resulting position series
+    still gets the same overall shift(1) discipline every other family
+    ends with."""
+    prev_close = pl.col("close").shift(1)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    return (
+        bars.with_columns(
+            pl.col("close").ewm_mean(span=lookback, adjust=False).alias("_mid"),
+            true_range.ewm_mean(span=lookback, adjust=False).alias("_atr"),
+        )
+        .with_columns((pl.col("_mid") + multiplier * pl.col("_atr")).alias("_upper"))
+        .with_columns(
+            pl.when(pl.col("close") > pl.col("_upper"))
+            .then(1.0)
+            .when(pl.col("close") < pl.col("_mid"))
+            .then(0.0)
+            .otherwise(None)
+            .alias("_raw_signal")
+        )
+        .with_columns(
+            pl.col("_raw_signal")
+            .forward_fill()
+            .fill_null(0.0)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
 def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     """Public seam validation/metrics.py's information-coefficient
     calculation needs: IC is a property of the SIGNAL (does it predict
@@ -259,6 +411,46 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
         return random_forest_signal(
             bars, spec.rf_train_window, spec.rf_retrain_interval, spec.rf_predict_threshold
         )
+    if spec.family == FAMILY_GRADIENT_BOOSTING:
+        assert (
+            spec.gb_train_window is not None
+            and spec.gb_retrain_interval is not None
+            and spec.gb_predict_threshold is not None
+        )
+        return gradient_boosting_signal(
+            bars, spec.gb_train_window, spec.gb_retrain_interval, spec.gb_predict_threshold
+        )
+    if spec.family == FAMILY_LOGISTIC_REGRESSION:
+        assert (
+            spec.lr_train_window is not None
+            and spec.lr_retrain_interval is not None
+            and spec.lr_predict_threshold is not None
+        )
+        return logistic_regression_signal(
+            bars, spec.lr_train_window, spec.lr_retrain_interval, spec.lr_predict_threshold
+        )
+    if spec.family == FAMILY_SVM:
+        assert (
+            spec.svm_train_window is not None
+            and spec.svm_retrain_interval is not None
+            and spec.svm_predict_threshold is not None
+        )
+        return svm_signal(
+            bars, spec.svm_train_window, spec.svm_retrain_interval, spec.svm_predict_threshold
+        )
+    if spec.family == FAMILY_STOCHASTIC:
+        assert spec.stoch_lookback is not None and spec.stoch_oversold is not None
+        return _stochastic_signal(bars, spec.stoch_lookback, spec.stoch_oversold)
+    if spec.family == FAMILY_PARABOLIC_SAR:
+        assert (
+            spec.sar_af_start is not None
+            and spec.sar_af_increment is not None
+            and spec.sar_af_max is not None
+        )
+        return _parabolic_sar_signal(bars, spec.sar_af_start, spec.sar_af_increment, spec.sar_af_max)
+    if spec.family == FAMILY_KELTNER:
+        assert spec.keltner_lookback is not None and spec.keltner_multiplier is not None
+        return _keltner_signal(bars, spec.keltner_lookback, spec.keltner_multiplier)
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -286,6 +478,23 @@ def _min_bars_for(spec: StrategySpec) -> int:
     if spec.family == FAMILY_RANDOM_FOREST:
         assert spec.rf_train_window is not None
         return spec.rf_train_window + 30
+    if spec.family == FAMILY_GRADIENT_BOOSTING:
+        assert spec.gb_train_window is not None
+        return spec.gb_train_window + 30
+    if spec.family == FAMILY_LOGISTIC_REGRESSION:
+        assert spec.lr_train_window is not None
+        return spec.lr_train_window + 30
+    if spec.family == FAMILY_SVM:
+        assert spec.svm_train_window is not None
+        return spec.svm_train_window + 30
+    if spec.family == FAMILY_STOCHASTIC:
+        assert spec.stoch_lookback is not None
+        return spec.stoch_lookback + 2
+    if spec.family == FAMILY_PARABOLIC_SAR:
+        return 5  # needs only its own prior 2 bars' extremes plus the shift(1)/diff headroom
+    if spec.family == FAMILY_KELTNER:
+        assert spec.keltner_lookback is not None
+        return spec.keltner_lookback + 2
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 

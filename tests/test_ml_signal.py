@@ -1,18 +1,35 @@
-"""prometheus/backtest/ml_signal.py's random_forest_signal -- the
-RANDOM_FOREST family's walk-forward-retrained signal. Real synthetic
-price paths, same _bar_row pattern tests/test_null_strategies.py
-already establishes."""
+"""prometheus/backtest/ml_signal.py's walk-forward-retrained signals --
+RANDOM_FOREST, GRADIENT_BOOSTING, LOGISTIC_REGRESSION, and SVM, all
+sharing the one `_walk_forward_signal` loop. Real synthetic price
+paths, same _bar_row pattern tests/test_null_strategies.py already
+establishes."""
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from prometheus.backtest.engine import run_backtest, signal_for
-from prometheus.backtest.ml_signal import random_forest_signal
+from prometheus.backtest.ml_signal import (
+    gradient_boosting_signal,
+    logistic_regression_signal,
+    random_forest_signal,
+    svm_signal,
+)
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import StrategySpec
 from tests.test_null_strategies import _bar_row
 
 _SYMBOL = "BTC/USDT"
+
+# (family, spec field prefix, signal function) -- the four models
+# sharing _walk_forward_signal, parametrized together wherever a check
+# applies to all of them identically.
+_ML_FAMILIES = (
+    ("RANDOM_FOREST", "rf", random_forest_signal),
+    ("GRADIENT_BOOSTING", "gb", gradient_boosting_signal),
+    ("LOGISTIC_REGRESSION", "lr", logistic_regression_signal),
+    ("SVM", "svm", svm_signal),
+)
 
 
 def _rf_spec(train_window: int = 40, retrain_interval: int = 10, threshold: float = 0.5) -> StrategySpec:
@@ -20,6 +37,19 @@ def _rf_spec(train_window: int = 40, retrain_interval: int = 10, threshold: floa
         family="RANDOM_FOREST", symbol=_SYMBOL, timeframe="1d",
         rf_train_window=train_window, rf_retrain_interval=retrain_interval,
         rf_predict_threshold=threshold, expected_horizon=1,
+    )
+
+
+def _ml_spec(
+    family: str, prefix: str, train_window: int = 40, retrain_interval: int = 10, threshold: float = 0.5
+) -> StrategySpec:
+    return StrategySpec(
+        family=family, symbol=_SYMBOL, timeframe="1d", expected_horizon=1,
+        **{
+            f"{prefix}_train_window": train_window,
+            f"{prefix}_retrain_interval": retrain_interval,
+            f"{prefix}_predict_threshold": threshold,
+        },
     )
 
 
@@ -153,3 +183,65 @@ def test_zero_volume_bar_in_training_window_does_not_crash_backtest() -> None:
     spec = _rf_spec(train_window=40, retrain_interval=10)
     result = run_backtest(pit, spec, bars["available_at"][-1])  # must not raise
     assert result is not None
+
+
+@pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
+def test_flat_before_first_checkpoint_never_trades_every_model(family, prefix, signal_fn) -> None:
+    bars = _sawtooth_bars(30)  # shorter than train_window -- no checkpoint reached
+    spec = _ml_spec(family, prefix, train_window=40, retrain_interval=10)
+    signaled = signal_for(bars, spec)
+    assert all(p == 0.0 for p in signaled["position"].to_list())
+
+
+@pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
+def test_produces_real_trades_once_trained_every_model(family, prefix, signal_fn) -> None:
+    bars = _sawtooth_bars(90)
+    spec = _ml_spec(family, prefix, train_window=40, retrain_interval=10)
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover > 0.0
+
+
+@pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
+def test_no_lookahead_planted_future_spike_is_unreachable_every_model(family, prefix, signal_fn) -> None:
+    n = 90
+    baseline_prices = []
+    price = 100.0
+    for i in range(n):
+        price = price + 1.0 if i % 2 == 0 else price - 1.0
+        baseline_prices.append(price)
+    spiked_prices = list(baseline_prices)
+    spiked_prices[-1] = 1.0
+
+    baseline_rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(baseline_prices)]
+    spiked_rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(spiked_prices)]
+    spec = _ml_spec(family, prefix, train_window=40, retrain_interval=10)
+    baseline_signaled = signal_for(pl.DataFrame(baseline_rows), spec)
+    spiked_signaled = signal_for(pl.DataFrame(spiked_rows), spec)
+    positions_before_plant = spiked_signaled["position"].to_list()[:-1]
+    baseline_positions_before_plant = baseline_signaled["position"].to_list()[:-1]
+    assert positions_before_plant == baseline_positions_before_plant
+
+
+@pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
+def test_engine_dispatches_to_the_right_signal_function(family, prefix, signal_fn) -> None:
+    bars = _sawtooth_bars(90)
+    spec = _ml_spec(family, prefix, train_window=40, retrain_interval=10)
+    direct = signal_fn(bars, 40, 10, 0.5)["position"].to_list()
+    via_engine = signal_for(bars, spec)["position"].to_list()
+    assert direct == via_engine
+
+
+@pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
+def test_single_class_training_window_falls_back_to_flat_not_crash(family, prefix, signal_fn) -> None:
+    """A training window with only one real class present must not
+    crash, for every model -- LogisticRegression and
+    CalibratedClassifierCV(SVC) both raise ValueError on a single-class
+    fit (unlike the tree ensembles, which tolerate it silently); the
+    shared loop's explicit np.unique(train_labels) guard must catch
+    this before any model's fit() is ever called."""
+    prices = [100.0 - i for i in range(60)]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    signaled = signal_fn(bars, 30, 10, 0.5)  # must not raise
+    assert all(p == 0.0 for p in signaled["position"].to_list())

@@ -1,12 +1,15 @@
-"""Five concrete, fully-parameterized strategy families: SMA crossover
+"""Eight concrete, fully-parameterized strategy families: SMA crossover
 (momentum), Bollinger mean-reversion, Donchian-channel volatility
-breakout, Wilder's RSI mean-reversion, and Appel's MACD trend-following
--- the "classic templates" PROMPT 6 names as the baseline every future
-component must beat. All five are cited, standard technical
-constructions, not invented formulas. RSI/MACD added later, same
-justification and same touch points (backtest/engine.py's signal
-dispatch, research/generate.py's grid, research/llm/hypothesis.py's
-family->fields mapping) VOL_BREAKOUT already established.
+breakout, Wilder's RSI mean-reversion, Appel's MACD trend-following,
+Lane's Stochastic Oscillator mean-reversion, Wilder's Parabolic SAR
+trend-following, and Keltner Channel volatility breakout -- the "classic
+templates" PROMPT 6 names as the baseline every future component must
+beat. All eight are cited, standard technical constructions, not
+invented formulas. Every family after the original three was added
+later with the same justification and the same touch points
+(backtest/engine.py's signal dispatch, research/generate.py's grid,
+research/llm/hypothesis.py's family->fields mapping) VOL_BREAKOUT first
+established.
 
 Deterministic, no free text, no LLM -- CLAUDE.md's own stated null
 hypothesis is that LLM-generated research loses to static baselines until
@@ -60,7 +63,16 @@ FAMILY_VOL_BREAKOUT = "VOL_BREAKOUT"
 FAMILY_RSI = "RSI"
 FAMILY_MACD = "MACD"
 FAMILY_RANDOM_FOREST = "RANDOM_FOREST"
-FAMILIES = (FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD)
+FAMILY_GRADIENT_BOOSTING = "GRADIENT_BOOSTING"
+FAMILY_LOGISTIC_REGRESSION = "LOGISTIC_REGRESSION"
+FAMILY_SVM = "SVM"
+FAMILY_STOCHASTIC = "STOCHASTIC"
+FAMILY_PARABOLIC_SAR = "PARABOLIC_SAR"
+FAMILY_KELTNER = "KELTNER"
+FAMILIES = (
+    FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
+    FAMILY_STOCHASTIC, FAMILY_PARABOLIC_SAR, FAMILY_KELTNER,
+)
 
 # Each family's own parameter fields -- the set a spec of that family MUST
 # have set, with every other family's fields left None. Enforced by
@@ -80,6 +92,12 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_RSI: ("rsi_lookback", "rsi_oversold"),
     FAMILY_MACD: ("macd_fast", "macd_slow", "macd_signal"),
     FAMILY_RANDOM_FOREST: ("rf_train_window", "rf_retrain_interval", "rf_predict_threshold"),
+    FAMILY_GRADIENT_BOOSTING: ("gb_train_window", "gb_retrain_interval", "gb_predict_threshold"),
+    FAMILY_LOGISTIC_REGRESSION: ("lr_train_window", "lr_retrain_interval", "lr_predict_threshold"),
+    FAMILY_SVM: ("svm_train_window", "svm_retrain_interval", "svm_predict_threshold"),
+    FAMILY_STOCHASTIC: ("stoch_lookback", "stoch_oversold"),
+    FAMILY_PARABOLIC_SAR: ("sar_af_start", "sar_af_increment", "sar_af_max"),
+    FAMILY_KELTNER: ("keltner_lookback", "keltner_multiplier"),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -134,6 +152,40 @@ class StrategySpec(BaseModel):
     rf_train_window: int | None = None
     rf_retrain_interval: int | None = None
     rf_predict_threshold: float | None = None
+    # GRADIENT_BOOSTING: same walk-forward shape as RANDOM_FOREST, a
+    # GradientBoostingClassifier instead. Deliberately NOT in FAMILIES,
+    # same reasoning as RANDOM_FOREST.
+    gb_train_window: int | None = None
+    gb_retrain_interval: int | None = None
+    gb_predict_threshold: float | None = None
+    # LOGISTIC_REGRESSION: the simplest real ML baseline, same
+    # walk-forward shape. Deliberately NOT in FAMILIES.
+    lr_train_window: int | None = None
+    lr_retrain_interval: int | None = None
+    lr_predict_threshold: float | None = None
+    # SVM: an RBF-kernel support vector classifier, same walk-forward
+    # shape. Deliberately NOT in FAMILIES.
+    svm_train_window: int | None = None
+    svm_retrain_interval: int | None = None
+    svm_predict_threshold: float | None = None
+    # STOCHASTIC (George Lane's own construction): %K = 100 * (close -
+    # lowest_low_n) / (highest_high_n - lowest_low_n). Long when %K drops
+    # below the oversold threshold, flat otherwise -- same stateless
+    # shape as RSI, just a different oscillator.
+    stoch_lookback: int | None = None
+    stoch_oversold: float | None = None
+    # PARABOLIC_SAR (Wilder's own construction, "New Concepts in
+    # Technical Trading Systems", 1978): a trend-following stop-and-
+    # reverse whose acceleration factor starts at af_start and increases
+    # by af_increment on every new extreme point, capped at af_max.
+    sar_af_start: float | None = None
+    sar_af_increment: float | None = None
+    sar_af_max: float | None = None
+    # KELTNER (an ATR-normalized volatility breakout, the same Turtle-
+    # style entry/persist/exit shape VOL_BREAKOUT uses, but with bands
+    # around an EMA rather than Donchian highs/lows).
+    keltner_lookback: int | None = None
+    keltner_multiplier: float | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -173,6 +225,34 @@ class StrategySpec(BaseModel):
                 raise ValueError("rf_retrain_interval must be in (0, rf_train_window]")
             if not (0.0 < self.rf_predict_threshold < 1.0):  # type: ignore[operator]
                 raise ValueError("rf_predict_threshold must be in (0, 1)")
+        if self.family == FAMILY_GRADIENT_BOOSTING:
+            if self.gb_train_window <= 0:  # type: ignore[operator]
+                raise ValueError("gb_train_window must be positive")
+            if not (0 < self.gb_retrain_interval <= self.gb_train_window):  # type: ignore[operator]
+                raise ValueError("gb_retrain_interval must be in (0, gb_train_window]")
+            if not (0.0 < self.gb_predict_threshold < 1.0):  # type: ignore[operator]
+                raise ValueError("gb_predict_threshold must be in (0, 1)")
+        if self.family == FAMILY_LOGISTIC_REGRESSION:
+            if self.lr_train_window <= 0:  # type: ignore[operator]
+                raise ValueError("lr_train_window must be positive")
+            if not (0 < self.lr_retrain_interval <= self.lr_train_window):  # type: ignore[operator]
+                raise ValueError("lr_retrain_interval must be in (0, lr_train_window]")
+            if not (0.0 < self.lr_predict_threshold < 1.0):  # type: ignore[operator]
+                raise ValueError("lr_predict_threshold must be in (0, 1)")
+        if self.family == FAMILY_SVM:
+            if self.svm_train_window <= 0:  # type: ignore[operator]
+                raise ValueError("svm_train_window must be positive")
+            if not (0 < self.svm_retrain_interval <= self.svm_train_window):  # type: ignore[operator]
+                raise ValueError("svm_retrain_interval must be in (0, svm_train_window]")
+            if not (0.0 < self.svm_predict_threshold < 1.0):  # type: ignore[operator]
+                raise ValueError("svm_predict_threshold must be in (0, 1)")
+        if self.family == FAMILY_STOCHASTIC and not (0.0 < self.stoch_oversold < 100.0):  # type: ignore[operator]
+            raise ValueError("stoch_oversold must be in (0, 100)")
+        if self.family == FAMILY_PARABOLIC_SAR:
+            if not (0.0 < self.sar_af_start <= self.sar_af_max):  # type: ignore[operator]
+                raise ValueError("sar_af_start must be in (0, sar_af_max]")
+            if self.sar_af_increment <= 0:  # type: ignore[operator]
+                raise ValueError("sar_af_increment must be positive")
         return self
 
     @property

@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from prometheus.strategy.spec import FAMILIES, FAMILY_RANDOM_FOREST, StrategySpec
+from prometheus.strategy.spec import (
+    FAMILIES,
+    FAMILY_KELTNER,
+    FAMILY_PARABOLIC_SAR,
+    FAMILY_RANDOM_FOREST,
+    FAMILY_STOCHASTIC,
+    StrategySpec,
+)
 
 
 def test_valid_spec_constructs() -> None:
@@ -187,3 +194,46 @@ def test_random_forest_deliberately_excluded_from_families_tuple() -> None:
     documents the exclusion so a future edit can't silently 'fix' it
     into the tuple."""
     assert FAMILY_RANDOM_FOREST not in FAMILIES
+
+
+def test_stochastic_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_STOCHASTIC, symbol="BTC/USDT", timeframe="1d",
+        stoch_lookback=14, stoch_oversold=20.0, expected_horizon=14,
+    )
+    assert spec.family == FAMILY_STOCHASTIC
+    assert FAMILY_STOCHASTIC in FAMILIES
+
+
+def test_stochastic_oversold_out_of_bounds_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_STOCHASTIC, symbol="BTC/USDT", timeframe="1d",
+            stoch_lookback=14, stoch_oversold=150.0, expected_horizon=14,
+        )
+
+
+def test_parabolic_sar_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_PARABOLIC_SAR, symbol="BTC/USDT", timeframe="1d",
+        sar_af_start=0.02, sar_af_increment=0.02, sar_af_max=0.2, expected_horizon=10,
+    )
+    assert spec.family == FAMILY_PARABOLIC_SAR
+    assert FAMILY_PARABOLIC_SAR in FAMILIES
+
+
+def test_parabolic_sar_start_exceeding_max_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_PARABOLIC_SAR, symbol="BTC/USDT", timeframe="1d",
+            sar_af_start=0.5, sar_af_increment=0.02, sar_af_max=0.2, expected_horizon=10,
+        )
+
+
+def test_keltner_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_KELTNER, symbol="BTC/USDT", timeframe="1d",
+        keltner_lookback=20, keltner_multiplier=2.0, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_KELTNER
+    assert FAMILY_KELTNER in FAMILIES

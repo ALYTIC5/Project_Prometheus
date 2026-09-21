@@ -65,7 +65,12 @@ from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.loaders import load_point_in_time
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.research.generate import generate_baseline_grid
-from prometheus.research.ml.generate import generate_random_forest_grid
+from prometheus.research.ml.generate import (
+    generate_gradient_boosting_grid,
+    generate_logistic_regression_grid,
+    generate_random_forest_grid,
+    generate_svm_grid,
+)
 from prometheus.research.mutations import parameter_tune, swap_family
 from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.spec import FAMILIES, StrategySpec
@@ -632,26 +637,28 @@ async def register_evolution_component(
     return result
 
 
-async def register_ml_component(
+async def _register_ml_component_vs_baseline(
     session: AsyncSession,
     *,
+    component: str,
+    families_affected: list[str],
+    generate_component_grid: Callable[[str, str], list[StrategySpec]],
     symbols: list[str],
     timeframe: str,
     start: datetime,
     end: datetime,
     version: str,
-    cost_model: CostModel = apply_cost,
+    cost_model: CostModel,
 ) -> BatchResult:
-    """Does the RANDOM_FOREST walk-forward model
-    (research/ml/generate.py) find anything the deterministic baseline
-    grid (research/generate.generate_baseline_grid) doesn't, on real
-    out-of-sample data. Same shape as register_evolution_component/
-    register_llm_component: per symbol, score every baseline-grid spec
-    and every RF-grid spec with the real backtest engine, record one
-    paired trial (enabled = best RF score, disabled = best grid score)
-    via record_trial, then reuse _recompute_registry for the real
-    verdict -- reported honestly, including a NEUTRAL or HARMFUL one."""
-    component = "random_forest"
+    """The shared core every ML component's register_*_component wraps:
+    per symbol, score every baseline-grid spec and every one of the
+    component's own generated specs with the real backtest engine,
+    record one paired trial (enabled = best component score, disabled =
+    best grid score) via record_trial, then reuse _recompute_registry
+    for the real verdict -- reported honestly, including a NEUTRAL or
+    HARMFUL one. Same shape register_evolution_component/
+    register_llm_component already use, generalized once RANDOM_FOREST's
+    own register_ml_component became the third near-identical copy."""
     n_trials = 0
     n_failed = 0
 
@@ -670,25 +677,25 @@ async def register_ml_component(
             for spec in generate_baseline_grid(symbol, timeframe)
             if (score := _score(pit, spec)) is not None
         ]
-        rf_scored = [
+        component_scored = [
             (spec, score)
-            for spec in generate_random_forest_grid(symbol, timeframe)
+            for spec in generate_component_grid(symbol, timeframe)
             if (score := _score(pit, spec)) is not None
         ]
-        if not grid_scores or not rf_scored:
+        if not grid_scores or not component_scored:
             n_failed += 1
             continue
         best_grid_score = max(grid_scores)
-        best_rf_spec, best_rf_score = max(rf_scored, key=lambda pair: pair[1])
+        best_component_spec, best_component_score = max(component_scored, key=lambda pair: pair[1])
 
         await record_trial(
             session,
             component=component,
             version=version,
             symbol=symbol,
-            config_hash=best_rf_spec.config_hash(),
+            config_hash=best_component_spec.config_hash(),
             seed=derive_seed(component, version, symbol),
-            enabled_return_pct=best_rf_score,
+            enabled_return_pct=best_component_score,
             disabled_return_pct=best_grid_score,
         )
         n_trials += 1
@@ -697,12 +704,118 @@ async def register_ml_component(
         session,
         component,
         version,
-        ["RANDOM_FOREST"],
+        families_affected,
         n_trials_this_batch=n_trials,
         n_failed_this_batch=n_failed,
     )
     await session.commit()
     return result
+
+
+async def register_ml_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does the RANDOM_FOREST walk-forward model
+    (research/ml/generate.py) find anything the deterministic baseline
+    grid (research/generate.generate_baseline_grid) doesn't, on real
+    out-of-sample data."""
+    return await _register_ml_component_vs_baseline(
+        session,
+        component="random_forest",
+        families_affected=["RANDOM_FOREST"],
+        generate_component_grid=generate_random_forest_grid,
+        symbols=symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        version=version,
+        cost_model=cost_model,
+    )
+
+
+async def register_gradient_boosting_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does the GRADIENT_BOOSTING walk-forward model find anything the
+    deterministic baseline grid doesn't, on real out-of-sample data."""
+    return await _register_ml_component_vs_baseline(
+        session,
+        component="gradient_boosting",
+        families_affected=["GRADIENT_BOOSTING"],
+        generate_component_grid=generate_gradient_boosting_grid,
+        symbols=symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        version=version,
+        cost_model=cost_model,
+    )
+
+
+async def register_logistic_regression_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does the LOGISTIC_REGRESSION walk-forward model find anything the
+    deterministic baseline grid doesn't, on real out-of-sample data."""
+    return await _register_ml_component_vs_baseline(
+        session,
+        component="logistic_regression",
+        families_affected=["LOGISTIC_REGRESSION"],
+        generate_component_grid=generate_logistic_regression_grid,
+        symbols=symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        version=version,
+        cost_model=cost_model,
+    )
+
+
+async def register_svm_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does the SVM walk-forward model find anything the deterministic
+    baseline grid doesn't, on real out-of-sample data."""
+    return await _register_ml_component_vs_baseline(
+        session,
+        component="svm",
+        families_affected=["SVM"],
+        generate_component_grid=generate_svm_grid,
+        symbols=symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        version=version,
+        cost_model=cost_model,
+    )
 
 
 _SELECT_LLM_SPECS_FOR_SYMBOL = text(

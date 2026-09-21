@@ -23,6 +23,12 @@ const FAMILY_COLOR: Record<string, string> = {
   RSI: 'border-rose-500/60 text-rose-700 dark:text-rose-400',
   MACD: 'border-lime-500/60 text-lime-700 dark:text-lime-400',
   RANDOM_FOREST: 'border-sky-500/60 text-sky-700 dark:text-sky-400',
+  GRADIENT_BOOSTING: 'border-indigo-500/60 text-indigo-700 dark:text-indigo-400',
+  LOGISTIC_REGRESSION: 'border-emerald-500/60 text-emerald-700 dark:text-emerald-400',
+  SVM: 'border-red-500/60 text-red-700 dark:text-red-400',
+  STOCHASTIC: 'border-fuchsia-500/60 text-fuchsia-700 dark:text-fuchsia-400',
+  PARABOLIC_SAR: 'border-orange-500/60 text-orange-700 dark:text-orange-400',
+  KELTNER: 'border-teal-500/60 text-teal-700 dark:text-teal-400',
 };
 
 function familyClass(family: string | null): string {

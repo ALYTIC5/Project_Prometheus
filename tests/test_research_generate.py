@@ -6,15 +6,21 @@ from prometheus.research.generate import (
     generate_baseline_grid,
     generate_bollinger_grid,
     generate_grid,
+    generate_keltner_grid,
     generate_macd_grid,
+    generate_parabolic_sar_grid,
     generate_rsi_grid,
+    generate_stochastic_grid,
     generate_vol_breakout_grid,
 )
 from prometheus.strategy.spec import (
     FAMILY_BOLLINGER,
+    FAMILY_KELTNER,
     FAMILY_MACD,
     FAMILY_MOMENTUM,
+    FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
+    FAMILY_STOCHASTIC,
     FAMILY_VOL_BREAKOUT,
 )
 
@@ -75,9 +81,36 @@ def test_generate_macd_grid_produces_real_macd_specs() -> None:
     assert all(spec.macd_fast < spec.macd_slow for spec in specs)  # type: ignore[operator]
 
 
-def test_generate_baseline_grid_combines_all_five_families() -> None:
+def test_generate_stochastic_grid_produces_real_stochastic_specs() -> None:
+    specs = generate_stochastic_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_STOCHASTIC for spec in specs)
+    assert all(
+        spec.stoch_lookback is not None and spec.stoch_oversold is not None for spec in specs
+    )
+
+
+def test_generate_parabolic_sar_grid_produces_real_sar_specs() -> None:
+    specs = generate_parabolic_sar_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_PARABOLIC_SAR for spec in specs)
+    assert all(spec.sar_af_start <= spec.sar_af_max for spec in specs)  # type: ignore[operator]
+
+
+def test_generate_keltner_grid_produces_real_keltner_specs() -> None:
+    specs = generate_keltner_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_KELTNER for spec in specs)
+    assert all(
+        spec.keltner_lookback is not None and spec.keltner_multiplier is not None
+        for spec in specs
+    )
+
+
+def test_generate_baseline_grid_combines_all_eight_families() -> None:
     specs = generate_baseline_grid("BTC/USDT", "1d")
     families = {spec.family for spec in specs}
     assert families == {
         FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
+        FAMILY_STOCHASTIC, FAMILY_PARABOLIC_SAR, FAMILY_KELTNER,
     }

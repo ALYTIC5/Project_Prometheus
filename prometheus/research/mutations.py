@@ -45,7 +45,9 @@ _TUNE_FRACTION_RANGE = (0.10, 0.35)
 _SMOOTHING_FIELDS = {
     "slow_window", "fast_window", "lookback_window", "breakout_window",
     "exit_window", "band_multiplier", "rsi_lookback", "macd_fast",
-    "macd_slow", "macd_signal", "rf_train_window",
+    "macd_slow", "macd_signal", "rf_train_window", "gb_train_window",
+    "lr_train_window", "svm_train_window", "stoch_lookback",
+    "keltner_lookback", "keltner_multiplier",
 }
 
 
@@ -56,13 +58,17 @@ class Mutation:
     hypothesis: str
 
 
-# RANDOM_FOREST's rf_predict_threshold is the only tunable field whose
-# entire valid range (see spec.py's model_validator: 0.0 < x < 1.0) lies
-# below _clamp_positive's own floor of 1.0 -- every other field's valid
-# range starts at or above 1 (a window/lookback of at least 1 bar). Both
+# Every *_predict_threshold field (RANDOM_FOREST/GRADIENT_BOOSTING/
+# LOGISTIC_REGRESSION/SVM all share this shape) has its entire valid
+# range (see spec.py's model_validator: 0.0 < x < 1.0) below
+# _clamp_positive's own floor of 1.0 -- every other field's valid range
+# starts at or above 1 (a window/lookback of at least 1 bar). Both
 # clamp bounds are exclusive to stay strictly inside the validator's own
 # open interval.
-_UNIT_INTERVAL_FIELDS = {"rf_predict_threshold"}
+_UNIT_INTERVAL_FIELDS = {
+    "rf_predict_threshold", "gb_predict_threshold", "lr_predict_threshold",
+    "svm_predict_threshold",
+}
 _UNIT_INTERVAL_MIN = 0.01
 _UNIT_INTERVAL_MAX = 0.99
 
@@ -145,12 +151,13 @@ def swap_family(
     warns against. lineage.py's own `change_set.get("predicted_direction")`
     already handles a missing key as "no hypothesis" (None), not an error.
 
-    A spec whose OWN family isn't in FAMILIES (currently only
-    RANDOM_FOREST -- deliberately excluded, see spec.py) has no valid
-    swap target: FAMILIES is the baseline-family ecosystem this operator
-    swaps within, and RANDOM_FOREST must never be reached by it, in
-    either direction (inbound as `new_family`, or outbound as the
-    source `spec.family` being replaced away from).
+    A spec whose OWN family isn't in FAMILIES (the ML components --
+    RANDOM_FOREST, GRADIENT_BOOSTING, LOGISTIC_REGRESSION, SVM --
+    deliberately excluded, see spec.py) has no valid swap target:
+    FAMILIES is the baseline-family ecosystem this operator swaps
+    within, and no ML component must ever be reached by it, in either
+    direction (inbound as `new_family`, or outbound as the source
+    `spec.family` being replaced away from).
     """
     if spec.family not in FAMILIES:
         return None
