@@ -406,10 +406,10 @@ and update the entry's status when it does.
   `register_ml_component` and surface their verdicts somewhere real
   (the dashboard's Temple of Knowledge, or a periodic report) rather
   than leaving them reachable only from tests.
-- **A general restricted DSL beyond the 3 existing `StrategySpec`
+- **A general restricted DSL beyond the existing `StrategySpec`
   families** — `strategy/spec.py`'s own docstring names a bigger surface
   (`features/signals/entry_rules/exit_rules/position_sizing/risk_rules`)
-  as the eventual Prompt 9 target; this implementation reuses the 3
+  as the eventual Prompt 9 target; this implementation reuses the
   existing families instead (see
   `docs/superpowers/specs/2026-09-18-llm-research-layer-design.md`'s own
   reasoning: prove the cheap version first, CLAUDE.md's own null
@@ -417,3 +417,38 @@ and update the entry's status when it does.
   `llm_generation`'s ablation verdict is VALUABLE enough that expanding
   its expressiveness looks worth a whitelisted-grammar-plus-interpreter
   project of its own.
+
+## PAPER_WORSE_THAN_HOLDING never quarantines a champion (2026-09-21)
+
+- **`paper/reconciliation.py`'s `check_worse_than_holding` writes the
+  `PAPER_WORSE_THAN_HOLDING` finding but never changes the strategy's
+  status** — unlike `paper/divergence.py`'s `check_divergence`, which
+  quarantines on a material `PAPER_DIVERGENCE` finding
+  (`population.py`'s existing `QUARANTINED` status, no new state). A
+  CHAMPION genuinely losing to its own €1,000 buy-and-hold benchmark in
+  real paper trading (a direct Law 8 violation made visible in
+  production, not a backtest artifact) keeps its CHAMPION status and
+  keeps being paper-traded indefinitely, with no consequence beyond a
+  logged finding. Found during this session's strategy-family expansion
+  while auditing every paper-trading feedback path for consistency, not
+  built: **not fixed here because, unlike `check_divergence`, this
+  check has no statistical materiality gate before it fires** --
+  `check_divergence` requires n>=2 observations and a 95% CI test
+  before quarantining (so ordinary short-term noise can't trigger it);
+  `check_worse_than_holding` is a single point-in-time value comparison
+  (`paper_final >= benchmark_final`), re-evaluated on every 15-minute
+  paper tick. Wiring quarantine directly onto this check as-is would
+  likely quarantine every real champion within its first hour of paper
+  trading from ordinary volatility, not genuine underperformance --
+  defeating the Harbour feature's own purpose. Fixing this correctly
+  needs a real persistence/materiality threshold (e.g. "underperforming
+  for N consecutive daily closes" or "checked once per trading day
+  against the equity curve's own granularity, not every 15-minute
+  tick") that CLAUDE.md's own rule ("don't invent thresholds silently")
+  says should not be picked unilaterally. **Trigger:** decide the
+  materiality condition (with the user, or by citing an existing
+  convention elsewhere in this codebase the way `check_divergence`
+  cites the z=1.96 CI test), then wire quarantine (or a softer
+  "flagged for re-election" demotion back to `VALIDATED`, letting
+  `elect_champions` naturally replace it) onto this check the same way
+  `check_divergence` already does it.
