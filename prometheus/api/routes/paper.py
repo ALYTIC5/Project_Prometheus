@@ -28,6 +28,7 @@ from sqlalchemy import text
 
 from prometheus.core.db import get_session_factory
 from prometheus.paper.reconciliation import compute_paper_equity_curve
+from prometheus.strategy.rotation_spec import ROTATION_FAMILIES, RotationSpec
 from prometheus.strategy.spec import StrategySpec
 
 router = APIRouter(prefix="/paper", tags=["paper"])
@@ -67,12 +68,32 @@ async def get_paper_trading_status() -> dict[str, Any]:
 
         champions: list[dict[str, Any]] = []
         for row in champion_rows:
-            spec = StrategySpec.model_validate(row.spec)
-
-            latest_close = (
-                await session.execute(_SELECT_LATEST_CLOSE, {"symbol": spec.symbol})
-            ).scalar_one_or_none()
-            current_price = float(latest_close) if latest_close is not None else 0.0
+            # C1 (final-review fix wave): a rotation strategy can hold
+            # CHAMPION status (validate_rotation_specs calls
+            # elect_champions like every other validation path), and its
+            # stored spec is a RotationSpec dump -- no `symbol`, so
+            # StrategySpec.model_validate() raises ValidationError on it
+            # and this endpoint 500s for every champion, not just that
+            # one. It has no single symbol to mark against either, so
+            # `symbol` becomes its universe as a display string and
+            # current_price stays 0.0: rotation strategies are not wired
+            # into paper-trading execution yet (the design doc's own
+            # "Explicitly out of scope for this pass: Live paper-trading
+            # execution"), so it has no fills, hence an empty curve,
+            # empty orders and empty findings -- an honest empty state,
+            # exactly what this route's own docstring describes for a
+            # champion with nothing traded yet.
+            if row.family in ROTATION_FAMILIES:
+                rotation_spec = RotationSpec.model_validate(row.spec)
+                display_symbol = ", ".join(rotation_spec.universe)
+                current_price = 0.0
+            else:
+                spec = StrategySpec.model_validate(row.spec)
+                display_symbol = spec.symbol
+                latest_close = (
+                    await session.execute(_SELECT_LATEST_CLOSE, {"symbol": spec.symbol})
+                ).scalar_one_or_none()
+                current_price = float(latest_close) if latest_close is not None else 0.0
 
             equity_curve = await compute_paper_equity_curve(
                 session, strategy_id=row.id, current_price=current_price
@@ -89,7 +110,7 @@ async def get_paper_trading_status() -> dict[str, Any]:
                 {
                     "strategy_id": row.id,
                     "family": row.family,
-                    "symbol": spec.symbol,
+                    "symbol": display_symbol,
                     "equity_curve": [
                         {"date": d.isoformat(), "equity": equity} for d, equity in equity_curve
                     ],

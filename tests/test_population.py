@@ -53,6 +53,11 @@ from prometheus.research.population import (
     select_for_revival,
     verdict_to_status,
 )
+from prometheus.strategy.rotation_spec import (
+    ROTATION_FAMILIES,
+    ROTATION_FAMILY_SECTOR_MOMENTUM,
+    RotationSpec,
+)
 from prometheus.strategy.spec import StrategySpec
 
 pytestmark = [
@@ -378,6 +383,67 @@ async def test_elect_champions_promotes_best_and_demotes_stale_champion(
             )
         ).scalar_one()
         assert better_status == "CHAMPION"
+
+
+def _rotation_spec() -> RotationSpec:
+    return RotationSpec(
+        family=ROTATION_FAMILY_SECTOR_MOMENTUM,
+        universe=("XLK", "XLF", "XLE"),
+        timeframe="1d",
+        lookback_days=126,
+        top_n=3,
+        rebalance_frequency_days=21,
+        expected_horizon=21,
+    )
+
+
+async def test_selectors_skip_rotation_rows_instead_of_failing_to_parse_them(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """C1 (final-review fix wave): `experiments.runner.run_one` inserts
+    RotationSpec rows into this same `strategies` table. Every selector
+    here parses `spec` with `StrategySpec.model_validate()`, which
+    raises ValidationError on a rotation spec (no `symbol`;
+    `extra="forbid"`).
+
+    That is not a contained failure: select_for_exploration raising
+    inside worker.py's `_run_evolution_step` propagates out of
+    `_run_research` before `mark_run(concern="research")` can fire, so
+    the research concern stays permanently "due" and re-runs -- and
+    re-fails -- on every worker tick, forever. Evolution would be dead
+    from the first cycle after a single rotation strategy existed.
+
+    Excluding them is also the right semantics, not a workaround: these
+    selectors feed mutation/crossover of a single-symbol indicator
+    parameter vector, which a universe-ranking spec does not have."""
+    spec = _rotation_spec()
+    strategy_id = await next_strategy_id(spec.family)
+    async with session_factory() as session:
+        session.add(
+            Strategy(
+                id=strategy_id,
+                family=spec.family,
+                spec=spec.model_dump(),
+                # VALIDATED/DORMANT would each be picked up by a
+                # different selector below; one row can only carry one
+                # status, so this test asserts on the status that the
+                # broadest selectors (exploration, diversification) see
+                # regardless, and the status-scoped ones are covered by
+                # the same NOT IN filter in their own queries.
+                status="VALIDATED",
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        exploration = await select_for_exploration(session, limit=1000)
+        diversification = await select_for_diversification(session, limit=1000)
+        exploitation = await select_for_exploitation(session, limit=1000)
+        revival = await select_for_revival(session, limit=1000)
+
+    for candidates in (exploration, diversification, exploitation, revival):
+        assert strategy_id not in {c.strategy_id for c in candidates}
+        assert all(c.family not in ROTATION_FAMILIES for c in candidates)
 
 
 async def test_population_summary_reflects_real_counts(

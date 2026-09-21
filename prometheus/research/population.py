@@ -25,9 +25,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import BindParameter
 
+from prometheus.strategy.rotation_spec import ROTATION_FAMILIES
 from prometheus.strategy.spec import FAMILIES, StrategySpec
 
 _VERDICT_TO_STATUS: dict[str, str] = {
@@ -103,6 +105,37 @@ _LATEST_FINGERPRINT_CTE = """
     )
 """
 
+# C1 (final-review fix wave): every selector in this module parses each
+# row's `spec` JSON with StrategySpec.model_validate(). The `strategies`
+# table is shared: experiments.runner.run_one inserts RotationSpec rows
+# into it too, and a RotationSpec's dumped JSON has no `symbol` and
+# carries `universe`/`top_n`/`rebalance_frequency_days` instead, so
+# StrategySpec (extra="forbid", symbol required) raises ValidationError
+# on one. That is not merely a parse failure to catch: the exception
+# escaping select_for_exploration inside worker.py's
+# _run_evolution_step propagates out of _run_research before
+# mark_run(concern="research") can fire, leaving the research concern
+# permanently "due" -- re-running and re-failing on every tick forever.
+#
+# Excluding rotation rows from these selectors is the correct
+# SEMANTICS, not a workaround: every one of them exists to feed
+# mutation/crossover of a single-symbol technical-indicator parameter
+# vector (research/mutations.py, research/crossover.py), and a
+# RotationSpec has no such vector -- "tune fast_window by one step" has
+# no meaning for a universe-ranking spec. They are genuinely not
+# candidates, so they are filtered in SQL rather than parsed and
+# discarded.
+_ROTATION_FAMILIES_ARG: dict[str, list[str]] = {"rotation_families": list(ROTATION_FAMILIES)}
+
+
+def _rotation_families_param() -> BindParameter[str]:
+    """A fresh expanding bindparam per query -- `expanding=True` is how
+    SQLAlchemy safely binds a Python list against an IN clause, the same
+    mechanism api/routes/strategies.py's _SELECT_ASSET_CLASS_BY_SYMBOL
+    already uses."""
+    return bindparam("rotation_families", expanding=True)
+
+
 _SELECT_FOR_EXPLOITATION = text(
     f"""
     WITH {_LATEST_FINGERPRINT_CTE}
@@ -110,10 +143,11 @@ _SELECT_FOR_EXPLOITATION = text(
       FROM strategies s
       LEFT JOIN latest_score ls ON ls.strategy_id = s.id
      WHERE s.status IN ('VALIDATED', 'CHAMPION')
+       AND s.family NOT IN :rotation_families
      ORDER BY ls.score DESC NULLS LAST
      LIMIT :limit
     """
-)
+).bindparams(_rotation_families_param())
 
 
 async def select_for_exploitation(
@@ -124,7 +158,11 @@ async def select_for_exploitation(
     `StrategySpec.config_hash()`, not `strategies.id` -- joined here via
     the spec's own recomputed hash, matching how validate_grid itself
     looks up a spec's latest evidence."""
-    rows = (await session.execute(_SELECT_FOR_EXPLOITATION, {"limit": limit})).fetchall()
+    rows = (
+        await session.execute(
+            _SELECT_FOR_EXPLOITATION, {"limit": limit, **_ROTATION_FAMILIES_ARG}
+        )
+    ).fetchall()
     return [
         PopulationCandidate(
             strategy_id=r.id,
@@ -138,15 +176,22 @@ async def select_for_exploitation(
 
 
 _SELECT_FOR_EXPLORATION = text(
-    "SELECT id, family, spec, status FROM strategies ORDER BY random() LIMIT :limit"
-)
+    "SELECT id, family, spec, status FROM strategies "
+    "WHERE family NOT IN :rotation_families ORDER BY random() LIMIT :limit"
+).bindparams(_rotation_families_param())
 
 
 async def select_for_exploration(session: AsyncSession, *, limit: int) -> list[PopulationCandidate]:
-    """A uniform random sample across the WHOLE population, any status,
-    any family -- encourages coverage of parameter/family space rather
-    than only refining known-good regions."""
-    rows = (await session.execute(_SELECT_FOR_EXPLORATION, {"limit": limit})).fetchall()
+    """A uniform random sample across the whole mutable population, any
+    status, any single-symbol family -- encourages coverage of
+    parameter/family space rather than only refining known-good regions.
+    Rotation families are excluded (see the C1 note above): they have no
+    mutable parameter vector for this sample to feed."""
+    rows = (
+        await session.execute(
+            _SELECT_FOR_EXPLORATION, {"limit": limit, **_ROTATION_FAMILIES_ARG}
+        )
+    ).fetchall()
     return [
         PopulationCandidate(
             strategy_id=r.id, family=r.family, spec=StrategySpec.model_validate(r.spec),
@@ -156,7 +201,9 @@ async def select_for_exploration(session: AsyncSession, *, limit: int) -> list[P
     ]
 
 
-_SELECT_ALL_FOR_DIVERSIFICATION = text("SELECT id, family, spec, status FROM strategies")
+_SELECT_ALL_FOR_DIVERSIFICATION = text(
+    "SELECT id, family, spec, status FROM strategies WHERE family NOT IN :rotation_families"
+).bindparams(_rotation_families_param())
 
 
 async def select_for_diversification(
@@ -167,7 +214,9 @@ async def select_for_diversification(
     families is meaningless -- different parameter spaces entirely).
     Real, derived selection (distance from the population's own actual
     center), not an arbitrary novelty score."""
-    rows = (await session.execute(_SELECT_ALL_FOR_DIVERSIFICATION)).fetchall()
+    rows = (
+        await session.execute(_SELECT_ALL_FOR_DIVERSIFICATION, _ROTATION_FAMILIES_ARG)
+    ).fetchall()
     by_family: dict[str, list[tuple[str, str, StrategySpec, dict[str, float]]]] = {}
     for r in rows:
         spec = StrategySpec.model_validate(r.spec)
@@ -209,17 +258,20 @@ _SELECT_FOR_REVIVAL = text(
     """
     SELECT id, family, spec, status FROM strategies
      WHERE status IN ('DORMANT', 'QUARANTINED')
+       AND family NOT IN :rotation_families
      ORDER BY created_at ASC
      LIMIT :limit
     """
-)
+).bindparams(_rotation_families_param())
 
 
 async def select_for_revival(session: AsyncSession, *, limit: int) -> list[PopulationCandidate]:
     """DORMANT/QUARANTINED strategies, oldest first -- give a strategy
     that was held (not rejected) another look as more data accumulates,
     rather than leaving it permanently ignored."""
-    rows = (await session.execute(_SELECT_FOR_REVIVAL, {"limit": limit})).fetchall()
+    rows = (
+        await session.execute(_SELECT_FOR_REVIVAL, {"limit": limit, **_ROTATION_FAMILIES_ARG})
+    ).fetchall()
     return [
         PopulationCandidate(
             strategy_id=r.id, family=r.family, spec=StrategySpec.model_validate(r.spec),
@@ -236,10 +288,11 @@ _SELECT_FOR_CROSS_BREEDING = text(
       FROM strategies s
       LEFT JOIN latest_score ls ON ls.strategy_id = s.id
      WHERE s.family = :family AND s.status IN ('VALIDATED', 'CHAMPION', 'PROMISING')
+       AND s.family NOT IN :rotation_families
      ORDER BY ls.score DESC NULLS LAST
      LIMIT 2
     """
-)
+).bindparams(_rotation_families_param())
 
 
 async def select_for_cross_breeding(
@@ -249,9 +302,14 @@ async def select_for_cross_breeding(
     a shared parameter space, which only exists within one family.
     Returns None if fewer than two real candidates exist for this family
     yet (an honest "not enough population" result, not a fabricated
-    pair)."""
+    pair). The rotation-family exclusion is belt-and-braces here (every
+    caller passes a member of spec.FAMILIES, which never contains a
+    rotation family) but keeps the guarantee local to the query rather
+    than resting on every present and future caller's discipline."""
     rows = (
-        await session.execute(_SELECT_FOR_CROSS_BREEDING, {"family": family})
+        await session.execute(
+            _SELECT_FOR_CROSS_BREEDING, {"family": family, **_ROTATION_FAMILIES_ARG}
+        )
     ).fetchall()
     if len(rows) < 2:
         return None

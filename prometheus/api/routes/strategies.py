@@ -29,7 +29,10 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Row
 
 from prometheus.core.db import get_session_factory
+from prometheus.strategy.rotation_spec import ROTATION_FAMILIES, RotationSpec
 from prometheus.strategy.spec import StrategySpec
+
+AnySpec = StrategySpec | RotationSpec
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
@@ -97,7 +100,7 @@ def _mutation_label(change_set: dict[str, Any] | None) -> str | None:
     return template.format(field=change_set.get("field", "?"))
 
 
-def _resolve_lineage(specs_by_id: dict[str, StrategySpec]) -> dict[str, tuple[str | None, int]]:
+def _resolve_lineage(specs_by_id: dict[str, AnySpec]) -> dict[str, tuple[str | None, int]]:
     """For every strategy id, resolves (parent_strategy_id, generation)
     from its own spec.parent_id (the PARENT spec's config_hash --
     research/mutations.py's own convention) by matching it against every
@@ -132,8 +135,44 @@ def _resolve_lineage(specs_by_id: dict[str, StrategySpec]) -> dict[str, tuple[st
     return resolved
 
 
+def spec_for_row(family: str, spec_json: dict[str, Any]) -> AnySpec:
+    """C1 (final-review fix wave): the `strategies` table is shared by
+    both spec models -- experiments.runner.run_one inserts a
+    RotationSpec's own dump for any of the 6 ROTATION_FAMILIES. Parsing
+    every row with StrategySpec.model_validate() (as this route did)
+    raises ValidationError on the first rotation row that exists, so
+    GET /strategies/ and GET /strategies/{id} both 500 for the WHOLE
+    table, not just for that row. `family` is the discriminator the
+    table already stores; it is authoritative, so an unparseable spec
+    raises here rather than being silently coerced."""
+    if family in ROTATION_FAMILIES:
+        return RotationSpec.model_validate(spec_json)
+    return StrategySpec.model_validate(spec_json)
+
+
+def _symbols_for(spec: AnySpec) -> tuple[str, ...]:
+    """Which market symbols this spec actually trades: one for a
+    StrategySpec, the whole universe for a RotationSpec."""
+    return (spec.symbol,) if isinstance(spec, StrategySpec) else spec.universe
+
+
+def _asset_class_for(
+    spec: AnySpec, asset_class_by_symbol: dict[str, str]
+) -> str | None:
+    """A single-symbol spec's asset_class is that symbol's. A rotation
+    spec trades a whole universe, so it only has one honest asset_class
+    when every member of its universe shares one (true for every
+    shipped rotation grid -- all ETFs); a mixed or unknown universe
+    maps to None, an honest unknown rather than an arbitrary pick of
+    the first member's class."""
+    if isinstance(spec, StrategySpec):
+        return asset_class_by_symbol.get(spec.symbol)
+    classes = {asset_class_by_symbol[s] for s in spec.universe if s in asset_class_by_symbol}
+    return classes.pop() if len(classes) == 1 else None
+
+
 async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]]:
-    specs_by_id = {r.id: StrategySpec.model_validate(r.spec) for r in rows}
+    specs_by_id = {r.id: spec_for_row(r.family, r.spec) for r in rows}
     lineage = _resolve_lineage(specs_by_id)
 
     validation_rows = (await session.execute(_SELECT_LATEST_VALIDATION)).fetchall()
@@ -147,7 +186,7 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
     # with no universe_membership row (e.g. a spec built before that
     # symbol was ever synced) maps to None -- an honest unknown, not an
     # invented default.
-    symbols = {specs_by_id[r.id].symbol for r in rows}
+    symbols = {symbol for spec in specs_by_id.values() for symbol in _symbols_for(spec)}
     asset_class_by_symbol: dict[str, str] = {}
     if symbols:
         asset_class_rows = (
@@ -168,7 +207,13 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
                 "spec": row.spec,
                 "status": row.status,
                 "created_at": row.created_at.isoformat(),
-                "asset_class": asset_class_by_symbol.get(specs_by_id[row.id].symbol),
+                # A rotation row has no `symbol` of its own; its whole
+                # universe is already present verbatim in `spec` above,
+                # which the dashboard renders generically
+                # (StrategiesSection.tsx JSON-stringifies it), so this
+                # response shape needs no new field for it -- only
+                # asset_class, which it resolves from its universe.
+                "asset_class": _asset_class_for(specs_by_id[row.id], asset_class_by_symbol),
                 "verdict": validation.verdict if validation is not None else None,
                 "score": validation.score if validation is not None else None,
                 "pbo": validation.pbo if validation is not None else None,

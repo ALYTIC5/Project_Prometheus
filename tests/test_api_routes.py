@@ -11,14 +11,22 @@ which needs a real DATABASE_URL-reachable Postgres with migrations applied.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 import prometheus.core.db as core_db
 from prometheus.main import app
+from prometheus.strategy.rotation_spec import (
+    ROTATION_FAMILY_SECTOR_MOMENTUM,
+    RotationSpec,
+)
 
 pytestmark = [
     pytest.mark.db,
@@ -115,6 +123,67 @@ def test_strategies_response_carries_validation_and_lineage_fields() -> None:
         # universe_membership row (a spec built before that symbol was
         # ever synced), not an invented default.
         assert strategy["asset_class"] is None or isinstance(strategy["asset_class"], str)
+
+
+def test_strategies_endpoint_survives_a_rotation_spec_row() -> None:
+    """C1 (final-review fix wave): `experiments.runner.run_one` inserts
+    RotationSpec rows into the same `strategies` table as StrategySpec
+    rows. This route used to parse every row with
+    `StrategySpec.model_validate()`, which raises ValidationError on a
+    rotation spec (no `symbol`; `extra="forbid"`) -- so ONE rotation
+    strategy anywhere in the table made GET /strategies/ return 500 for
+    every row, not just that one. Inserted idempotently with a fixed id
+    so repeated CI runs neither collide nor accumulate."""
+    spec = RotationSpec(
+        family=ROTATION_FAMILY_SECTOR_MOMENTUM,
+        universe=("XLK", "XLF", "XLE"),
+        timeframe="1d",
+        lookback_days=126,
+        top_n=3,
+        rebalance_frequency_days=21,
+        expected_horizon=21,
+    )
+    strategy_id = "SECTOR_MOMENTUM_ROTATION-9001"
+    asyncio.run(_insert_rotation_strategy(strategy_id, spec))
+    # TestClient runs its own event loop; the module global engine the
+    # insert above created belongs to the loop asyncio.run just closed.
+    core_db._engine = None
+    core_db._session_factory = None
+
+    with TestClient(app) as client:
+        response = client.get("/strategies/")
+        assert response.status_code == 200
+        one = client.get(f"/strategies/{strategy_id}")
+
+    assert one.status_code == 200
+    body = one.json()
+    assert body["family"] == ROTATION_FAMILY_SECTOR_MOMENTUM
+    assert list(body["spec"]["universe"]) == ["XLK", "XLF", "XLE"]
+
+
+_INSERT_ROTATION_STRATEGY = text(
+    """
+    INSERT INTO strategies (id, family, spec, status)
+    VALUES (:id, :family, CAST(:spec AS JSONB), 'PROMISING')
+    ON CONFLICT (id) DO NOTHING
+    """
+)
+
+
+async def _insert_rotation_strategy(strategy_id: str, spec: RotationSpec) -> None:
+    engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                _INSERT_ROTATION_STRATEGY,
+                {
+                    "id": strategy_id,
+                    "family": spec.family,
+                    "spec": json.dumps(spec.model_dump()),
+                },
+            )
+    finally:
+        await engine.dispose()
 
 
 def test_benchmark_drilldown_carries_curve() -> None:
