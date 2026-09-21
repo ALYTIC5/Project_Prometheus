@@ -1,0 +1,11 @@
+# Macro/index universe -- FRED series ingested as synthetic single-
+# symbol point-in-time "bars" via providers/fred.py. listed_at is
+# VIXCLS's real first FRED observation date (1990-01-02, per FRED's own
+# series page for VIXCLS), not invented -- Law 2's as_of() reconstruction
+# is meaningless against a fabricated date, same rule universe_etf.yaml's
+# own header states.
+symbols:
+  - symbol: FRED:VIXCLS
+    exchange: fred
+    listed_at: 1990-01-02
+    delisted_at: null

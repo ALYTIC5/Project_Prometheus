@@ -131,13 +131,25 @@ def check_stale_bars(frame: pl.DataFrame) -> list[str]:
 
 
 def run_quality_checks(
-    frame: pl.DataFrame, timeframe: str, max_gap_hours: float | None = None
+    frame: pl.DataFrame,
+    timeframe: str,
+    max_gap_hours: float | None = None,
+    *,
+    skip_stale_check: bool = False,
 ) -> QualityReport:
+    """skip_stale_check: for a genuinely single-observation-per-bar
+    source (e.g. providers/fred.py's index-level series, which has no
+    real intraday high/low/open to report) -- every bar is honestly
+    flat-OHLC by the data's own nature, not a data quality problem
+    check_stale_bars exists to catch for a real tradeable instrument.
+    Defaults to False so every existing caller (ingestion.py,
+    ingest_etf.py) keeps its current behavior unchanged."""
     issues: list[str] = []
     issues += check_gaps(frame, timeframe, max_gap_hours=max_gap_hours)
     issues += check_duplicate_timestamps(frame)
     issues += check_price_validity(frame)
     issues += check_ohlc_relationships(frame)
     issues += check_volume_spikes(frame)
-    issues += check_stale_bars(frame)
+    if not skip_stale_check:
+        issues += check_stale_bars(frame)
     return QualityReport(issues=issues)

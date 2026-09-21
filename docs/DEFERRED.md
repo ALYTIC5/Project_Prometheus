@@ -452,3 +452,39 @@ and update the entry's status when it does.
   "flagged for re-election" demotion back to `VALIDATED`, letting
   `elect_champions` naturally replace it) onto this check the same way
   `check_divergence` already does it.
+
+## FRED macro feature integration (2026-09-21)
+
+- **`data/ingest_macro.py`/`data/providers/fred.py` ship a complete,
+  tested macro-data ingestion pipeline (FRED's VIXCLS, reused via the
+  existing `MarketDataProvider`/point-in-time/quality-check/versioning
+  machinery, zero schema changes) but it is not wired into anything
+  that consumes it** -- not `worker.py`'s automatic ingest cadence, not
+  `backtest/ml_features.py`'s `FEATURE_COLUMNS`. Deliberately scoped
+  this way: `ml_features.py`'s `build_feature_frame(bars)` is a pure,
+  single-symbol, offline function every existing test (and every
+  walk-forward ML signal) relies on being fully reproducible from
+  `(data_version, code_sha, config_hash, seed)` alone -- making it
+  macro-aware means either (a) a live network fetch inside a
+  currently-pure function (breaks determinism and every existing
+  test's no-network assumption), or (b) threading an additional
+  `macro_bars: pl.DataFrame | None` parameter through
+  `build_feature_frame` -> every `ml_signal.py` walk-forward function
+  -> `backtest/engine.py`'s `signal_for()`/`run_backtest()` -> every
+  call site in `experiments/runner.py`, `experiments/ablation.py`, and
+  `worker.py` that currently calls either with a single-symbol
+  signature. Option (b) is the correct design but is a genuine
+  cross-cutting signature change touching the same Law-adjacent
+  backtest core all 17 already-shipped, tested, deployed strategy
+  families depend on -- not something to improvise without the full
+  plan/review rigor the RANDOM_FOREST sub-project itself went through.
+  **Trigger:** brainstorm this properly (a new spec, matching the
+  RANDOM_FOREST sub-project's own process) once there's a concrete
+  strategy family that wants a macro feature specifically, rather than
+  adding "a VIX feature" speculatively; at that point, wire
+  `worker.py`'s ingest cadence to call `backfill_macro()` too (same
+  shape as the existing `backfill()` call), and extend
+  `_NON_REVISED_SERIES` in `data/providers/fred.py` only after
+  confirming any new FRED series shares VIXCLS's own "published once,
+  never restated" property -- a revised series (GDP, CPI, employment)
+  used naively would be a real Law 1 violation.
