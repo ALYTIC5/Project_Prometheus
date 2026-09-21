@@ -1,7 +1,8 @@
-"""backtest/engine.py's BOLLINGER, VOL_BREAKOUT, RSI, MACD, STOCHASTIC,
-PARABOLIC_SAR, and KELTNER signal generators (PROMPT 6's classic
-templates; every family after the first three added later with the
-same justification). Real synthetic price paths, same _bar_row pattern
+"""backtest/engine.py's classic-template signal generators beyond
+MOMENTUM: BOLLINGER, VOL_BREAKOUT, RSI, MACD, STOCHASTIC, PARABOLIC_SAR,
+KELTNER, WILLIAMS_R, CCI, AWESOME_OSCILLATOR, SUPERTREND, and TRIX
+(every family after the first three added later with the same
+justification). Real synthetic price paths, same _bar_row pattern
 tests/test_null_strategies.py already establishes."""
 from __future__ import annotations
 
@@ -90,6 +91,60 @@ def _keltner_spec(lookback: int = 20, multiplier: float = 2.0) -> StrategySpec:
         timeframe="1d",
         keltner_lookback=lookback,
         keltner_multiplier=multiplier,
+        expected_horizon=lookback,
+    )
+
+
+def _williams_r_spec(lookback: int = 14, oversold: float = -80.0) -> StrategySpec:
+    return StrategySpec(
+        family="WILLIAMS_R",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        williams_lookback=lookback,
+        williams_oversold=oversold,
+        expected_horizon=lookback,
+    )
+
+
+def _cci_spec(lookback: int = 20, oversold: float = -100.0) -> StrategySpec:
+    return StrategySpec(
+        family="CCI",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        cci_lookback=lookback,
+        cci_oversold=oversold,
+        expected_horizon=lookback,
+    )
+
+
+def _ao_spec(fast: int = 5, slow: int = 34) -> StrategySpec:
+    return StrategySpec(
+        family="AWESOME_OSCILLATOR",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        ao_fast=fast,
+        ao_slow=slow,
+        expected_horizon=slow,
+    )
+
+
+def _supertrend_spec(lookback: int = 10, multiplier: float = 3.0) -> StrategySpec:
+    return StrategySpec(
+        family="SUPERTREND",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        supertrend_lookback=lookback,
+        supertrend_multiplier=multiplier,
+        expected_horizon=lookback,
+    )
+
+
+def _trix_spec(lookback: int = 15) -> StrategySpec:
+    return StrategySpec(
+        family="TRIX",
+        symbol=_SYMBOL,
+        timeframe="1d",
+        trix_lookback=lookback,
         expected_horizon=lookback,
     )
 
@@ -360,7 +415,147 @@ def test_keltner_no_lookahead_planted_future_breakout_is_unreachable() -> None:
     assert all(p == 0.0 for p in positions_before_plant)
 
 
-def test_engine_agrees_with_signal_for_across_all_eight_families() -> None:
+def test_williams_r_never_dipping_never_trades() -> None:
+    bars = _flat_bars(40)
+    spec = _williams_r_spec()
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover == 0.0
+    assert result.total_return_pct == 0.0
+
+
+def test_williams_r_enters_long_on_a_real_dip() -> None:
+    prices = [100.0] * 15 + [80.0] * 5 + [100.0] * 15
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _williams_r_spec(lookback=14, oversold=-80.0)
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, rows[-1]["available_at"])
+    assert result.turnover > 0.0
+
+
+def test_williams_r_no_lookahead_planted_future_dip_is_unreachable() -> None:
+    prices = [100.0] * 30 + [1.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _williams_r_spec(lookback=14, oversold=-80.0)
+    signaled = signal_for(bars, spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    assert all(p == 0.0 for p in positions_before_plant)
+
+
+def test_cci_never_dipping_never_trades() -> None:
+    bars = _flat_bars(40)
+    spec = _cci_spec()
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover == 0.0
+    assert result.total_return_pct == 0.0
+
+
+def test_cci_enters_long_on_a_real_dip() -> None:
+    prices = [100.0] * 25 + [70.0] * 5 + [100.0] * 15
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _cci_spec(lookback=20, oversold=-100.0)
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, rows[-1]["available_at"])
+    assert result.turnover > 0.0
+
+
+def test_cci_no_lookahead_planted_future_dip_is_unreachable() -> None:
+    prices = [100.0] * 35 + [1.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _cci_spec(lookback=20, oversold=-100.0)
+    signaled = signal_for(bars, spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    assert all(p == 0.0 for p in positions_before_plant)
+
+
+def test_awesome_oscillator_flat_prices_never_trades() -> None:
+    bars = _flat_bars(60)
+    spec = _ao_spec()
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover == 0.0
+    assert result.total_return_pct == 0.0
+
+
+def test_awesome_oscillator_enters_long_on_a_sustained_uptrend() -> None:
+    prices = [100.0 + i * 2 for i in range(60)]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _ao_spec(fast=5, slow=34)
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, rows[-1]["available_at"])
+    assert result.turnover > 0.0
+
+
+def test_awesome_oscillator_no_lookahead_planted_future_spike_is_unreachable() -> None:
+    prices = [100.0] * 60 + [1000.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _ao_spec(fast=5, slow=34)
+    signaled = signal_for(bars, spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    assert all(p == 0.0 for p in positions_before_plant)
+
+
+def test_supertrend_starts_long_and_flips_on_a_real_breakdown() -> None:
+    prices = [100.0 + i for i in range(20)] + [120.0 - i * 3 for i in range(1, 16)]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _supertrend_spec()
+    signaled = signal_for(bars, spec)
+    positions = signaled["position"].to_list()
+    assert positions[15] == 1.0
+    assert positions[-1] == 0.0
+
+
+def test_supertrend_no_lookahead_planted_future_spike_is_unreachable() -> None:
+    prices = [100.0] * 30 + [1000.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _supertrend_spec()
+    baseline_rows = [_bar_row(_SYMBOL, i, 100.0) for i in range(31)]
+    signaled = signal_for(bars, spec)
+    baseline_signaled = signal_for(pl.DataFrame(baseline_rows), spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    baseline_positions_before_plant = baseline_signaled["position"].to_list()[:-1]
+    assert positions_before_plant == baseline_positions_before_plant
+
+
+def test_trix_flat_prices_never_trades() -> None:
+    bars = _flat_bars(60)
+    spec = _trix_spec()
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, bars["available_at"][-1])
+    assert result.turnover == 0.0
+    assert result.total_return_pct == 0.0
+
+
+def test_trix_enters_long_on_a_sustained_uptrend() -> None:
+    prices = [100.0 + i * 2 for i in range(60)]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _trix_spec(lookback=15)
+    pit = PointInTimeFrame(bars)
+    result = run_backtest(pit, spec, rows[-1]["available_at"])
+    assert result.turnover > 0.0
+
+
+def test_trix_no_lookahead_planted_future_spike_is_unreachable() -> None:
+    prices = [100.0] * 60 + [1000.0]
+    rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
+    bars = pl.DataFrame(rows)
+    spec = _trix_spec(lookback=15)
+    signaled = signal_for(bars, spec)
+    positions_before_plant = signaled["position"].to_list()[:-1]
+    assert all(p == 0.0 for p in positions_before_plant)
+
+
+def test_engine_agrees_with_signal_for_across_all_thirteen_families() -> None:
     """run_backtest's own turnover must equal the sum of |position
     changes| in signal_for()'s own output -- a real end-to-end
     consistency check that the engine trades exactly the position series
@@ -372,6 +567,7 @@ def test_engine_agrees_with_signal_for_across_all_eight_families() -> None:
     for spec in (
         _bollinger_spec(), _breakout_spec(), _rsi_spec(), _macd_spec(),
         _stochastic_spec(), _sar_spec(), _keltner_spec(),
+        _williams_r_spec(), _cci_spec(), _ao_spec(), _supertrend_spec(), _trix_spec(),
     ):
         result = run_backtest(pit, spec, rows[-1]["available_at"])
         positions = signal_for(bars, spec)["position"].to_list()

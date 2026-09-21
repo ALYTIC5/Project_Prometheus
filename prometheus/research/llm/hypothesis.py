@@ -5,9 +5,10 @@ validation.holdout.access_holdout() or evaluating its own output
 (tests/test_llm_hypothesis_holdout_safety.py enforces both properties by
 static inspection, not by trusting a mock to catch every path).
 
-Reuses the 8 EXISTING StrategySpec families (MOMENTUM/BOLLINGER/
-VOL_BREAKOUT/RSI/MACD/STOCHASTIC/PARABOLIC_SAR/KELTNER) -- no new DSL.
-A malformed LLM response fails
+Reuses the 13 EXISTING StrategySpec families (MOMENTUM/BOLLINGER/
+VOL_BREAKOUT/RSI/MACD/STOCHASTIC/PARABOLIC_SAR/KELTNER/WILLIAMS_R/CCI/
+AWESOME_OSCILLATOR/SUPERTREND/TRIX) -- no new DSL. A malformed LLM
+response fails
 StrategySpec's own model_validator and raises; it is never silently
 coerced into an invalid spec.
 
@@ -38,7 +39,9 @@ Respond with ONLY a JSON object with these exact keys:
   exit_window; RSI: rsi_lookback, rsi_oversold; MACD: macd_fast, macd_slow,
   macd_signal; STOCHASTIC: stoch_lookback, stoch_oversold; PARABOLIC_SAR:
   sar_af_start, sar_af_increment, sar_af_max; KELTNER: keltner_lookback,
-  keltner_multiplier)
+  keltner_multiplier; WILLIAMS_R: williams_lookback, williams_oversold;
+  CCI: cci_lookback, cci_oversold; AWESOME_OSCILLATOR: ao_fast, ao_slow;
+  SUPERTREND: supertrend_lookback, supertrend_multiplier; TRIX: trix_lookback)
 - "expected_horizon": integer, bars ahead this signal is claimed to matter
 - "hypothesis_text": a one-paragraph explanation grounded in the provided papers
 - "expected_effect": what measurable effect you expect (e.g. "higher Sharpe",
@@ -170,6 +173,11 @@ async def generate_hypothesis(
             "STOCHASTIC": ("stoch_lookback", "stoch_oversold"),
             "PARABOLIC_SAR": ("sar_af_start", "sar_af_increment", "sar_af_max"),
             "KELTNER": ("keltner_lookback", "keltner_multiplier"),
+            "WILLIAMS_R": ("williams_lookback", "williams_oversold"),
+            "CCI": ("cci_lookback", "cci_oversold"),
+            "AWESOME_OSCILLATOR": ("ao_fast", "ao_slow"),
+            "SUPERTREND": ("supertrend_lookback", "supertrend_multiplier"),
+            "TRIX": ("trix_lookback",),
         }[family]
         params = {field: parsed[field] for field in param_fields}
         expected_horizon = parsed["expected_horizon"]

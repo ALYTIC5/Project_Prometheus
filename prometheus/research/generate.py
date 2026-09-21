@@ -14,14 +14,19 @@ component (Prompt 7's evolution, Prompt 9's LLM layer) has to beat this.
 from __future__ import annotations
 
 from prometheus.strategy.spec import (
+    FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
+    FAMILY_CCI,
     FAMILY_KELTNER,
     FAMILY_MACD,
     FAMILY_MOMENTUM,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
     FAMILY_STOCHASTIC,
+    FAMILY_SUPERTREND,
+    FAMILY_TRIX,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_WILLIAMS_R,
     StrategySpec,
 )
 
@@ -67,6 +72,37 @@ _SAR_PARAM_SETS = ((0.02, 0.02, 0.2), (0.01, 0.01, 0.1), (0.03, 0.03, 0.3))
 # indicator).
 _KELTNER_LOOKBACKS = (10, 20, 30)
 _KELTNER_MULTIPLIERS = (1.5, 2.0, 2.5)
+
+# Larry Williams' own default (14-bar lookback, -80 -- 80% of the true
+# range down from the highest high -- is Williams' own classic oversold
+# level) plus two nearby, still-standard variants, same grid shape RSI/
+# STOCHASTIC use.
+_WILLIAMS_LOOKBACKS = (7, 14, 21)
+_WILLIAMS_OVERSOLD_LEVELS = (-70.0, -80.0, -90.0)
+
+# Donald Lambert's own default (20-bar lookback) plus two nearby
+# variants, with Lambert's own -100 reversal zone plus two nearby
+# variants -- same grid shape RSI/STOCHASTIC use.
+_CCI_LOOKBACKS = (10, 20, 30)
+_CCI_OVERSOLD_LEVELS = (-80.0, -100.0, -150.0)
+
+# Bill Williams' own fixed 5/34 default is the only cited configuration
+# for this specific indicator (unlike MACD, there is no well-known
+# "alternate AO" convention) -- two nearby variants included anyway, for
+# the same reason every other family's grid explores more than one
+# point even around a single canonical default.
+_AO_PARAM_SETS = ((5, 34), (3, 21), (8, 55))
+
+# Olivier Seban's own commonly-cited default (10-bar ATR, 3.0x
+# multiplier) plus two nearby variants -- same grid shape KELTNER uses
+# (both are ATR-band constructions).
+_SUPERTREND_LOOKBACKS = (7, 10, 14)
+_SUPERTREND_MULTIPLIERS = (2.0, 3.0, 4.0)
+
+# TRIX has no single universally-cited default the way Wilder's RSI
+# does; 15 is the most commonly seen period in practitioner literature,
+# included with two nearby variants -- same grid shape RSI uses.
+_TRIX_LOOKBACKS = (9, 15, 21)
 
 
 def generate_grid(symbol: str, timeframe: str, family: str = FAMILY_MOMENTUM) -> list[StrategySpec]:
@@ -230,6 +266,88 @@ def generate_keltner_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     return specs
 
 
+def generate_williams_r_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _WILLIAMS_LOOKBACKS:
+        for oversold in _WILLIAMS_OVERSOLD_LEVELS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_WILLIAMS_R,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    williams_lookback=lookback,
+                    williams_oversold=oversold,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_cci_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _CCI_LOOKBACKS:
+        for oversold in _CCI_OVERSOLD_LEVELS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_CCI,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    cci_lookback=lookback,
+                    cci_oversold=oversold,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_awesome_oscillator_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for fast, slow in _AO_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_AWESOME_OSCILLATOR,
+                symbol=symbol,
+                timeframe=timeframe,
+                ao_fast=fast,
+                ao_slow=slow,
+                expected_horizon=slow,
+            )
+        )
+    return specs
+
+
+def generate_supertrend_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _SUPERTREND_LOOKBACKS:
+        for multiplier in _SUPERTREND_MULTIPLIERS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_SUPERTREND,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    supertrend_lookback=lookback,
+                    supertrend_multiplier=multiplier,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_trix_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _TRIX_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_TRIX,
+                symbol=symbol,
+                timeframe=timeframe,
+                trix_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
 def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     """Every classic-template family's grid, combined -- the full
     baseline every future component must beat. Carry (PROMPTS.md's
@@ -245,4 +363,9 @@ def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
         *generate_stochastic_grid(symbol, timeframe),
         *generate_parabolic_sar_grid(symbol, timeframe),
         *generate_keltner_grid(symbol, timeframe),
+        *generate_williams_r_grid(symbol, timeframe),
+        *generate_cci_grid(symbol, timeframe),
+        *generate_awesome_oscillator_grid(symbol, timeframe),
+        *generate_supertrend_grid(symbol, timeframe),
+        *generate_trix_grid(symbol, timeframe),
     ]

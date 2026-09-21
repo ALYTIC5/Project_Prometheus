@@ -29,6 +29,11 @@ const FAMILY_COLOR: Record<string, string> = {
   STOCHASTIC: 'border-fuchsia-500/60 text-fuchsia-700 dark:text-fuchsia-400',
   PARABOLIC_SAR: 'border-orange-500/60 text-orange-700 dark:text-orange-400',
   KELTNER: 'border-teal-500/60 text-teal-700 dark:text-teal-400',
+  WILLIAMS_R: 'border-pink-500/60 text-pink-700 dark:text-pink-400',
+  CCI: 'border-yellow-500/60 text-yellow-700 dark:text-yellow-400',
+  AWESOME_OSCILLATOR: 'border-purple-500/60 text-purple-700 dark:text-purple-400',
+  SUPERTREND: 'border-green-500/60 text-green-700 dark:text-green-400',
+  TRIX: 'border-blue-500/60 text-blue-700 dark:text-blue-400',
 };
 
 function familyClass(family: string | null): string {

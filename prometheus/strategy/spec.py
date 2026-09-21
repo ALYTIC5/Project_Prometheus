@@ -1,15 +1,17 @@
-"""Eight concrete, fully-parameterized strategy families: SMA crossover
-(momentum), Bollinger mean-reversion, Donchian-channel volatility
-breakout, Wilder's RSI mean-reversion, Appel's MACD trend-following,
-Lane's Stochastic Oscillator mean-reversion, Wilder's Parabolic SAR
-trend-following, and Keltner Channel volatility breakout -- the "classic
-templates" PROMPT 6 names as the baseline every future component must
-beat. All eight are cited, standard technical constructions, not
-invented formulas. Every family after the original three was added
-later with the same justification and the same touch points
-(backtest/engine.py's signal dispatch, research/generate.py's grid,
-research/llm/hypothesis.py's family->fields mapping) VOL_BREAKOUT first
-established.
+"""Thirteen concrete, fully-parameterized strategy families: SMA
+crossover (momentum), Bollinger mean-reversion, Donchian-channel
+volatility breakout, Wilder's RSI mean-reversion, Appel's MACD
+trend-following, Lane's Stochastic Oscillator mean-reversion, Wilder's
+Parabolic SAR trend-following, Keltner Channel volatility breakout,
+Larry Williams' %R mean-reversion, Donald Lambert's CCI mean-reversion,
+Bill Williams' Awesome Oscillator momentum, Olivier Seban's SuperTrend
+trend-following, and TRIX momentum -- the "classic templates" PROMPT 6
+names as the baseline every future component must beat. All thirteen
+are cited, standard technical constructions, not invented formulas.
+Every family after the original three was added later with the same
+justification and the same touch points (backtest/engine.py's signal
+dispatch, research/generate.py's grid, research/llm/hypothesis.py's
+family->fields mapping) VOL_BREAKOUT first established.
 
 Deterministic, no free text, no LLM -- CLAUDE.md's own stated null
 hypothesis is that LLM-generated research loses to static baselines until
@@ -69,9 +71,15 @@ FAMILY_SVM = "SVM"
 FAMILY_STOCHASTIC = "STOCHASTIC"
 FAMILY_PARABOLIC_SAR = "PARABOLIC_SAR"
 FAMILY_KELTNER = "KELTNER"
+FAMILY_WILLIAMS_R = "WILLIAMS_R"
+FAMILY_CCI = "CCI"
+FAMILY_AWESOME_OSCILLATOR = "AWESOME_OSCILLATOR"
+FAMILY_SUPERTREND = "SUPERTREND"
+FAMILY_TRIX = "TRIX"
 FAMILIES = (
     FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
     FAMILY_STOCHASTIC, FAMILY_PARABOLIC_SAR, FAMILY_KELTNER,
+    FAMILY_WILLIAMS_R, FAMILY_CCI, FAMILY_AWESOME_OSCILLATOR, FAMILY_SUPERTREND, FAMILY_TRIX,
 )
 
 # Each family's own parameter fields -- the set a spec of that family MUST
@@ -98,6 +106,11 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_STOCHASTIC: ("stoch_lookback", "stoch_oversold"),
     FAMILY_PARABOLIC_SAR: ("sar_af_start", "sar_af_increment", "sar_af_max"),
     FAMILY_KELTNER: ("keltner_lookback", "keltner_multiplier"),
+    FAMILY_WILLIAMS_R: ("williams_lookback", "williams_oversold"),
+    FAMILY_CCI: ("cci_lookback", "cci_oversold"),
+    FAMILY_AWESOME_OSCILLATOR: ("ao_fast", "ao_slow"),
+    FAMILY_SUPERTREND: ("supertrend_lookback", "supertrend_multiplier"),
+    FAMILY_TRIX: ("trix_lookback",),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -186,6 +199,30 @@ class StrategySpec(BaseModel):
     # around an EMA rather than Donchian highs/lows).
     keltner_lookback: int | None = None
     keltner_multiplier: float | None = None
+    # WILLIAMS_R (Larry Williams' own construction): %R = -100 *
+    # (highest_high_n - close) / (highest_high_n - lowest_low_n). Long
+    # when %R drops below the oversold threshold (a value in (-100, 0)).
+    williams_lookback: int | None = None
+    williams_oversold: float | None = None
+    # CCI (Donald Lambert's own Commodity Channel Index): (typical_price
+    # - SMA(typical_price)) / (0.015 * mean_deviation). Long when CCI
+    # drops below the oversold threshold (Lambert's own -100 zone).
+    cci_lookback: int | None = None
+    cci_oversold: float | None = None
+    # AWESOME_OSCILLATOR (Bill Williams' own construction): SMA(median
+    # price, ao_fast) - SMA(median price, ao_slow). Long on a zero-line
+    # crossover (AO > 0).
+    ao_fast: int | None = None
+    ao_slow: int | None = None
+    # SUPERTREND (Olivier Seban's own construction): ATR-based bands
+    # around the bar's own midpoint, with Wilder-style hysteresis
+    # deciding which band is "the" SuperTrend line. Genuinely sequential,
+    # same treatment as PARABOLIC_SAR.
+    supertrend_lookback: int | None = None
+    supertrend_multiplier: float | None = None
+    # TRIX: the rate of change of a triple-smoothed EMA. Long on a
+    # zero-line crossover (TRIX > 0).
+    trix_lookback: int | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -253,6 +290,12 @@ class StrategySpec(BaseModel):
                 raise ValueError("sar_af_start must be in (0, sar_af_max]")
             if self.sar_af_increment <= 0:  # type: ignore[operator]
                 raise ValueError("sar_af_increment must be positive")
+        if self.family == FAMILY_WILLIAMS_R and not (-100.0 < self.williams_oversold < 0.0):  # type: ignore[operator]
+            raise ValueError("williams_oversold must be in (-100, 0)")
+        if self.family == FAMILY_CCI and self.cci_oversold >= 0.0:  # type: ignore[operator]
+            raise ValueError("cci_oversold must be negative")
+        if self.family == FAMILY_AWESOME_OSCILLATOR and self.ao_fast >= self.ao_slow:  # type: ignore[operator]
+            raise ValueError("ao_fast must be less than ao_slow")
         return self
 
     @property

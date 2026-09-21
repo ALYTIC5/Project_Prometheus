@@ -28,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+import numpy as np
 import polars as pl
 
 from prometheus.backtest.benchmark import (
@@ -45,7 +46,9 @@ from prometheus.backtest.ml_signal import (
 )
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
+    FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
+    FAMILY_CCI,
     FAMILY_GRADIENT_BOOSTING,
     FAMILY_KELTNER,
     FAMILY_LOGISTIC_REGRESSION,
@@ -55,8 +58,11 @@ from prometheus.strategy.spec import (
     FAMILY_RANDOM_FOREST,
     FAMILY_RSI,
     FAMILY_STOCHASTIC,
+    FAMILY_SUPERTREND,
     FAMILY_SVM,
+    FAMILY_TRIX,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_WILLIAMS_R,
     StrategySpec,
 )
 
@@ -377,6 +383,194 @@ def _keltner_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.
     )
 
 
+def _williams_r_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """Larry Williams' own %R: -100 * (highest_high_n - close) /
+    (highest_high_n - lowest_low_n). Long whenever %R drops below the
+    oversold threshold (a value in (-100, 0)), flat otherwise -- same
+    stateless shape as _stochastic_signal (this is, not coincidentally,
+    a rescaling of the same underlying %K construction, under its own
+    distinct, separately cited name and -100..0 convention)."""
+    return (
+        bars.with_columns(
+            pl.col("high").rolling_max(lookback).alias("_highest_high"),
+            pl.col("low").rolling_min(lookback).alias("_lowest_low"),
+        )
+        .with_columns(
+            (
+                -100.0
+                * (pl.col("_highest_high") - pl.col("close"))
+                / (pl.col("_highest_high") - pl.col("_lowest_low"))
+            ).alias("_pct_r")
+        )
+        .with_columns(
+            (pl.col("_pct_r") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _cci_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFrame:
+    """Donald Lambert's own Commodity Channel Index: (typical_price -
+    SMA(typical_price, lookback)) / (0.015 * mean_absolute_deviation).
+    0.015 is Lambert's own scaling constant (chosen so roughly 70-80% of
+    CCI values fall within +-100 on his original commodities data) --
+    cited, not invented. Long whenever CCI drops below the oversold
+    threshold (Lambert's own -100 reversal zone), flat otherwise.
+
+    Polars has no built-in rolling mean-absolute-deviation, so it is
+    computed directly: rolling_map applies a real function per window
+    (mean absolute deviation from that window's own mean), the same
+    "no vectorized primitive exists for this, compute it directly"
+    posture ml_features.py's RSI/MACD constructions already take for
+    their own EMA-based math."""
+    typical_price = (pl.col("high") + pl.col("low") + pl.col("close")) / 3.0
+    return (
+        bars.with_columns(typical_price.alias("_typical_price"))
+        .with_columns(
+            pl.col("_typical_price").rolling_mean(lookback).alias("_sma_typical"),
+            pl.col("_typical_price")
+            .rolling_map(lambda s: (s - s.mean()).abs().mean(), window_size=lookback)
+            .alias("_mean_deviation"),
+        )
+        .with_columns(
+            (
+                (pl.col("_typical_price") - pl.col("_sma_typical"))
+                / (0.015 * pl.col("_mean_deviation"))
+            ).alias("_cci")
+        )
+        .with_columns(
+            (pl.col("_cci") < oversold)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _awesome_oscillator_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
+    """Bill Williams' own Awesome Oscillator: SMA(median_price, fast) -
+    SMA(median_price, slow), median_price = (high + low) / 2. Long on a
+    zero-line crossover (AO > 0), flat otherwise -- a fresh condition
+    re-evaluated every bar, the SMA-difference analogue of _macd_signal's
+    EMA-difference construction (a genuinely distinct, separately cited
+    indicator, not a copy of MACD under a different name)."""
+    median_price = (pl.col("high") + pl.col("low")) / 2.0
+    return (
+        bars.with_columns(median_price.alias("_median_price"))
+        .with_columns(
+            pl.col("_median_price").rolling_mean(fast).alias("_ao_fast"),
+            pl.col("_median_price").rolling_mean(slow).alias("_ao_slow"),
+        )
+        .with_columns((pl.col("_ao_fast") - pl.col("_ao_slow")).alias("_ao"))
+        .with_columns(
+            (pl.col("_ao") > 0.0)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _supertrend_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.DataFrame:
+    """Olivier Seban's own SuperTrend: ATR-based bands around each bar's
+    own midpoint ((high+low)/2), with Wilder-style hysteresis deciding
+    which band is "the" SuperTrend line and therefore the trend
+    direction. Genuinely sequential -- the final upper/lower bands and
+    the trend flag at bar i all depend on bar i-1's own final bands and
+    trend, none of which are expressible as a pure column expression --
+    so, like _parabolic_sar_signal, this is computed with a real Python
+    loop over numpy arrays, not a polars expression chain.
+
+    Long-only mapping: uptrend -> position 1.0, downtrend -> position
+    0.0 (this backtest engine has no short leg). ATR is a plain
+    lookback-bar rolling mean of true range (the standard "SuperTrend
+    ATR", not Wilder's own smoothed ATR -- both are cited variants in
+    real-world SuperTrend implementations); bar i's own trend is decided
+    using bar i's own high/low/close, and the final shift(1) means
+    today's decided trend becomes tomorrow's held position, same
+    discipline every other family's signal ends with."""
+    n = bars.height
+    if n < lookback + 1:
+        return bars.with_columns(pl.Series("position", [0.0] * n))
+
+    prev_close = pl.col("close").shift(1)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    frame = bars.with_columns(
+        ((pl.col("high") + pl.col("low")) / 2.0).alias("_mid"),
+        true_range.rolling_mean(lookback).alias("_atr"),
+    )
+    mids = frame["_mid"].to_numpy()
+    atrs = frame["_atr"].to_numpy()
+    closes = frame["close"].to_numpy()
+
+    raw = [0.0] * n
+    final_upper = float("nan")
+    final_lower = float("nan")
+    uptrend = True
+    for i in range(n):
+        if np.isnan(atrs[i]):
+            continue  # not enough history yet for this bar's own ATR -- stays flat
+        basic_upper = mids[i] + multiplier * atrs[i]
+        basic_lower = mids[i] - multiplier * atrs[i]
+
+        if np.isnan(final_upper):
+            final_upper, final_lower = basic_upper, basic_lower
+        else:
+            final_upper = (
+                basic_upper if basic_upper < final_upper or closes[i - 1] > final_upper
+                else final_upper
+            )
+            final_lower = (
+                basic_lower if basic_lower > final_lower or closes[i - 1] < final_lower
+                else final_lower
+            )
+
+        if uptrend:
+            if closes[i] < final_lower:
+                uptrend = False
+        elif closes[i] > final_upper:
+            uptrend = True
+        raw[i] = 1.0 if uptrend else 0.0
+
+    raw_series = pl.Series("_raw_trend", raw)
+    return frame.with_columns(raw_series.shift(1).fill_null(0.0).alias("position"))
+
+
+def _trix_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """The rate of change of a triple-smoothed EMA -- a real, cited
+    momentum oscillator (not a rebranded MACD: MACD is a difference of
+    two EMAs of different lengths, TRIX is a percentage rate of change
+    of one EMA smoothed three times at the SAME length). Long on a
+    zero-line crossover (TRIX > 0), flat otherwise."""
+    ema1 = pl.col("close").ewm_mean(span=lookback, adjust=False)
+    return (
+        bars.with_columns(ema1.alias("_ema1"))
+        .with_columns(pl.col("_ema1").ewm_mean(span=lookback, adjust=False).alias("_ema2"))
+        .with_columns(pl.col("_ema2").ewm_mean(span=lookback, adjust=False).alias("_ema3"))
+        .with_columns(
+            (
+                (pl.col("_ema3") - pl.col("_ema3").shift(1)) / pl.col("_ema3").shift(1) * 100.0
+            ).alias("_trix")
+        )
+        .with_columns(
+            (pl.col("_trix") > 0.0)
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
 def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     """Public seam validation/metrics.py's information-coefficient
     calculation needs: IC is a property of the SIGNAL (does it predict
@@ -451,6 +645,21 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     if spec.family == FAMILY_KELTNER:
         assert spec.keltner_lookback is not None and spec.keltner_multiplier is not None
         return _keltner_signal(bars, spec.keltner_lookback, spec.keltner_multiplier)
+    if spec.family == FAMILY_WILLIAMS_R:
+        assert spec.williams_lookback is not None and spec.williams_oversold is not None
+        return _williams_r_signal(bars, spec.williams_lookback, spec.williams_oversold)
+    if spec.family == FAMILY_CCI:
+        assert spec.cci_lookback is not None and spec.cci_oversold is not None
+        return _cci_signal(bars, spec.cci_lookback, spec.cci_oversold)
+    if spec.family == FAMILY_AWESOME_OSCILLATOR:
+        assert spec.ao_fast is not None and spec.ao_slow is not None
+        return _awesome_oscillator_signal(bars, spec.ao_fast, spec.ao_slow)
+    if spec.family == FAMILY_SUPERTREND:
+        assert spec.supertrend_lookback is not None and spec.supertrend_multiplier is not None
+        return _supertrend_signal(bars, spec.supertrend_lookback, spec.supertrend_multiplier)
+    if spec.family == FAMILY_TRIX:
+        assert spec.trix_lookback is not None
+        return _trix_signal(bars, spec.trix_lookback)
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -495,6 +704,21 @@ def _min_bars_for(spec: StrategySpec) -> int:
     if spec.family == FAMILY_KELTNER:
         assert spec.keltner_lookback is not None
         return spec.keltner_lookback + 2
+    if spec.family == FAMILY_WILLIAMS_R:
+        assert spec.williams_lookback is not None
+        return spec.williams_lookback + 2
+    if spec.family == FAMILY_CCI:
+        assert spec.cci_lookback is not None
+        return spec.cci_lookback + 2
+    if spec.family == FAMILY_AWESOME_OSCILLATOR:
+        assert spec.ao_slow is not None
+        return spec.ao_slow + 2
+    if spec.family == FAMILY_SUPERTREND:
+        assert spec.supertrend_lookback is not None
+        return spec.supertrend_lookback + 2
+    if spec.family == FAMILY_TRIX:
+        assert spec.trix_lookback is not None
+        return spec.trix_lookback + 2
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 

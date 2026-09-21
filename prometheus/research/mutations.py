@@ -47,7 +47,9 @@ _SMOOTHING_FIELDS = {
     "exit_window", "band_multiplier", "rsi_lookback", "macd_fast",
     "macd_slow", "macd_signal", "rf_train_window", "gb_train_window",
     "lr_train_window", "svm_train_window", "stoch_lookback",
-    "keltner_lookback", "keltner_multiplier",
+    "keltner_lookback", "keltner_multiplier", "williams_lookback",
+    "cci_lookback", "ao_fast", "ao_slow", "supertrend_lookback",
+    "supertrend_multiplier", "trix_lookback",
 }
 
 

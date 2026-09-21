@@ -5,10 +5,15 @@ from pydantic import ValidationError
 
 from prometheus.strategy.spec import (
     FAMILIES,
+    FAMILY_AWESOME_OSCILLATOR,
+    FAMILY_CCI,
     FAMILY_KELTNER,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
     FAMILY_STOCHASTIC,
+    FAMILY_SUPERTREND,
+    FAMILY_TRIX,
+    FAMILY_WILLIAMS_R,
     StrategySpec,
 )
 
@@ -237,3 +242,72 @@ def test_keltner_valid_spec_constructs() -> None:
     )
     assert spec.family == FAMILY_KELTNER
     assert FAMILY_KELTNER in FAMILIES
+
+
+def test_williams_r_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_WILLIAMS_R, symbol="BTC/USDT", timeframe="1d",
+        williams_lookback=14, williams_oversold=-80.0, expected_horizon=14,
+    )
+    assert spec.family == FAMILY_WILLIAMS_R
+    assert FAMILY_WILLIAMS_R in FAMILIES
+
+
+def test_williams_r_oversold_out_of_bounds_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_WILLIAMS_R, symbol="BTC/USDT", timeframe="1d",
+            williams_lookback=14, williams_oversold=10.0, expected_horizon=14,
+        )
+
+
+def test_cci_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_CCI, symbol="BTC/USDT", timeframe="1d",
+        cci_lookback=20, cci_oversold=-100.0, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_CCI
+    assert FAMILY_CCI in FAMILIES
+
+
+def test_cci_positive_oversold_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_CCI, symbol="BTC/USDT", timeframe="1d",
+            cci_lookback=20, cci_oversold=100.0, expected_horizon=20,
+        )
+
+
+def test_awesome_oscillator_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_AWESOME_OSCILLATOR, symbol="BTC/USDT", timeframe="1d",
+        ao_fast=5, ao_slow=34, expected_horizon=34,
+    )
+    assert spec.family == FAMILY_AWESOME_OSCILLATOR
+    assert FAMILY_AWESOME_OSCILLATOR in FAMILIES
+
+
+def test_awesome_oscillator_fast_exceeding_slow_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_AWESOME_OSCILLATOR, symbol="BTC/USDT", timeframe="1d",
+            ao_fast=34, ao_slow=5, expected_horizon=34,
+        )
+
+
+def test_supertrend_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_SUPERTREND, symbol="BTC/USDT", timeframe="1d",
+        supertrend_lookback=10, supertrend_multiplier=3.0, expected_horizon=10,
+    )
+    assert spec.family == FAMILY_SUPERTREND
+    assert FAMILY_SUPERTREND in FAMILIES
+
+
+def test_trix_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_TRIX, symbol="BTC/USDT", timeframe="1d",
+        trix_lookback=15, expected_horizon=15,
+    )
+    assert spec.family == FAMILY_TRIX
+    assert FAMILY_TRIX in FAMILIES
