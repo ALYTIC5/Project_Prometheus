@@ -543,3 +543,53 @@ and update the entry's status when it does.
   ->>'is_representative'` is `false` -- same JOIN-through-`experiments`
   path `GET /clusters/`'s own query already establishes for going from
   `config_hash` to `strategy_id`.
+
+## Cross-sectional rotation engine -- final-review findings (2026-09-21)
+
+Both recorded during the cross-sectional rotation branch's final
+whole-branch review, deliberately documented rather than fixed in that
+same fix wave (each is a real design decision, not an unattended
+change).
+
+- **I4: `backtest/portfolio_engine.py` has zero coverage in
+  `tests/laws/`.** The branch added a SECOND backtest engine --
+  `run_portfolio_backtest` -- and every law test in `tests/laws/` still
+  exercises only `backtest/engine.py`'s single-symbol
+  `run_backtest`. Two specific tests are missing. (1) A **Law 1**
+  planted-future-bar test: construct a universe where a bar dated
+  AFTER a rebalance's own decision date would visibly change that
+  rebalance's chosen weights, and assert it does not -- the engine's
+  `available_at` cutoff (`trailing_return`/`weights_for_gtaa_sma`) is
+  the only thing standing between a rotation decision and look-ahead,
+  and the final review's own I2 finding (that same cutoff silently
+  no-opping the first rebalance in production) is evidence this code
+  path is easy to get wrong without a law-level test watching it. (2) A
+  **Law 2** survivorship test in `tests/laws/` specifically: only a
+  unit-level equivalent exists today
+  (`tests/test_portfolio_engine.py::test_equal_weight_excludes_symbol_
+  before_its_listed_at` and the GEM dispatch-guard test), and
+  `tests/laws/` is the suite with the "may not be weakened, skipped,
+  xfailed, or deleted" guarantee -- an ordinary test file carries no
+  such protection. **Trigger:** whoever next picks up law-test-coverage
+  completeness, or the next change to `_eligible_symbols` /
+  `_weights_for` / either `available_at` cutoff in
+  `portfolio_engine.py`.
+
+- **I5: `benchmark_equity` is one global curve, overwritten per spec.**
+  `backtest/benchmark.py`'s `record_benchmark_curve` upserts `ON
+  CONFLICT (date) DO UPDATE`, keyed on `date` ALONE -- so every spec's
+  own buy-and-hold curve overwrites the same global row for that date.
+  This predates this branch (every crypto spec already collided with
+  every other crypto spec), but the branch makes the collision
+  materially worse: an 11-ETF sector-basket benchmark can now overwrite
+  a BTC benchmark for the same date, and which one survives depends on
+  queue execution order -- nondeterministic. That undermines Law 8's
+  "the buy-and-hold equity curve is always visible": it is still
+  visible, but on any given date it may be some other universe's
+  curve. Not fixed in the final-review fix wave because the fix is a
+  real schema decision, not a code tweak. **Trigger:** key
+  `benchmark_equity` on `(date, universe_hash)` instead of `date`
+  alone, or move to a per-spec-scoped benchmark table; either is a
+  migration plus a change to every read path
+  (`api/routes/world.py`'s benchmark drilldown, the dashboard's
+  benchmark chart) and wants its own spec.
