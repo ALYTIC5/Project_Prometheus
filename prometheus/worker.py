@@ -19,31 +19,42 @@ children through the SAME queue.enqueue() every grid job goes through,
 so they are claimed and run by next cycle's drain_queue via the
 identical "run_backtest" path, not a second execution path.
 
-Now four concerns run at four different rates from this ONE entrypoint,
+Now five concerns run at five different rates from this ONE entrypoint,
 gated by worker_cadence (is_due/mark_run below): ingest hourly, research
-(today's grid/validate/evolve pipeline, unchanged logic) every 30
-minutes, paper trading every tick, and (6) PROMPT 9's llm_ingestion
-daily -- an arXiv search plus PDF/GROBID extraction into
-research_papers, coarser than the other three because papers don't
-appear faster than that and the extraction is comparatively expensive.
-The research cycle itself also now carries (7) one bounded, budget-gated
-LLM hypothesis step, which enqueues its candidate through the SAME
-queue.enqueue() path as grid and evolution children and is isolated so
-its failure can never sink the deterministic work around it. The Railway
-cron interval itself tightens from */30 to */15 (the finest of the four
-rates) so the paper concern's tick actually happens on schedule -- still
-one scheduled worker, not a second service.
+(today's grid/validate/evolve pipeline -- every classic-template family
+AND every ML component, RANDOM_FOREST/GRADIENT_BOOSTING/
+LOGISTIC_REGRESSION/SVM, not just MOMENTUM) every 30 minutes, paper
+trading every tick, PROMPT 9's llm_ingestion daily -- an arXiv search
+plus PDF/GROBID extraction into research_papers, coarser than the
+others because papers don't appear faster than that and the extraction
+is comparatively expensive -- and ablation daily: the six real
+component-vs-baseline A/B batches (evolution, LLM hypotheses, and every
+ML family) that were previously written but never scheduled anywhere in
+production (docs/DEFERRED.md's "RANDOM_FOREST strategy family" entry),
+bounded to a small symbol subset for the same reason register_evolution_
+component's own docstring already bounds its generations. The research
+cycle itself also carries one bounded, budget-gated LLM hypothesis step,
+which enqueues its candidate through the SAME queue.enqueue() path as
+grid and evolution children and is isolated so its failure can never
+sink the deterministic work around it. The Railway cron interval itself
+tightens from */30 to */15 (the finest of the five rates) so the paper
+concern's tick actually happens on schedule -- still one scheduled
+worker, not a second service.
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from prometheus.core.cadence import (
+    ABLATION_INTERVAL_SECONDS as _ABLATION_INTERVAL_SECONDS,
+)
 from prometheus.core.cadence import (
     CADENCE_SLACK_FACTOR as _CADENCE_SLACK_FACTOR,
 )
@@ -60,9 +71,18 @@ from prometheus.core.cadence import (
     RESEARCH_INTERVAL_SECONDS as _RESEARCH_INTERVAL_SECONDS,
 )
 from prometheus.core.db import get_session
+from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingestion import backfill, load_universe_symbols
 from prometheus.data.loaders import load_point_in_time
+from prometheus.experiments.ablation import (
+    register_evolution_component,
+    register_gradient_boosting_component,
+    register_llm_component,
+    register_logistic_regression_component,
+    register_ml_component,
+    register_svm_component,
+)
 from prometheus.experiments.queue import enqueue, get_queue_settings, reap_stale_claims
 from prometheus.experiments.runner import (
     drain_queue,
@@ -89,7 +109,12 @@ from prometheus.research.llm.hypothesis import (
     generate_hypothesis,
 )
 from prometheus.research.llm.ingestion import ingest_paper, search_arxiv
-from prometheus.research.ml.generate import generate_random_forest_grid
+from prometheus.research.ml.generate import (
+    generate_gradient_boosting_grid,
+    generate_logistic_regression_grid,
+    generate_random_forest_grid,
+    generate_svm_grid,
+)
 from prometheus.research.mutations import parameter_tune, swap_family
 from prometheus.research.population import (
     select_for_cross_breeding,
@@ -157,9 +182,23 @@ _LLM_INGESTION_MAX_RESULTS = 5
 # new quant-finance papers daily, and a $0-idle scale-to-zero GROBID
 # service means checking daily costs nothing when there's nothing new.
 #
-# The four interval constants and the slack factor are imported from
+# The five interval constants and the slack factor are imported from
 # core/cadence.py (see the top of this file) rather than defined here --
 # GET /pipeline/ (the dashboard's pipeline-status panel) needs them too.
+
+# Daily, same reasoning as LLM ingestion above: six real component-vs-
+# baseline A/B batches (evolution, LLM hypotheses, and every ML family)
+# is real, non-trivial walk-forward-backtest compute -- bounded to a
+# small symbol subset for the same reason register_evolution_component's
+# own docstring already bounds its generations to "tens... against 1-2
+# real symbols, not a compute spike". Without this concern,
+# component_registry (the Temple of Knowledge's verdicts) stays empty
+# forever regardless of how many real strategies any of these mechanisms
+# produces -- the pre-existing gap documented in
+# docs/DEFERRED.md's "RANDOM_FOREST strategy family" entry.
+_ABLATION_SYMBOLS_LIMIT = 2
+_ABLATION_WINDOW_DAYS = 180
+_ABLATION_EVOLUTION_GENERATIONS = 10
 
 _SELECT_CADENCE = text("SELECT last_run_at FROM worker_cadence WHERE concern = :concern")
 _UPSERT_CADENCE = text(
@@ -346,6 +385,86 @@ async def _run_llm_ingestion() -> list[str]:
     return ingested
 
 
+async def _run_ablation() -> list[str]:
+    """The daily-cadence concern that actually runs the six real A/B
+    ablations (evolution, LLM hypotheses, and every ML strategy family)
+    against the deterministic baseline grid on real out-of-sample data.
+    Bounded to a small symbol subset and a fixed historical window, not
+    the full universe -- six real walk-forward backtest batches is real
+    compute (see this session's own final-review cost findings), and
+    this concern's whole point is honest measurement, not maximum
+    coverage. Each registration is isolated: one component's failure
+    (a real out-of-sample data gap, say) must not prevent the other
+    five from recording their own verdict this cycle, same "one
+    concern's failure can't sink the others" principle run_once()
+    already applies. version=code_sha(): a deploy that changes a
+    component's own implementation starts a fresh, uncontaminated trial
+    history for it rather than mixing evidence across different code
+    versions of "the same" component."""
+    symbols = load_universe_symbols()[:_ABLATION_SYMBOLS_LIMIT]
+    if not symbols:
+        return []
+    end = datetime.now(UTC)
+    start = end - timedelta(days=_ABLATION_WINDOW_DAYS)
+    version = code_sha()
+    verdicts: list[str] = []
+
+    async def _register(name: str, register_fn: Any) -> None:
+        try:
+            async with get_session() as session:
+                result = await register_fn(session)
+            verdicts.append(f"{name}={result.verdict}")
+        except Exception as exc:
+            print(f"worker: ablation component {name!r} failed: {exc!r}")
+
+    await _register(
+        "evolution",
+        lambda session: register_evolution_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end,
+            generations=_ABLATION_EVOLUTION_GENERATIONS, version=version,
+        ),
+    )
+    await _register(
+        "llm",
+        lambda session: register_llm_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
+        ),
+    )
+    await _register(
+        "random_forest",
+        lambda session: register_ml_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
+        ),
+    )
+    await _register(
+        "gradient_boosting",
+        lambda session: register_gradient_boosting_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
+        ),
+    )
+    await _register(
+        "logistic_regression",
+        lambda session: register_logistic_regression_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
+        ),
+    )
+    await _register(
+        "svm",
+        lambda session: register_svm_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
+        ),
+    )
+    return verdicts
+
+
+_ML_GRID_GENERATORS = (
+    generate_random_forest_grid,
+    generate_gradient_boosting_grid,
+    generate_logistic_regression_grid,
+    generate_svm_grid,
+)
+
+
 async def _run_research() -> list[str]:
     symbols = load_universe_symbols()
     for symbol in symbols:
@@ -353,18 +472,20 @@ async def _run_research() -> list[str]:
             symbol, _TIMEFRAME, _GRID_LOOKBACK_DAYS,
             priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
         )
-        await enqueue_specs(
-            symbol, _TIMEFRAME, generate_random_forest_grid(symbol, _TIMEFRAME),
-            _GRID_LOOKBACK_DAYS,
-            priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
-        )
+        for generate_ml_grid in _ML_GRID_GENERATORS:
+            await enqueue_specs(
+                symbol, _TIMEFRAME, generate_ml_grid(symbol, _TIMEFRAME),
+                _GRID_LOOKBACK_DAYS,
+                priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
+            )
 
     ran = await drain_queue()
 
     # The Oracle (PROMPTS.md PROMPT 5): re-scores every symbol's grid
     # against real PBO/DSR/decay/regime evidence and writes
-    # validation_results. Every classic-template family AND
-    # RANDOM_FOREST, not just MOMENTUM -- see
+    # validation_results. Every classic-template family AND every ML
+    # component (RANDOM_FOREST/GRADIENT_BOOSTING/LOGISTIC_REGRESSION/
+    # SVM), not just MOMENTUM -- see
     # docs/superpowers/specs/2026-09-20-random-forest-strategy-design.md.
     validated: list[str] = []
     async with get_session() as session:
@@ -372,12 +493,13 @@ async def _run_research() -> list[str]:
             validated.extend(
                 await validate_baseline_grid(session, symbol, _TIMEFRAME, _GRID_LOOKBACK_DAYS)
             )
-            validated.extend(
-                await validate_specs(
-                    session, symbol, _TIMEFRAME,
-                    generate_random_forest_grid(symbol, _TIMEFRAME), _GRID_LOOKBACK_DAYS,
+            for generate_ml_grid in _ML_GRID_GENERATORS:
+                validated.extend(
+                    await validate_specs(
+                        session, symbol, _TIMEFRAME,
+                        generate_ml_grid(symbol, _TIMEFRAME), _GRID_LOOKBACK_DAYS,
+                    )
                 )
-            )
 
     # PROMPT 7: one bounded evolution step, after validate_grid so this
     # cycle's mutation/crossover parents are selected using freshly
@@ -694,6 +816,9 @@ async def run_once() -> list[str]:
         llm_ingestion_due = await is_due(
             session, concern="llm_ingestion", interval_seconds=_LLM_INGESTION_INTERVAL_SECONDS
         )
+        ablation_due = await is_due(
+            session, concern="ablation", interval_seconds=_ABLATION_INTERVAL_SECONDS
+        )
 
     # I9 (final-review fix wave): each concern is isolated in its own
     # try/except -- previously any single exception (a ccxt error from
@@ -734,6 +859,16 @@ async def run_once() -> list[str]:
                 print(f"worker: ingested {len(ingested)} paper(s): {ingested}")
         except Exception as exc:
             print(f"worker: llm_ingestion concern failed: {exc!r}")
+
+    if ablation_due:
+        try:
+            verdicts = await _run_ablation()
+            async with get_session() as session:
+                await mark_run(session, concern="ablation")
+            if verdicts:
+                print(f"worker: ablation verdicts: {verdicts}")
+        except Exception as exc:
+            print(f"worker: ablation concern failed: {exc!r}")
 
     return ran
 

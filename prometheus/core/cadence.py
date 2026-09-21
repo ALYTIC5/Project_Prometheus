@@ -11,6 +11,11 @@ LLM_INGESTION_INTERVAL_SECONDS = 86400.0  # daily
 INGEST_INTERVAL_SECONDS = 3600.0  # hourly
 RESEARCH_INTERVAL_SECONDS = 1800.0  # 30 min
 PAPER_INTERVAL_SECONDS = 900.0  # 15 min -- also the worker cron tick itself
+ABLATION_INTERVAL_SECONDS = 86400.0  # daily -- same rate as llm_ingestion; see
+# worker.py's _run_ablation for why this must stay coarse: six real
+# component-vs-baseline A/B batches (evolution, LLM, RF, gradient
+# boosting, logistic regression, SVM), each a real walk-forward backtest
+# run, bounded to a small symbol subset specifically because of this cost.
 
 # mark_run stamps last_run_at at the END of a concern's own work, and each
 # interval constant above exactly equals its own tick period -- without
@@ -29,4 +34,5 @@ CONCERN_INTERVALS: dict[str, float] = {
     "research": RESEARCH_INTERVAL_SECONDS,
     "paper": PAPER_INTERVAL_SECONDS,
     "llm_ingestion": LLM_INGESTION_INTERVAL_SECONDS,
+    "ablation": ABLATION_INTERVAL_SECONDS,
 }

@@ -15,6 +15,7 @@ const CONCERN_DESCRIPTIONS: Record<string, string> = {
   research: 'Enqueues the deterministic grid, drains the backtest queue, re-validates every scored strategy against real PBO/DSR/decay/regime evidence, then runs one bounded evolution step (mutation + crossover) and one budget-gated LLM hypothesis.',
   paper: 'Ticks paper trading for every live champion: decides and submits orders, polls fills, reconciles against the real benchmark.',
   llm_ingestion: 'Searches arXiv for new quantitative-finance papers and extracts their key sections (via GROBID, falling back to raw PDF text) into research_papers.',
+  ablation: 'Real A/B tests: evolution, LLM hypotheses, and every ML strategy family (random forest, gradient boosting, logistic regression, SVM) each scored against the deterministic baseline grid on real out-of-sample data, on a small bounded symbol subset. Writes component_registry -- the Temple of Knowledge’s verdicts.',
 };
 
 interface DetailModalProps {
@@ -126,6 +127,7 @@ const CONCERN_TITLES: Record<string, string> = {
   research: 'Research cycle',
   paper: 'Paper trading',
   llm_ingestion: 'LLM paper ingestion',
+  ablation: 'Component ablation (A/B tests)',
 };
 
 function titleFor(target: DetailTarget): string {
