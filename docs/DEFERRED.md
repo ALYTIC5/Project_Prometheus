@@ -170,6 +170,34 @@ and update the entry's status when it does.
   cpz-quant entry has the full finding). **Trigger:** none expected;
   revisit only if a future cpz-quant release actually ships the
   computation cpz-ai's proprietary SDK currently reserves.
+- **`RotationSpec`'s information_coefficient/icir/decay are always
+  `None`** — `information_coefficient()`/`compute_decay()`
+  (`validation/metrics.py`, `validation/decay.py`) call
+  `signal_for(bars, spec)`, a single-symbol-signal concept with no
+  defined multi-asset-weight-vector translation this project has a
+  citation for. `validate_rotation_specs` (`experiments/runner.py`)
+  passes a null `DecayProfile` and `information_coefficient=None`/
+  `icir=None` rather than inventing one. Doesn't block scoring
+  (`ScoreInputs` doesn't require them). **Trigger:** a real, cited
+  definition of IC for a portfolio weight vector (e.g. against each
+  rebalance's realized forward portfolio return) — no source consulted
+  for this batch defines one.
+- **Correlation clustering not applied to `RotationSpec`** —
+  `research/clustering.py`'s `cluster_by_correlation` is implemented and
+  typed for `StrategySpec` only: its representative-selection tiebreaker
+  reads `spec.parameters`, a property `RotationSpec` doesn't define.
+  Calling it with `RotationSpec` tuples (as an earlier draft of
+  `validate_rotation_specs` did) raises `AttributeError` at runtime for
+  any non-empty batch, not just a type-checker complaint.
+  `validate_rotation_specs` skips clustering entirely — `cluster` is
+  always `None` in its `validation_results.metrics`, same "absent beats
+  fabricated" treatment as the IC/ICIR/decay entry above, rather than a
+  hacky adapter or touching `research/clustering.py`/`strategy/
+  rotation_spec.py`, both outside this task's own authorized scope.
+  **Trigger:** generalizing `cluster_by_correlation`'s representative
+  tiebreaker to a spec-type-agnostic "tunable parameter count" (e.g.
+  `RotationSpec`'s own `lookback_days`/`top_n` convention) — a small,
+  well-scoped follow-up, not bundled into this pass.
 
 ## PROMPT 6 (ablation harness, the Temple of Knowledge)
 

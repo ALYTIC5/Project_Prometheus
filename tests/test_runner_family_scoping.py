@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from prometheus.experiments.runner import enqueue_baseline_grid, validate_baseline_grid
 
@@ -326,3 +326,88 @@ async def test_run_one_accepts_rotation_spec(db_session) -> None:
     ).mappings().first()
     assert decision_row is not None
     assert decision_row["decision"]["decision"] in ("ACCEPT", "REJECT")
+
+
+@pytest.mark.db
+async def test_validate_rotation_specs_writes_validation_result_with_null_ic(db_session) -> None:
+    """Task 9's own acceptance bar: validate_rotation_specs must write a
+    real validation_results row for a RotationSpec, with
+    information_coefficient/icir/decay honestly None throughout -- a
+    RotationSpec's information_coefficient has no defined meaning (see
+    _null_decay_profile's docstring, prometheus/experiments/runner.py),
+    so this must never be silently fabricated as 0.0 or any other
+    invented value.
+
+    Bars are seeded ending at "now" (not a fixed historical date, unlike
+    test_run_one_accepts_rotation_spec above) because
+    validate_rotation_specs computes its own [now-days, now) window
+    internally -- a fixed-past fixture window could fall entirely outside
+    it and silently produce zero experiment_ids instead of exercising the
+    real path."""
+    from prometheus.core.db import ValidationResult
+    from prometheus.data.models import OhlcvBar as OhlcvBarModel
+    from prometheus.data.models import UniverseMembership
+    from prometheus.experiments.runner import run_one, validate_rotation_specs
+    from prometheus.strategy.rotation_spec import ROTATION_FAMILY_DUAL_MOMENTUM_GEM, RotationSpec
+
+    run_id = uuid.uuid4().hex[:8]
+    universe = (f"EQA{run_id}", f"EQB{run_id}", f"DEF{run_id}")  # last = defensive leg
+    n_bars = 60
+    lookback_days = 20
+    end = datetime.now(UTC)
+    start = end - timedelta(days=n_bars)
+
+    for i, symbol in enumerate(universe):
+        rng = random.Random(500 + i)
+        price = 100.0
+        for day in range(n_bars):
+            price *= 1 + rng.uniform(-0.01, 0.01)
+            event_time = start + timedelta(days=day)
+            db_session.add(
+                OhlcvBarModel(
+                    symbol=symbol, timeframe="1d", event_time=event_time,
+                    available_at=event_time + timedelta(minutes=5),
+                    source="test-fixture", revision=1,
+                    open=price, high=price * 1.01, low=price * 0.99, close=price,
+                    volume=1000.0,
+                )
+            )
+        db_session.add(
+            UniverseMembership(
+                symbol=symbol, exchange="test", asset_class="etf",
+                listed_at=start.date(), delisted_at=None,
+            )
+        )
+    await db_session.flush()
+
+    spec = RotationSpec(
+        family=ROTATION_FAMILY_DUAL_MOMENTUM_GEM,
+        universe=universe,
+        timeframe="1d",
+        lookback_days=lookback_days,
+        rebalance_frequency_days=21,
+        expected_horizon=21,
+    )
+
+    # Seed a real Experiment row first -- validate_rotation_specs never
+    # creates one itself, same convention validate_specs already follows
+    # (it re-scores experiments run_one already recorded, found by
+    # config_hash).
+    await run_one(db_session, spec, start, end)
+
+    experiment_ids = await validate_rotation_specs(db_session, [spec], days=800)
+    assert experiment_ids
+
+    row = await db_session.execute(
+        select(ValidationResult).where(ValidationResult.experiment_id == experiment_ids[0])
+    )
+    validation_result = row.scalar_one()
+    assert validation_result.metrics["information_coefficient"] is None
+    assert validation_result.metrics["icir"] is None
+    assert validation_result.metrics["decay"]["claimed_horizon_ic"] is None
+    assert validation_result.metrics["decay"]["claimed_horizon_p_value"] is None
+    assert validation_result.metrics["decay"]["has_power_at_claimed_horizon"] is None
+    assert validation_result.metrics["cluster"] is None
+    # hit_rate IS computed for real -- an equity-curve property, not a
+    # single-symbol-signal concept like IC (see validate_rotation_specs).
+    assert validation_result.metrics["hit_rate"] is not None

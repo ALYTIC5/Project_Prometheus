@@ -34,6 +34,7 @@ from typing import Any
 
 import numpy as np
 import polars as pl
+from cpz_quant.certification.analytics import compute_risk_analytics
 from cpz_quant.certification.overfitting import probability_of_backtest_overfitting
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,9 +57,10 @@ from prometheus.research.generate import generate_baseline_grid, generate_grid
 from prometheus.research.population import elect_champions, verdict_to_status
 from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
-from prometheus.validation.decay import compute_decay
+from prometheus.validation.decay import DecayProfile, compute_decay
 from prometheus.validation.decision import Evidence, decide
-from prometheus.validation.metrics import compute_metrics
+from prometheus.validation.metrics import ValidationMetrics, compute_metrics
+from prometheus.validation.metrics import hit_rate as compute_hit_rate
 from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
 from prometheus.validation.regime import classify_current_regime, regime_breakdown
 from prometheus.validation.scoring import ScoreInputs
@@ -427,6 +429,7 @@ async def validate_specs(
         if row is None:
             continue  # run_one hasn't recorded this spec yet -- next cycle
         experiment_id, strategy_id = row.id, row.strategy_id
+        decay_profile = compute_decay(bars, spec)
 
         try:
             await _validate_one_spec(
@@ -434,6 +437,7 @@ async def validate_specs(
                 spec=spec,
                 result=result,
                 validation_metrics=validation_metrics,
+                decay_profile=decay_profile,
                 bars=bars,
                 experiment_id=experiment_id,
                 strategy_id=strategy_id,
@@ -489,13 +493,157 @@ async def validate_baseline_grid(
     )
 
 
+_NULL_DECAY_PROFILE_TEMPLATE: dict[str, Any] = {
+    "ic_by_horizon": {},
+    "claimed_horizon_ic": None,
+    "claimed_horizon_p_value": None,
+    "has_power_at_claimed_horizon": None,
+}
+
+
+def _null_decay_profile(spec: RotationSpec) -> DecayProfile:
+    """RotationSpec's information_coefficient has no defined meaning --
+    compute_decay calls signal_for(bars, spec), a single-symbol-signal
+    concept a portfolio weight vector doesn't reduce to. Honestly None
+    throughout, matching this codebase's existing 'absent beats
+    fabricated' precedent (excess_sharpe below cpz-quant's 30-observation
+    floor), not a silently-invented translation. Documented as a known
+    gap in docs/DEFERRED.md."""
+    return DecayProfile(claimed_horizon=spec.expected_horizon, **_NULL_DECAY_PROFILE_TEMPLATE)
+
+
+async def validate_rotation_specs(
+    session: AsyncSession, specs: list[RotationSpec], days: int
+) -> list[str]:
+    """Same re-scoring shape as validate_specs (PBO across the batch,
+    correlation clustering, per-spec scoring/decision), but for
+    RotationSpec: no top-level symbol/timeframe (each spec carries its
+    own universe), and information_coefficient/icir/decay honestly None
+    -- see _null_decay_profile. Like validate_specs, this function
+    creates no new Experiment/Strategy rows -- it re-scores existing ones
+    already recorded by run_one, found by config_hash."""
+    end = datetime.now(UTC)
+    start = end - timedelta(days=days)
+    cost_config, _cost_config_hash = load_cost_config()
+    cost_model = make_cost_model(cost_config)
+
+    per_spec: list[tuple[RotationSpec, Any]] = []
+    for spec in specs:
+        try:
+            all_symbols = list(spec.universe)
+            pit, _data_version_hash = await load_point_in_time(
+                session, all_symbols, spec.timeframe, start, end
+            )
+            membership = await membership_windows(session, "etf", all_symbols)
+            benchmark_result = compute_benchmark_curve(pit, all_symbols, end, cost_model=cost_model)
+            result = run_portfolio_backtest(
+                pit, spec, membership, end, cost_model=cost_model, benchmark_result=benchmark_result
+            )
+        except ValueError:
+            continue  # not enough bars yet for this spec's universe/lookback
+        per_spec.append((spec, result))
+
+    if not per_spec:
+        return []
+
+    # PBO is a property of the SELECTION among trials, not of any one
+    # trial -- same batch-level treatment validate_specs gives it.
+    min_len = min(len(result.equity_curve) for _, result in per_spec)
+    n_splits = _pbo_n_splits(min_len - 1)
+    pbo_value: float | None = None
+    if n_splits is not None and len(per_spec) >= 2:
+        returns_columns = []
+        for _, result in per_spec:
+            equities = [equity for _, equity in result.equity_curve[-min_len:]]
+            returns_columns.append(
+                [equities[i] / equities[i - 1] - 1 for i in range(1, len(equities))]
+            )
+        returns_matrix = np.array(returns_columns).T
+        pbo_result = probability_of_backtest_overfitting(returns_matrix, n_splits=n_splits)
+        pbo_value = pbo_result.pbo
+
+    # cluster_by_correlation (research/clustering.py) is StrategySpec-only:
+    # its representative-tiebreaker reads `spec.parameters`, a property
+    # RotationSpec doesn't define, so calling it here would raise
+    # AttributeError, not just mistype -- clustering.py is outside this
+    # task's own authorized scope (not listed among the files it may
+    # touch). cluster_info stays honestly None for every RotationSpec,
+    # same "absent beats fabricated" precedent as the null decay/IC
+    # fields above. See docs/DEFERRED.md.
+    cluster_info_by_hash: dict[str, dict[str, Any]] = {}
+
+    validated_specs: list[tuple[RotationSpec, Any, ValidationMetrics]] = []
+    trial_sharpes: list[float] = []
+    for spec, result in per_spec:
+        equity_values = [equity for _, equity in result.equity_curve]
+        risk = compute_risk_analytics(equity_values) if len(equity_values) >= 2 else None
+        validation_metrics = ValidationMetrics(
+            risk=risk,
+            turnover=result.turnover,
+            # hit_rate IS just an equity-curve property (fraction of bars
+            # where equity rose), not a single-symbol-signal concept like
+            # IC -- computed for real, unlike information_coefficient/icir
+            # below.
+            hit_rate=compute_hit_rate(result.equity_curve),
+            information_coefficient=None,
+            icir=None,
+        )
+        validated_specs.append((spec, result, validation_metrics))
+        if risk is not None and risk.sharpe is not None:
+            trial_sharpes.append(risk.sharpe)
+
+    # >= this batch's own size -- same reasoning validate_specs' own
+    # comment gives for this bound.
+    n_trials_for_deflation = max(await trials_to_date(session), len(per_spec))
+
+    experiment_ids: list[str] = []
+    for spec, result, validation_metrics in validated_specs:
+        row = (
+            await session.execute(
+                _SELECT_LATEST_EXPERIMENT_FOR_SPEC, {"config_hash": spec.config_hash()}
+            )
+        ).first()
+        if row is None:
+            continue  # run_one hasn't recorded this spec yet -- next cycle
+        experiment_id, strategy_id = row.id, row.strategy_id
+
+        try:
+            await _validate_one_spec(
+                session,
+                spec=spec,
+                result=result,
+                validation_metrics=validation_metrics,
+                decay_profile=_null_decay_profile(spec),
+                bars=None,
+                experiment_id=experiment_id,
+                strategy_id=strategy_id,
+                pbo_value=pbo_value,
+                trial_sharpes=trial_sharpes,
+                n_trials_for_deflation=n_trials_for_deflation,
+                # Honest: no single symbol's bars to classify a regime
+                # from -- a RotationSpec trades a whole universe, not one
+                # instrument classify_current_regime could read.
+                current_regime="UNKNOWN",
+                cluster_info=cluster_info_by_hash.get(spec.config_hash()),
+            )
+        except Exception as exc:
+            print(f"validate_rotation_specs: skipping {spec.config_hash()}: {exc!r}")
+            continue
+        experiment_ids.append(experiment_id)
+
+    await elect_champions(session)
+    await session.commit()
+    return experiment_ids
+
+
 async def _validate_one_spec(
     session: AsyncSession,
     *,
-    spec: StrategySpec,
+    spec: StrategySpec | RotationSpec,
     result: Any,
     validation_metrics: Any,
-    bars: pl.DataFrame,
+    decay_profile: DecayProfile,
+    bars: pl.DataFrame | None,
     experiment_id: str,
     strategy_id: str | None,
     pbo_value: float | None,
@@ -504,7 +652,6 @@ async def _validate_one_spec(
     current_regime: str,
     cluster_info: dict[str, Any] | None,
 ) -> None:
-    decay_profile = compute_decay(bars, spec)
     strategy_equity_values = [equity for _, equity in result.equity_curve]
 
     risk = validation_metrics.risk
