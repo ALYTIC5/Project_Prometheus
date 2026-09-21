@@ -1,6 +1,7 @@
 import type {
   BenchmarkCurvePoint,
   BuildingWithCount,
+  ClustersResponse,
   ExperimentDetail,
   ExperimentRow,
   PaperTradingResponse,
@@ -90,6 +91,12 @@ export async function fetchResearchPapers(): Promise<{ papers: ResearchPaperRow[
 export async function fetchPaperTrading(): Promise<PaperTradingResponse> {
   const res = await fetch(`${API_BASE}/paper/`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Paper trading fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchClusters(): Promise<ClustersResponse> {
+  const res = await fetch(`${API_BASE}/clusters/`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Clusters fetch failed: ${res.status}`);
   return res.json();
 }
 

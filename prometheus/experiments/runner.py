@@ -48,6 +48,7 @@ from prometheus.data.loaders import load_point_in_time
 from prometheus.experiments.failure import classify_exception, classify_result
 from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
 from prometheus.experiments.violations import record_config_snapshot
+from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
 from prometheus.research.population import elect_champions, verdict_to_status
 from prometheus.strategy.spec import StrategySpec
@@ -351,6 +352,35 @@ async def validate_specs(
         pbo_result = probability_of_backtest_overfitting(returns_matrix, n_splits=n_splits)
         pbo_value = pbo_result.pbo
 
+    # Correlation clustering (the "100 strategies" prompt's own explicit
+    # reasoning): a cluster counts as ONE discovery, never several --
+    # computed on this same batch's own real equity curves, surfaced per
+    # spec in validation_results.metrics for the dashboard. Deliberately
+    # informational only here -- NOT yet gating elect_champions()'s
+    # promotion eligibility, see docs/DEFERRED.md's own entry for why
+    # that specific behavior change is scoped as separate follow-up.
+    clusters = cluster_by_correlation(
+        [(spec, result.equity_curve) for spec, result in per_spec]
+    )
+    cluster_info_by_hash: dict[str, dict[str, Any]] = {}
+    for cluster in clusters:
+        # The representative's own config_hash is the cluster's stable,
+        # globally-unique key -- NOT a sequential batch-local index. A
+        # small int like 0/1/2 would collide across different symbols'
+        # (or different cycles') independent validate_specs batches,
+        # silently merging unrelated clusters that happen to land at the
+        # same small index. config_hash() is already this codebase's own
+        # convention for "the stable identity of this exact spec",
+        # reused here rather than inventing a second identifier scheme.
+        cluster_key = cluster.representative.config_hash()
+        for member in cluster.members:
+            cluster_info_by_hash[member.config_hash()] = {
+                "cluster_key": cluster_key,
+                "cluster_size": len(cluster.members),
+                "is_representative": member.config_hash() == cluster_key,
+                "mean_pairwise_correlation": cluster.mean_pairwise_correlation,
+            }
+
     # Filtered together, not two parallel lists kept in sync by
     # convention: a metrics failure for one spec (e.g. a fold split that
     # isn't viable for its particular expected_horizon/bar-count
@@ -400,6 +430,7 @@ async def validate_specs(
                 trial_sharpes=trial_sharpes,
                 n_trials_for_deflation=n_trials_for_deflation,
                 current_regime=current_regime,
+                cluster_info=cluster_info_by_hash.get(spec.config_hash()),
             )
         except Exception as exc:
             # One spec's validation failing (e.g. a degenerate fold split
@@ -460,6 +491,7 @@ async def _validate_one_spec(
     trial_sharpes: list[float],
     n_trials_for_deflation: int,
     current_regime: str,
+    cluster_info: dict[str, Any] | None,
 ) -> None:
     decay_profile = compute_decay(bars, spec)
     strategy_equity_values = [equity for _, equity in result.equity_curve]
@@ -522,6 +554,11 @@ async def _validate_one_spec(
         },
         "excess_return": result.vs_benchmark.excess_return,
         "excess_sharpe": result.vs_benchmark.excess_sharpe,
+        # None when this spec's correlation with the rest of its batch
+        # couldn't be computed (e.g. this spec never traded and has zero
+        # return variance) -- an honest "not clustered", not a fabricated
+        # singleton.
+        "cluster": cluster_info,
     }
 
     session.add(

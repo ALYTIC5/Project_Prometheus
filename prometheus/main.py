@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from prometheus.api.routes import (
     buildings_router,
+    clusters_router,
     experiments_router,
     health_router,
     paper_router,
@@ -102,6 +103,7 @@ app.include_router(queue_router)
 app.include_router(pipeline_router)
 app.include_router(papers_router)
 app.include_router(paper_router)
+app.include_router(clusters_router)
 
 
 @app.get("/api/info", tags=["meta"])

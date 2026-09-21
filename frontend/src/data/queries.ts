@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   fetchBenchmarkCurve,
   fetchBuildings,
+  fetchClusters,
   fetchExperimentDetail,
   fetchExperiments,
   fetchPaperTrading,
@@ -134,6 +135,14 @@ export function usePaperTradingQuery(intervalMs: number = POLL_INTERVAL_MS) {
   return useQuery({
     queryKey: ['paper-trading'],
     queryFn: fetchPaperTrading,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useClustersQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['clusters'],
+    queryFn: fetchClusters,
     refetchInterval: intervalMs,
   });
 }

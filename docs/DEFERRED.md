@@ -488,3 +488,30 @@ and update the entry's status when it does.
   confirming any new FRED series shares VIXCLS's own "published once,
   never restated" property -- a revised series (GDP, CPI, employment)
   used naively would be a real Law 1 violation.
+
+## Correlation clustering not yet gating CHAMPION eligibility (2026-09-21)
+
+- **`research/clustering.py`'s real correlation clustering runs on
+  every `validate_specs` batch and is fully surfaced on the dashboard
+  (`GET /clusters/`, `ClustersSection.tsx`), but `elect_champions()`
+  still elects the best-scoring `VALIDATED` strategy per family with no
+  awareness of clusters** -- a cluster's redundant variants remain
+  fully CHAMPION-eligible, contrary to the "100 strategies" prompt's
+  own explicit design ("Only the simplest member of a cluster... is
+  eligible for CHAMPION; the rest are marked as redundant variants").
+  Deliberately scoped out of the same pass that built the clustering
+  computation itself: changing `elect_champions()`'s promotion query is
+  a real behavior change to the function that gates live paper trading
+  (`worker.py`'s `_run_paper()` only ever trades `CHAMPION` strategies)
+  -- the one piece of this feature with genuine regression risk to
+  already-live functionality, not something to fold into the same
+  change as the (zero-risk, purely additive) clustering computation and
+  its read-only dashboard visibility. **Trigger:** once there's real
+  confidence the clustering computation itself is sound in production
+  (real clusters showing up on the dashboard, checked against a human's
+  own judgment of "yes, those really are the same signal"), extend
+  `research/population.py`'s `_SELECT_BEST_VALIDATED_PER_FAMILY` to
+  exclude strategies whose latest `validation_results.metrics->'cluster'
+  ->>'is_representative'` is `false` -- same JOIN-through-`experiments`
+  path `GET /clusters/`'s own query already establishes for going from
+  `config_hash` to `strategy_id`.

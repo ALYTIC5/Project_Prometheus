@@ -172,3 +172,21 @@ def test_paper_trading_response_shape() -> None:
         for point in champion["equity_curve"]:
             assert "date" in point
             assert "equity" in point
+
+
+def test_clusters_response_shape() -> None:
+    with TestClient(app) as client:
+        response = client.get("/clusters/")
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["total"], int)
+    # No batch has clustered yet in a fresh/small corpus is a valid,
+    # honest state -- an empty list, not a bug. Shape asserted for
+    # whenever a real cluster (>1 member) exists.
+    for cluster in body["clusters"]:
+        assert "cluster_key" in cluster
+        assert "mean_pairwise_correlation" in cluster
+        assert len(cluster["members"]) > 1
+        for member in cluster["members"]:
+            for field in ("strategy_id", "family", "config_hash", "is_representative", "score", "verdict"):
+                assert field in member

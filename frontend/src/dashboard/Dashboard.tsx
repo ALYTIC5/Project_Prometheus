@@ -8,12 +8,14 @@ import { ResearchSummary } from './ResearchSummary';
 import { ViolationsBanner } from './ViolationsBanner';
 import { BacktestScatterSection } from './sections/BacktestScatterSection';
 import { BenchmarkChart } from './sections/BenchmarkChart';
+import { ClustersSection } from './sections/ClustersSection';
 import { CostsSection } from './sections/CostsSection';
 import { DataSection } from './sections/DataSection';
 import { ExperimentsSection } from './sections/ExperimentsSection';
 import { LawsSection } from './sections/LawsSection';
 import { PaperTradingSection } from './sections/PaperTradingSection';
 import { QueueSection } from './sections/QueueSection';
+import { ResearchPapersSection } from './sections/ResearchPapersSection';
 import { StrategiesSection } from './sections/StrategiesSection';
 import { SystemsTable } from './sections/SystemsTable';
 
@@ -72,11 +74,13 @@ export default function Dashboard() {
         <ResearchSummary />
         <SystemsTable />
         <StrategiesSection />
+        <ClustersSection />
         <QueueSection />
         <ExperimentsSection />
         <BacktestScatterSection />
         <BenchmarkChart />
         <PaperTradingSection />
+        <ResearchPapersSection />
         <LawsSection world={world} isLoading={worldQuery.isLoading} />
         <DataSection />
         <CostsSection />

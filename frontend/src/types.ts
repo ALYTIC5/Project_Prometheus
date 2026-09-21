@@ -385,3 +385,28 @@ export interface PaperTradingResponse {
   champions: PaperChampion[];
   total: number;
 }
+
+/** GET /clusters/'s shape -- the "100 strategies" prompt's own explicit
+ * ask: real return-stream correlation clustering, so several near-
+ * duplicate strategies (e.g. SMA/EMA/DEMA crossovers) don't get
+ * mistaken for independent discoveries. Read-only, informational --
+ * does not affect CHAMPION eligibility (see docs/DEFERRED.md). */
+export interface ClusterMember {
+  strategy_id: string | null;
+  family: string | null;
+  config_hash: string;
+  is_representative: boolean;
+  score: number | null;
+  verdict: string | null;
+}
+
+export interface StrategyCluster {
+  cluster_key: string;
+  mean_pairwise_correlation: number;
+  members: ClusterMember[];
+}
+
+export interface ClustersResponse {
+  clusters: StrategyCluster[];
+  total: number;
+}
