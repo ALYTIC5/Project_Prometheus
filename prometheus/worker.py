@@ -127,6 +127,7 @@ from prometheus.research.population import (
 from prometheus.research.prioritisation import ParentContext, expected_information_value
 from prometheus.research.rotation_generate import ROTATION_GRID_GENERATORS
 from prometheus.research.templates import seed_specs_by_family
+from prometheus.strategy.rotation_spec import ROTATION_FAMILIES
 from prometheus.strategy.spec import FAMILIES, StrategySpec
 
 
@@ -370,7 +371,22 @@ async def _run_ingest() -> None:
     # matches _GRID_LOOKBACK_DAYS -- the rotation grid's own lookback --
     # for the same "wide enough that a fresh DB always has enough bars"
     # reasoning documented on _INGEST_CATCHUP_DAYS itself.
-    await backfill_etf(_INGEST_CATCHUP_DAYS)
+    #
+    # I3 (final-review fix wave): isolated in its own try/except, same
+    # per-concern isolation pattern run_once() and _run_ablation()'s
+    # _register() already apply. backfill_etf talks to Alpaca, a
+    # SECOND, independent provider: missing/bad credentials or an
+    # Alpaca outage would otherwise fail this whole concern AFTER the
+    # crypto backfill above had already succeeded and committed, and
+    # because run_once() only calls mark_run(concern="ingest") when the
+    # whole concern returns cleanly, the ingest concern would stay
+    # permanently "due" -- re-running the hourly crypto backfill on
+    # every 15-minute tick indefinitely. Crypto ingest must not depend
+    # on the ETF provider's health.
+    try:
+        await backfill_etf(_INGEST_CATCHUP_DAYS)
+    except Exception as exc:
+        print(f"worker: ETF ingest failed (crypto ingest unaffected): {exc!r}")
 
 
 async def _run_llm_ingestion() -> list[str]:
@@ -759,9 +775,21 @@ async def _run_paper() -> None:
     async with get_session() as session:
         champions = (
             await session.execute(
-                text("SELECT id, spec FROM strategies WHERE status = 'CHAMPION'")
+                text("SELECT id, family, spec FROM strategies WHERE status = 'CHAMPION'")
             )
         ).fetchall()
+
+    # C1 (final-review fix wave): a rotation strategy can hold CHAMPION
+    # status (validate_rotation_specs calls elect_champions like every
+    # other validation path), but live paper-trading execution for
+    # rotation strategies is explicitly out of scope for this pass (see
+    # docs/superpowers/specs/2026-09-21-cross-sectional-rotation-design.md's
+    # own "Explicitly out of scope" section) -- there is no multi-leg
+    # decide_and_submit. Skipped explicitly here rather than left to
+    # raise ValidationError into the per-champion try/except below:
+    # throw-and-catch on every champion on every tick is not a skip, it
+    # is a silent, recurring error masquerading as one.
+    champions = [row for row in champions if row.family not in ROTATION_FAMILIES]
 
     if not champions:
         return
