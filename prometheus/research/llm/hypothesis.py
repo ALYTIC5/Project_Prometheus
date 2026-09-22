@@ -5,14 +5,16 @@ validation.holdout.access_holdout() or evaluating its own output
 (tests/test_llm_hypothesis_holdout_safety.py enforces both properties by
 static inspection, not by trusting a mock to catch every path).
 
-Reuses the 37 EXISTING StrategySpec families (MOMENTUM/BOLLINGER/
+Reuses the 43 EXISTING StrategySpec families (MOMENTUM/BOLLINGER/
 VOL_BREAKOUT/RSI/MACD/STOCHASTIC/PARABOLIC_SAR/KELTNER/WILLIAMS_R/CCI/
 AWESOME_OSCILLATOR/SUPERTREND/TRIX/KELTNER_REVERSION/BOLLINGER_PCTB/
 ZSCORE/IBS/N_DAY_LOW/CONSECUTIVE_DOWN/SMA_DISTANCE/ULTIMATE_OSCILLATOR/
 MFI/GAP_FADE/EMA_CROSSOVER/TRIPLE_MA_ALIGNMENT/DEMA_CROSSOVER/
 HULL_MA_TREND/KAMA_TREND/TSMOM/ADX_DI_CROSSOVER/AROON_CROSSOVER/
 ICHIMOKU_BREAKOUT/VORTEX/LINREG_SLOPE/CHANDELIER_EXIT/SMA200_FILTER/
-MA_RIBBON, plus the ML families) -- no new DSL. A malformed LLM response fails
+MA_RIBBON/SQUEEZE_BREAKOUT/ATR_BREAKOUT/NR7_BREAKOUT/
+INSIDE_BAR_BREAKOUT/VOL_REGIME_SWITCH/VOL_OF_VOL_FILTER, plus the ML
+families) -- no new DSL. A malformed LLM response fails
 StrategySpec's own model_validator and raises; it is never silently
 coerced into an invalid spec.
 
@@ -62,7 +64,12 @@ Respond with ONLY a JSON object with these exact keys:
   ichimoku_base, ichimoku_span_b; VORTEX: vortex_lookback; LINREG_SLOPE:
   linreg_lookback; CHANDELIER_EXIT: chandelier_lookback,
   chandelier_multiplier; SMA200_FILTER: sma_filter_lookback; MA_RIBBON:
-  ribbon_short, ribbon_mid, ribbon_long)
+  ribbon_short, ribbon_mid, ribbon_long; SQUEEZE_BREAKOUT:
+  squeeze_lookback; ATR_BREAKOUT: atr_breakout_lookback,
+  atr_breakout_multiplier; NR7_BREAKOUT: nr7_lookback;
+  INSIDE_BAR_BREAKOUT: inside_bar_buffer; VOL_REGIME_SWITCH:
+  vre_vol_window, vre_regime_window, vre_lookback; VOL_OF_VOL_FILTER:
+  vov_vol_window, vov_window, vov_lookback)
 - "expected_horizon": integer, bars ahead this signal is claimed to matter
 - "hypothesis_text": a one-paragraph explanation grounded in the provided papers
 - "expected_effect": what measurable effect you expect (e.g. "higher Sharpe",
@@ -223,6 +230,12 @@ async def generate_hypothesis(
             "CHANDELIER_EXIT": ("chandelier_lookback", "chandelier_multiplier"),
             "SMA200_FILTER": ("sma_filter_lookback",),
             "MA_RIBBON": ("ribbon_short", "ribbon_mid", "ribbon_long"),
+            "SQUEEZE_BREAKOUT": ("squeeze_lookback",),
+            "ATR_BREAKOUT": ("atr_breakout_lookback", "atr_breakout_multiplier"),
+            "NR7_BREAKOUT": ("nr7_lookback",),
+            "INSIDE_BAR_BREAKOUT": ("inside_bar_buffer",),
+            "VOL_REGIME_SWITCH": ("vre_vol_window", "vre_regime_window", "vre_lookback"),
+            "VOL_OF_VOL_FILTER": ("vov_vol_window", "vov_window", "vov_lookback"),
         }[family]
         params = {field: parsed[field] for field in param_fields}
         expected_horizon = parsed["expected_horizon"]

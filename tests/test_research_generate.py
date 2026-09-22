@@ -5,6 +5,7 @@ import pytest
 from prometheus.research.generate import (
     generate_adx_di_grid,
     generate_aroon_grid,
+    generate_atr_breakout_grid,
     generate_awesome_oscillator_grid,
     generate_baseline_grid,
     generate_bollinger_grid,
@@ -19,6 +20,7 @@ from prometheus.research.generate import (
     generate_hull_ma_grid,
     generate_ibs_grid,
     generate_ichimoku_grid,
+    generate_inside_bar_breakout_grid,
     generate_kama_grid,
     generate_keltner_grid,
     generate_keltner_reversion_grid,
@@ -27,11 +29,13 @@ from prometheus.research.generate import (
     generate_macd_grid,
     generate_mfi_grid,
     generate_n_day_low_grid,
+    generate_nr7_breakout_grid,
     generate_parabolic_sar_grid,
     generate_rsi2_connors_grid,
     generate_rsi_grid,
     generate_sma200_filter_grid,
     generate_sma_distance_grid,
+    generate_squeeze_breakout_grid,
     generate_stochastic_grid,
     generate_supertrend_grid,
     generate_triple_ma_alignment_grid,
@@ -39,6 +43,8 @@ from prometheus.research.generate import (
     generate_tsmom_grid,
     generate_ultimate_oscillator_grid,
     generate_vol_breakout_grid,
+    generate_vol_of_vol_filter_grid,
+    generate_vol_regime_switch_grid,
     generate_vortex_grid,
     generate_williams_r_grid,
     generate_zscore_grid,
@@ -46,6 +52,7 @@ from prometheus.research.generate import (
 from prometheus.strategy.spec import (
     FAMILY_ADX_DI_CROSSOVER,
     FAMILY_AROON_CROSSOVER,
+    FAMILY_ATR_BREAKOUT,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
     FAMILY_BOLLINGER_PCTB,
@@ -58,6 +65,7 @@ from prometheus.strategy.spec import (
     FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
     FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_INSIDE_BAR_BREAKOUT,
     FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
@@ -67,10 +75,12 @@ from prometheus.strategy.spec import (
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
+    FAMILY_NR7_BREAKOUT,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
     FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
+    FAMILY_SQUEEZE_BREAKOUT,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_TRIPLE_MA_ALIGNMENT,
@@ -78,6 +88,8 @@ from prometheus.strategy.spec import (
     FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_VOL_OF_VOL_FILTER,
+    FAMILY_VOL_REGIME_SWITCH,
     FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
@@ -207,7 +219,7 @@ def test_generate_trix_grid_produces_real_trix_specs() -> None:
     assert all(spec.trix_lookback is not None for spec in specs)
 
 
-def test_generate_baseline_grid_combines_all_thirty_seven_families() -> None:
+def test_generate_baseline_grid_combines_all_forty_three_families() -> None:
     specs = generate_baseline_grid("BTC/USDT", "1d")
     families = {spec.family for spec in specs}
     assert families == {
@@ -221,6 +233,8 @@ def test_generate_baseline_grid_combines_all_thirty_seven_families() -> None:
         FAMILY_HULL_MA_TREND, FAMILY_KAMA_TREND, FAMILY_TSMOM, FAMILY_ADX_DI_CROSSOVER,
         FAMILY_AROON_CROSSOVER, FAMILY_ICHIMOKU_BREAKOUT, FAMILY_VORTEX,
         FAMILY_LINREG_SLOPE, FAMILY_CHANDELIER_EXIT, FAMILY_SMA200_FILTER, FAMILY_MA_RIBBON,
+        FAMILY_SQUEEZE_BREAKOUT, FAMILY_ATR_BREAKOUT, FAMILY_NR7_BREAKOUT,
+        FAMILY_INSIDE_BAR_BREAKOUT, FAMILY_VOL_REGIME_SWITCH, FAMILY_VOL_OF_VOL_FILTER,
     }
 
 
@@ -408,5 +422,58 @@ def test_generate_ma_ribbon_grid_produces_ordered_triples() -> None:
     assert all(spec.family == FAMILY_MA_RIBBON for spec in specs)
     assert all(
         spec.ribbon_short < spec.ribbon_mid < spec.ribbon_long  # type: ignore[operator]
+        for spec in specs
+    )
+
+
+def test_generate_squeeze_breakout_grid() -> None:
+    specs = generate_squeeze_breakout_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_SQUEEZE_BREAKOUT for spec in specs)
+    assert all(spec.squeeze_lookback is not None for spec in specs)
+
+
+def test_generate_atr_breakout_grid_uses_wilders_atr_default() -> None:
+    specs = generate_atr_breakout_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_ATR_BREAKOUT for spec in specs)
+    assert all(spec.atr_breakout_lookback == 14 for spec in specs)
+    assert all(spec.atr_breakout_multiplier > 0.0 for spec in specs)  # type: ignore[operator]
+
+
+def test_generate_nr7_breakout_grid_includes_crabels_own_seven() -> None:
+    specs = generate_nr7_breakout_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_NR7_BREAKOUT for spec in specs)
+    assert any(spec.nr7_lookback == 7 for spec in specs)
+
+
+def test_generate_inside_bar_breakout_grid_includes_zero_buffer() -> None:
+    specs = generate_inside_bar_breakout_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_INSIDE_BAR_BREAKOUT for spec in specs)
+    assert any(spec.inside_bar_buffer == 0.0 for spec in specs)
+
+
+def test_generate_vol_regime_switch_grid() -> None:
+    specs = generate_vol_regime_switch_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_VOL_REGIME_SWITCH for spec in specs)
+    assert all(
+        spec.vre_vol_window is not None
+        and spec.vre_regime_window is not None
+        and spec.vre_lookback is not None
+        for spec in specs
+    )
+
+
+def test_generate_vol_of_vol_filter_grid() -> None:
+    specs = generate_vol_of_vol_filter_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_VOL_OF_VOL_FILTER for spec in specs)
+    assert all(
+        spec.vov_vol_window is not None
+        and spec.vov_window is not None
+        and spec.vov_lookback is not None
         for spec in specs
     )

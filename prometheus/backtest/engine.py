@@ -48,6 +48,7 @@ from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
     FAMILY_ADX_DI_CROSSOVER,
     FAMILY_AROON_CROSSOVER,
+    FAMILY_ATR_BREAKOUT,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
     FAMILY_BOLLINGER_PCTB,
@@ -61,6 +62,7 @@ from prometheus.strategy.spec import (
     FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
     FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_INSIDE_BAR_BREAKOUT,
     FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
@@ -71,11 +73,13 @@ from prometheus.strategy.spec import (
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
+    FAMILY_NR7_BREAKOUT,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
     FAMILY_RSI,
     FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
+    FAMILY_SQUEEZE_BREAKOUT,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_SVM,
@@ -84,6 +88,8 @@ from prometheus.strategy.spec import (
     FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_VOL_OF_VOL_FILTER,
+    FAMILY_VOL_REGIME_SWITCH,
     FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
@@ -1247,6 +1253,185 @@ def _ma_ribbon_signal(bars: pl.DataFrame, short: int, mid: int, long: int) -> pl
     )
 
 
+_SQUEEZE_BB_MULTIPLIER = 2.0
+_SQUEEZE_KC_MULTIPLIER = 1.5
+
+
+def _squeeze_breakout_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """John Carter's own "TTM Squeeze" (*Mastering the Trade*, 2005):
+    squeeze_on when Bollinger Bands (2.0 std, Carter's own canonical
+    multiplier) sit entirely inside Keltner Channels (1.5x ATR, also
+    Carter's own canonical multiplier) -- both bands share the same
+    lookback, which is the only swept parameter, matching Carter's own
+    convention of fixing the multipliers. Long the bar the squeeze
+    RELEASES (was on, now off) with close breaking above the shared
+    basis (the direction of the release, not just its occurrence)."""
+    prev_close = pl.col("close").shift(1)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    basis = pl.col("close").rolling_mean(lookback)
+    bb_std = pl.col("close").rolling_std(lookback)
+    atr = true_range.ewm_mean(span=lookback, adjust=False)
+    return (
+        bars.with_columns(
+            basis.alias("_basis"),
+            (basis + _SQUEEZE_BB_MULTIPLIER * bb_std).alias("_bb_upper"),
+            (basis - _SQUEEZE_BB_MULTIPLIER * bb_std).alias("_bb_lower"),
+            (basis + _SQUEEZE_KC_MULTIPLIER * atr).alias("_kc_upper"),
+            (basis - _SQUEEZE_KC_MULTIPLIER * atr).alias("_kc_lower"),
+        )
+        .with_columns(
+            ((pl.col("_bb_upper") < pl.col("_kc_upper")) & (pl.col("_bb_lower") > pl.col("_kc_lower")))
+            .alias("_squeeze_on")
+        )
+        .with_columns(
+            (
+                pl.col("_squeeze_on").shift(1).fill_null(False)
+                & ~pl.col("_squeeze_on")
+                & (pl.col("close") > pl.col("_basis"))
+            )
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _atr_breakout_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.DataFrame:
+    """Volatility-scaled breakout: long when close breaks above the
+    PRIOR close plus multiplier ATRs -- distinct from VOL_BREAKOUT's own
+    fixed Donchian-channel construction (a rolling N-bar high), this
+    breaks out of a volatility-scaled band anchored on the prior close.
+    Standard practitioner construction, no single canonical paper."""
+    prev_close = pl.col("close").shift(1)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    atr = true_range.ewm_mean(span=lookback, adjust=False)
+    return bars.with_columns(
+        prev_close.alias("_prev_close"), atr.alias("_atr")
+    ).with_columns(
+        (pl.col("close") > pl.col("_prev_close") + multiplier * pl.col("_atr"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _nr7_breakout_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """Toby Crabel's own NR7 construction (*Day Trading with Short Term
+    Price Patterns and Opening Range Breakout*, 1990): the narrowest
+    true range of the last `lookback` bars (canonically 7) signals
+    imminent expansion. Long the bar AFTER an NR7 bar if close breaks
+    above that NR7 bar's own high."""
+    day_range = pl.col("high") - pl.col("low")
+    is_nr = day_range == day_range.rolling_min(lookback)
+    return bars.with_columns(
+        is_nr.alias("_is_nr"), pl.col("high").alias("_range_high")
+    ).with_columns(
+        (
+            pl.col("_is_nr").shift(1).fill_null(False)
+            & (pl.col("close") > pl.col("_range_high").shift(1))
+        )
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _inside_bar_breakout_signal(bars: pl.DataFrame, buffer: float) -> pl.DataFrame:
+    """Standard price-action pattern: an inside bar (today's high < prior
+    high AND today's low > prior low) signals compression. Long the bar
+    AFTER an inside bar if close breaks above that inside bar's own high
+    by more than `buffer` (a fractional confirmation buffer to reduce
+    false breakouts). No single canonical paper."""
+    prev_high = pl.col("high").shift(1)
+    prev_low = pl.col("low").shift(1)
+    is_inside = (pl.col("high") < prev_high) & (pl.col("low") > prev_low)
+    return bars.with_columns(
+        is_inside.alias("_is_inside"), pl.col("high").alias("_inside_high")
+    ).with_columns(
+        (
+            pl.col("_is_inside").shift(1).fill_null(False)
+            & (pl.col("close") > pl.col("_inside_high").shift(1) * (1.0 + buffer))
+        )
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _vol_regime_switch_signal(
+    bars: pl.DataFrame, vol_window: int, regime_window: int, lookback: int
+) -> pl.DataFrame:
+    """A practitioner regime-switching heuristic, informed by the general
+    finding that trend-following tends to underperform in high-
+    volatility/choppy regimes while mean-reversion tends to dominate
+    then (no single canonical paper). Realized volatility (rolling std
+    of returns over vol_window) is compared against its own rolling
+    median over regime_window: in the LOW regime, long when the trailing
+    return over `lookback` is positive (trend-following); in the HIGH
+    regime, long when close is below its own SMA over `lookback`
+    (mean-reversion)."""
+    returns = pl.col("close").pct_change()
+    realized_vol = returns.rolling_std(vol_window)
+    regime_threshold = realized_vol.rolling_median(regime_window)
+    low_regime = realized_vol <= regime_threshold
+    trend_signal = pl.col("close") > pl.col("close").shift(lookback)
+    reversion_signal = pl.col("close") < pl.col("close").rolling_mean(lookback)
+    return bars.with_columns(
+        low_regime.alias("_low_regime"),
+        trend_signal.alias("_trend"),
+        reversion_signal.alias("_reversion"),
+    ).with_columns(
+        (
+            (pl.col("_low_regime") & pl.col("_trend"))
+            | (~pl.col("_low_regime") & pl.col("_reversion"))
+        )
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _vol_of_vol_filter_signal(
+    bars: pl.DataFrame, vol_window: int, vov_window: int, lookback: int
+) -> pl.DataFrame:
+    """Structurally similar to VOL_REGIME_SWITCH but filters on the
+    volatility OF realized volatility (a rolling std of the realized-vol
+    series itself over vov_window) rather than the vol LEVEL -- a
+    distinct empirical bet: vol-of-vol spikes often precede whipsaws even
+    when the vol level itself looks calm. Long when the trailing return
+    over `lookback` is positive AND today's vol-of-vol is at or below its
+    own rolling median over vov_window. No single canonical paper -- a
+    practitioner filter used in systematic vol-managed strategies."""
+    returns = pl.col("close").pct_change()
+    realized_vol = returns.rolling_std(vol_window)
+    vol_of_vol = realized_vol.rolling_std(vov_window)
+    vov_median = vol_of_vol.rolling_median(vov_window)
+    stable_regime = vol_of_vol <= vov_median
+    trend_signal = pl.col("close") > pl.col("close").shift(lookback)
+    return bars.with_columns(
+        stable_regime.alias("_stable"), trend_signal.alias("_trend")
+    ).with_columns(
+        (pl.col("_stable") & pl.col("_trend"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
 def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     """Public seam validation/metrics.py's information-coefficient
     calculation needs: IC is a property of the SIGNAL (does it predict
@@ -1445,6 +1630,34 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
             and spec.ribbon_long is not None
         )
         return _ma_ribbon_signal(bars, spec.ribbon_short, spec.ribbon_mid, spec.ribbon_long)
+    if spec.family == FAMILY_SQUEEZE_BREAKOUT:
+        assert spec.squeeze_lookback is not None
+        return _squeeze_breakout_signal(bars, spec.squeeze_lookback)
+    if spec.family == FAMILY_ATR_BREAKOUT:
+        assert spec.atr_breakout_lookback is not None and spec.atr_breakout_multiplier is not None
+        return _atr_breakout_signal(bars, spec.atr_breakout_lookback, spec.atr_breakout_multiplier)
+    if spec.family == FAMILY_NR7_BREAKOUT:
+        assert spec.nr7_lookback is not None
+        return _nr7_breakout_signal(bars, spec.nr7_lookback)
+    if spec.family == FAMILY_INSIDE_BAR_BREAKOUT:
+        assert spec.inside_bar_buffer is not None
+        return _inside_bar_breakout_signal(bars, spec.inside_bar_buffer)
+    if spec.family == FAMILY_VOL_REGIME_SWITCH:
+        assert (
+            spec.vre_vol_window is not None
+            and spec.vre_regime_window is not None
+            and spec.vre_lookback is not None
+        )
+        return _vol_regime_switch_signal(
+            bars, spec.vre_vol_window, spec.vre_regime_window, spec.vre_lookback
+        )
+    if spec.family == FAMILY_VOL_OF_VOL_FILTER:
+        assert (
+            spec.vov_vol_window is not None
+            and spec.vov_window is not None
+            and spec.vov_lookback is not None
+        )
+        return _vol_of_vol_filter_signal(bars, spec.vov_vol_window, spec.vov_window, spec.vov_lookback)
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -1575,6 +1788,31 @@ def _min_bars_for(spec: StrategySpec) -> int:
     if spec.family == FAMILY_MA_RIBBON:
         assert spec.ribbon_long is not None
         return spec.ribbon_long + 2
+    if spec.family == FAMILY_SQUEEZE_BREAKOUT:
+        assert spec.squeeze_lookback is not None
+        return spec.squeeze_lookback + 2
+    if spec.family == FAMILY_ATR_BREAKOUT:
+        assert spec.atr_breakout_lookback is not None
+        return spec.atr_breakout_lookback + 2
+    if spec.family == FAMILY_NR7_BREAKOUT:
+        assert spec.nr7_lookback is not None
+        return spec.nr7_lookback + 3
+    if spec.family == FAMILY_INSIDE_BAR_BREAKOUT:
+        return 4  # a single prior bar's range -- just the double shift(1) headroom
+    if spec.family == FAMILY_VOL_REGIME_SWITCH:
+        assert (
+            spec.vre_vol_window is not None
+            and spec.vre_regime_window is not None
+            and spec.vre_lookback is not None
+        )
+        return spec.vre_vol_window + spec.vre_regime_window + spec.vre_lookback + 2
+    if spec.family == FAMILY_VOL_OF_VOL_FILTER:
+        assert (
+            spec.vov_vol_window is not None
+            and spec.vov_window is not None
+            and spec.vov_lookback is not None
+        )
+        return spec.vov_vol_window + 2 * spec.vov_window + spec.vov_lookback + 2
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 

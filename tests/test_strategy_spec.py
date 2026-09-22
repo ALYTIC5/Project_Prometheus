@@ -7,6 +7,7 @@ from prometheus.strategy.spec import (
     FAMILIES,
     FAMILY_ADX_DI_CROSSOVER,
     FAMILY_AROON_CROSSOVER,
+    FAMILY_ATR_BREAKOUT,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
@@ -18,6 +19,7 @@ from prometheus.strategy.spec import (
     FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
     FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_INSIDE_BAR_BREAKOUT,
     FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
@@ -25,16 +27,20 @@ from prometheus.strategy.spec import (
     FAMILY_MA_RIBBON,
     FAMILY_MFI,
     FAMILY_N_DAY_LOW,
+    FAMILY_NR7_BREAKOUT,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
     FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
+    FAMILY_SQUEEZE_BREAKOUT,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_TRIPLE_MA_ALIGNMENT,
     FAMILY_TRIX,
     FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
+    FAMILY_VOL_OF_VOL_FILTER,
+    FAMILY_VOL_REGIME_SWITCH,
     FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
@@ -679,3 +685,73 @@ def test_ma_ribbon_out_of_order_rejected() -> None:
             family=FAMILY_MA_RIBBON, symbol="BTC/USDT", timeframe="1d",
             ribbon_short=30, ribbon_mid=15, ribbon_long=5, expected_horizon=30,
         )
+
+
+def test_squeeze_breakout_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_SQUEEZE_BREAKOUT, symbol="BTC/USDT", timeframe="1d",
+        squeeze_lookback=20, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_SQUEEZE_BREAKOUT
+    assert FAMILY_SQUEEZE_BREAKOUT in FAMILIES
+
+
+def test_atr_breakout_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_ATR_BREAKOUT, symbol="BTC/USDT", timeframe="1d",
+        atr_breakout_lookback=14, atr_breakout_multiplier=1.5, expected_horizon=14,
+    )
+    assert spec.family == FAMILY_ATR_BREAKOUT
+    assert FAMILY_ATR_BREAKOUT in FAMILIES
+
+
+def test_atr_breakout_non_positive_multiplier_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_ATR_BREAKOUT, symbol="BTC/USDT", timeframe="1d",
+            atr_breakout_lookback=14, atr_breakout_multiplier=0.0, expected_horizon=14,
+        )
+
+
+def test_nr7_breakout_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_NR7_BREAKOUT, symbol="BTC/USDT", timeframe="1d",
+        nr7_lookback=7, expected_horizon=7,
+    )
+    assert spec.family == FAMILY_NR7_BREAKOUT
+    assert FAMILY_NR7_BREAKOUT in FAMILIES
+
+
+def test_inside_bar_breakout_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_INSIDE_BAR_BREAKOUT, symbol="BTC/USDT", timeframe="1d",
+        inside_bar_buffer=0.001, expected_horizon=1,
+    )
+    assert spec.family == FAMILY_INSIDE_BAR_BREAKOUT
+    assert FAMILY_INSIDE_BAR_BREAKOUT in FAMILIES
+
+
+def test_inside_bar_breakout_negative_buffer_rejected() -> None:
+    with pytest.raises(ValueError):
+        StrategySpec(
+            family=FAMILY_INSIDE_BAR_BREAKOUT, symbol="BTC/USDT", timeframe="1d",
+            inside_bar_buffer=-0.001, expected_horizon=1,
+        )
+
+
+def test_vol_regime_switch_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_VOL_REGIME_SWITCH, symbol="BTC/USDT", timeframe="1d",
+        vre_vol_window=20, vre_regime_window=100, vre_lookback=20, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_VOL_REGIME_SWITCH
+    assert FAMILY_VOL_REGIME_SWITCH in FAMILIES
+
+
+def test_vol_of_vol_filter_valid_spec_constructs() -> None:
+    spec = StrategySpec(
+        family=FAMILY_VOL_OF_VOL_FILTER, symbol="BTC/USDT", timeframe="1d",
+        vov_vol_window=20, vov_window=40, vov_lookback=20, expected_horizon=20,
+    )
+    assert spec.family == FAMILY_VOL_OF_VOL_FILTER
+    assert FAMILY_VOL_OF_VOL_FILTER in FAMILIES

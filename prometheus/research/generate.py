@@ -16,6 +16,7 @@ from __future__ import annotations
 from prometheus.strategy.spec import (
     FAMILY_ADX_DI_CROSSOVER,
     FAMILY_AROON_CROSSOVER,
+    FAMILY_ATR_BREAKOUT,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
     FAMILY_BOLLINGER_PCTB,
@@ -28,6 +29,7 @@ from prometheus.strategy.spec import (
     FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
     FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_INSIDE_BAR_BREAKOUT,
     FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
@@ -37,10 +39,12 @@ from prometheus.strategy.spec import (
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
+    FAMILY_NR7_BREAKOUT,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
     FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
+    FAMILY_SQUEEZE_BREAKOUT,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_TRIPLE_MA_ALIGNMENT,
@@ -48,6 +52,8 @@ from prometheus.strategy.spec import (
     FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_VOL_OF_VOL_FILTER,
+    FAMILY_VOL_REGIME_SWITCH,
     FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
@@ -241,6 +247,38 @@ _SMA200_FILTER_LOOKBACKS = (50, 100, 200)
 # literature: a short-term ribbon (5/10/20), a medium-term ribbon
 # (10/20/50), and a long-term ribbon (20/50/100).
 _MA_RIBBON_TRIPLES = ((5, 10, 20), (10, 20, 50), (20, 50, 100))
+
+# John Carter's own "TTM Squeeze" canonically uses a 20-bar lookback for
+# both the Bollinger and Keltner bands; 10 and 30 are nearby variants,
+# same enumerated-lookback shape TRIX/LINREG_SLOPE use.
+_SQUEEZE_LOOKBACKS = (10, 20, 30)
+
+# No single canonical (lookback, multiplier) pair is cited for this
+# construction; 14-bar ATR (Wilder's own default ATR period) with 1.0x/
+# 1.5x/2.0x multipliers spans a modest-to-aggressive breakout range.
+_ATR_BREAKOUT_LOOKBACKS = (14,)
+_ATR_BREAKOUT_MULTIPLIERS = (1.0, 1.5, 2.0)
+
+# Toby Crabel's own NR7 uses a fixed 7-bar window by definition (Narrowest
+# Range of 7); 5 and 10 are included as nearby variants of the same
+# "narrowest range of N" construction.
+_NR7_LOOKBACKS = (5, 7, 10)
+
+# No lookback parameter exists for a single inside-bar pattern; 0.0
+# (exact breakout) and two small confirmation buffers are the grid
+# dimension instead.
+_INSIDE_BAR_BUFFERS = (0.0, 0.001, 0.002)
+
+# No canonical defaults exist for this heuristic; 20-bar realized vol
+# (a common short window) against a 100-bar regime median (a common
+# "recent history" window), with a 20-bar lookback for both the trend
+# and reversion legs -- plus one longer-regime variant.
+_VOL_REGIME_PARAM_SETS = ((20, 100, 20), (20, 200, 20))
+
+# Same posture as VOL_REGIME_SWITCH -- no canonical defaults; a 20-bar
+# realized-vol window feeding a 40-bar vol-of-vol window, 20-bar trend
+# lookback, plus one longer-vol-of-vol-window variant.
+_VOL_OF_VOL_PARAM_SETS = ((20, 40, 20), (20, 60, 20))
 
 
 def generate_grid(symbol: str, timeframe: str, family: str = FAMILY_MOMENTUM) -> list[StrategySpec]:
@@ -903,6 +941,104 @@ def generate_ma_ribbon_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     return specs
 
 
+def generate_squeeze_breakout_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _SQUEEZE_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_SQUEEZE_BREAKOUT,
+                symbol=symbol,
+                timeframe=timeframe,
+                squeeze_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_atr_breakout_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _ATR_BREAKOUT_LOOKBACKS:
+        for multiplier in _ATR_BREAKOUT_MULTIPLIERS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_ATR_BREAKOUT,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    atr_breakout_lookback=lookback,
+                    atr_breakout_multiplier=multiplier,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_nr7_breakout_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _NR7_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_NR7_BREAKOUT,
+                symbol=symbol,
+                timeframe=timeframe,
+                nr7_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_inside_bar_breakout_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for buffer in _INSIDE_BAR_BUFFERS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_INSIDE_BAR_BREAKOUT,
+                symbol=symbol,
+                timeframe=timeframe,
+                inside_bar_buffer=buffer,
+                # A single-bar pattern's own horizon claim is the
+                # shortest meaningful one, one bar ahead.
+                expected_horizon=1,
+            )
+        )
+    return specs
+
+
+def generate_vol_regime_switch_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for vol_window, regime_window, lookback in _VOL_REGIME_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_VOL_REGIME_SWITCH,
+                symbol=symbol,
+                timeframe=timeframe,
+                vre_vol_window=vol_window,
+                vre_regime_window=regime_window,
+                vre_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_vol_of_vol_filter_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for vol_window, vov_window, lookback in _VOL_OF_VOL_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_VOL_OF_VOL_FILTER,
+                symbol=symbol,
+                timeframe=timeframe,
+                vov_vol_window=vol_window,
+                vov_window=vov_window,
+                vov_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
 def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     """Every classic-template family's grid, combined -- the full
     baseline every future component must beat. Carry (PROMPTS.md's
@@ -948,4 +1084,10 @@ def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
         *generate_chandelier_exit_grid(symbol, timeframe),
         *generate_sma200_filter_grid(symbol, timeframe),
         *generate_ma_ribbon_grid(symbol, timeframe),
+        *generate_squeeze_breakout_grid(symbol, timeframe),
+        *generate_atr_breakout_grid(symbol, timeframe),
+        *generate_nr7_breakout_grid(symbol, timeframe),
+        *generate_inside_bar_breakout_grid(symbol, timeframe),
+        *generate_vol_regime_switch_grid(symbol, timeframe),
+        *generate_vol_of_vol_filter_grid(symbol, timeframe),
     ]

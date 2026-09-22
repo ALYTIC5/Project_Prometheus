@@ -100,6 +100,12 @@ FAMILY_LINREG_SLOPE = "LINREG_SLOPE"
 FAMILY_CHANDELIER_EXIT = "CHANDELIER_EXIT"
 FAMILY_SMA200_FILTER = "SMA200_FILTER"
 FAMILY_MA_RIBBON = "MA_RIBBON"
+FAMILY_SQUEEZE_BREAKOUT = "SQUEEZE_BREAKOUT"
+FAMILY_ATR_BREAKOUT = "ATR_BREAKOUT"
+FAMILY_NR7_BREAKOUT = "NR7_BREAKOUT"
+FAMILY_INSIDE_BAR_BREAKOUT = "INSIDE_BAR_BREAKOUT"
+FAMILY_VOL_REGIME_SWITCH = "VOL_REGIME_SWITCH"
+FAMILY_VOL_OF_VOL_FILTER = "VOL_OF_VOL_FILTER"
 FAMILIES = (
     FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
     FAMILY_STOCHASTIC, FAMILY_PARABOLIC_SAR, FAMILY_KELTNER,
@@ -111,6 +117,8 @@ FAMILIES = (
     FAMILY_HULL_MA_TREND, FAMILY_KAMA_TREND, FAMILY_TSMOM, FAMILY_ADX_DI_CROSSOVER,
     FAMILY_AROON_CROSSOVER, FAMILY_ICHIMOKU_BREAKOUT, FAMILY_VORTEX,
     FAMILY_LINREG_SLOPE, FAMILY_CHANDELIER_EXIT, FAMILY_SMA200_FILTER, FAMILY_MA_RIBBON,
+    FAMILY_SQUEEZE_BREAKOUT, FAMILY_ATR_BREAKOUT, FAMILY_NR7_BREAKOUT,
+    FAMILY_INSIDE_BAR_BREAKOUT, FAMILY_VOL_REGIME_SWITCH, FAMILY_VOL_OF_VOL_FILTER,
 )
 
 # Each family's own parameter fields -- the set a spec of that family MUST
@@ -166,6 +174,12 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_CHANDELIER_EXIT: ("chandelier_lookback", "chandelier_multiplier"),
     FAMILY_SMA200_FILTER: ("sma_filter_lookback",),
     FAMILY_MA_RIBBON: ("ribbon_short", "ribbon_mid", "ribbon_long"),
+    FAMILY_SQUEEZE_BREAKOUT: ("squeeze_lookback",),
+    FAMILY_ATR_BREAKOUT: ("atr_breakout_lookback", "atr_breakout_multiplier"),
+    FAMILY_NR7_BREAKOUT: ("nr7_lookback",),
+    FAMILY_INSIDE_BAR_BREAKOUT: ("inside_bar_buffer",),
+    FAMILY_VOL_REGIME_SWITCH: ("vre_vol_window", "vre_regime_window", "vre_lookback"),
+    FAMILY_VOL_OF_VOL_FILTER: ("vov_vol_window", "vov_window", "vov_lookback"),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -418,6 +432,59 @@ class StrategySpec(BaseModel):
     ribbon_short: int | None = None
     ribbon_mid: int | None = None
     ribbon_long: int | None = None
+    # SQUEEZE_BREAKOUT (John Carter's own "TTM Squeeze", *Mastering the
+    # Trade*, 2005): squeeze_on when Bollinger Bands (2.0 std) sit
+    # entirely inside Keltner Channels (1.5x ATR), both computed over
+    # squeeze_lookback -- Carter's own canonical multipliers, fixed
+    # rather than swept, since only the shared lookback varies in his
+    # own convention. Long on the bar the squeeze releases (was on,
+    # now off) with close above the basis (breaking up, not down).
+    squeeze_lookback: int | None = None
+    # ATR_BREAKOUT: long when close breaks above the prior close plus
+    # atr_breakout_multiplier ATRs -- a volatility-scaled breakout
+    # distinct from VOL_BREAKOUT's own fixed Donchian-channel construction
+    # (that one breaks out of a fixed N-bar high, this one breaks out of
+    # a volatility-scaled band around the prior close). Standard
+    # practitioner construction, no single canonical paper.
+    atr_breakout_lookback: int | None = None
+    atr_breakout_multiplier: float | None = None
+    # NR7_BREAKOUT (Toby Crabel's own construction, *Day Trading with
+    # Short Term Price Patterns and Opening Range Breakout*, 1990): the
+    # narrowest true range of the last nr7_lookback bars signals
+    # imminent expansion -- long the bar after an NR7 bar if close
+    # breaks above that bar's own high.
+    nr7_lookback: int | None = None
+    # INSIDE_BAR_BREAKOUT: an inside bar (today's high < prior high AND
+    # today's low > prior low) signals compression -- long the bar after
+    # an inside bar if close breaks above the inside bar's own high by
+    # more than inside_bar_buffer (a fractional confirmation buffer,
+    # common in price-action trading to reduce false breakouts).
+    # Standard price-action pattern, no single canonical paper.
+    inside_bar_buffer: float | None = None
+    # VOL_REGIME_SWITCH: a practitioner regime-switching heuristic,
+    # informed by the general finding that trend-following tends to
+    # underperform in high-volatility/choppy regimes while mean-reversion
+    # tends to dominate then (no single canonical paper). Realized
+    # volatility (rolling std of returns over vre_vol_window) is compared
+    # against its own rolling median over vre_regime_window: in the LOW
+    # regime, long when trailing return over vre_lookback is positive
+    # (trend-following); in the HIGH regime, long when close is below its
+    # own SMA over vre_lookback (mean-reversion).
+    vre_vol_window: int | None = None
+    vre_regime_window: int | None = None
+    vre_lookback: int | None = None
+    # VOL_OF_VOL_FILTER: structurally similar to VOL_REGIME_SWITCH but
+    # filters on the volatility OF realized volatility (a rolling std of
+    # the realized-vol series itself over vov_window) rather than the
+    # vol level -- a distinct empirical bet (vol-of-vol spikes often
+    # precede whipsaws even when the vol LEVEL looks calm). Long when
+    # trailing return over vov_lookback is positive AND today's
+    # vol-of-vol is at or below its own rolling median over vov_window.
+    # No single canonical paper -- a practitioner filter used in
+    # systematic vol-managed strategies.
+    vov_vol_window: int | None = None
+    vov_window: int | None = None
+    vov_lookback: int | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -530,6 +597,10 @@ class StrategySpec(BaseModel):
             )
         if self.family == FAMILY_CHANDELIER_EXIT and self.chandelier_multiplier <= 0.0:  # type: ignore[operator]
             raise ValueError("chandelier_multiplier must be positive")
+        if self.family == FAMILY_ATR_BREAKOUT and self.atr_breakout_multiplier <= 0.0:  # type: ignore[operator]
+            raise ValueError("atr_breakout_multiplier must be positive")
+        if self.family == FAMILY_INSIDE_BAR_BREAKOUT and self.inside_bar_buffer < 0.0:  # type: ignore[operator]
+            raise ValueError("inside_bar_buffer must be non-negative")
         if self.family == FAMILY_MA_RIBBON and not (
             self.ribbon_short < self.ribbon_mid < self.ribbon_long  # type: ignore[operator]
         ):
