@@ -3,54 +3,82 @@ from __future__ import annotations
 import pytest
 
 from prometheus.research.generate import (
+    generate_adx_di_grid,
+    generate_aroon_grid,
     generate_awesome_oscillator_grid,
     generate_baseline_grid,
     generate_bollinger_grid,
     generate_bollinger_pctb_grid,
     generate_cci_grid,
+    generate_chandelier_exit_grid,
     generate_consecutive_down_grid,
+    generate_dema_crossover_grid,
+    generate_ema_crossover_grid,
     generate_gap_fade_grid,
     generate_grid,
+    generate_hull_ma_grid,
     generate_ibs_grid,
+    generate_ichimoku_grid,
+    generate_kama_grid,
     generate_keltner_grid,
     generate_keltner_reversion_grid,
+    generate_linreg_slope_grid,
+    generate_ma_ribbon_grid,
     generate_macd_grid,
     generate_mfi_grid,
     generate_n_day_low_grid,
     generate_parabolic_sar_grid,
     generate_rsi2_connors_grid,
     generate_rsi_grid,
+    generate_sma200_filter_grid,
     generate_sma_distance_grid,
     generate_stochastic_grid,
     generate_supertrend_grid,
+    generate_triple_ma_alignment_grid,
     generate_trix_grid,
+    generate_tsmom_grid,
     generate_ultimate_oscillator_grid,
     generate_vol_breakout_grid,
+    generate_vortex_grid,
     generate_williams_r_grid,
     generate_zscore_grid,
 )
 from prometheus.strategy.spec import (
+    FAMILY_ADX_DI_CROSSOVER,
+    FAMILY_AROON_CROSSOVER,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
     FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
+    FAMILY_CHANDELIER_EXIT,
     FAMILY_CONSECUTIVE_DOWN,
+    FAMILY_DEMA_CROSSOVER,
+    FAMILY_EMA_CROSSOVER,
     FAMILY_GAP_FADE,
+    FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
+    FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
+    FAMILY_LINREG_SLOPE,
     FAMILY_MACD,
+    FAMILY_MA_RIBBON,
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
+    FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
+    FAMILY_TRIPLE_MA_ALIGNMENT,
     FAMILY_TRIX,
+    FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
 )
@@ -179,7 +207,7 @@ def test_generate_trix_grid_produces_real_trix_specs() -> None:
     assert all(spec.trix_lookback is not None for spec in specs)
 
 
-def test_generate_baseline_grid_combines_all_twenty_three_families() -> None:
+def test_generate_baseline_grid_combines_all_thirty_seven_families() -> None:
     specs = generate_baseline_grid("BTC/USDT", "1d")
     families = {spec.family for spec in specs}
     assert families == {
@@ -189,6 +217,10 @@ def test_generate_baseline_grid_combines_all_twenty_three_families() -> None:
         FAMILY_KELTNER_REVERSION, FAMILY_BOLLINGER_PCTB, FAMILY_ZSCORE, FAMILY_IBS,
         FAMILY_N_DAY_LOW, FAMILY_CONSECUTIVE_DOWN, FAMILY_SMA_DISTANCE,
         FAMILY_ULTIMATE_OSCILLATOR, FAMILY_MFI, FAMILY_GAP_FADE,
+        FAMILY_EMA_CROSSOVER, FAMILY_TRIPLE_MA_ALIGNMENT, FAMILY_DEMA_CROSSOVER,
+        FAMILY_HULL_MA_TREND, FAMILY_KAMA_TREND, FAMILY_TSMOM, FAMILY_ADX_DI_CROSSOVER,
+        FAMILY_AROON_CROSSOVER, FAMILY_ICHIMOKU_BREAKOUT, FAMILY_VORTEX,
+        FAMILY_LINREG_SLOPE, FAMILY_CHANDELIER_EXIT, FAMILY_SMA200_FILTER, FAMILY_MA_RIBBON,
     }
 
 
@@ -265,3 +297,116 @@ def test_generate_gap_fade_grid() -> None:
     assert len(specs) > 0
     assert all(spec.family == FAMILY_GAP_FADE for spec in specs)
     assert all(spec.gap_fade_threshold > 0.0 for spec in specs)  # type: ignore[operator]
+
+
+def test_generate_ema_crossover_grid_produces_valid_pairs() -> None:
+    specs = generate_ema_crossover_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_EMA_CROSSOVER for spec in specs)
+    assert all(spec.ema_slow_window > spec.ema_fast_window for spec in specs)  # type: ignore[operator]
+
+
+def test_generate_triple_ma_alignment_grid_produces_ordered_triples() -> None:
+    specs = generate_triple_ma_alignment_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_TRIPLE_MA_ALIGNMENT for spec in specs)
+    assert all(
+        spec.tma_fast_window < spec.tma_mid_window < spec.tma_slow_window  # type: ignore[operator]
+        for spec in specs
+    )
+
+
+def test_generate_dema_crossover_grid_produces_valid_pairs() -> None:
+    specs = generate_dema_crossover_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_DEMA_CROSSOVER for spec in specs)
+    assert all(spec.dema_slow_window > spec.dema_fast_window for spec in specs)  # type: ignore[operator]
+
+
+def test_generate_hull_ma_grid() -> None:
+    specs = generate_hull_ma_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_HULL_MA_TREND for spec in specs)
+    assert all(spec.hull_lookback is not None for spec in specs)
+
+
+def test_generate_kama_grid_uses_kaufmans_own_defaults() -> None:
+    specs = generate_kama_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_KAMA_TREND for spec in specs)
+    assert any(
+        (spec.kama_lookback, spec.kama_fast_sc, spec.kama_slow_sc) == (10, 2, 30)
+        for spec in specs
+    )
+
+
+def test_generate_tsmom_grid_uses_moskowitz_ooi_pedersen_12_1() -> None:
+    specs = generate_tsmom_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_TSMOM for spec in specs)
+    assert any(
+        (spec.tsmom_lookback_days, spec.tsmom_skip_days) == (252, 21) for spec in specs
+    )
+
+
+def test_generate_adx_di_grid_uses_wilders_default() -> None:
+    specs = generate_adx_di_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_ADX_DI_CROSSOVER for spec in specs)
+    assert any(spec.adx_lookback == 14 for spec in specs)
+
+
+def test_generate_aroon_grid_uses_chandes_default() -> None:
+    specs = generate_aroon_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_AROON_CROSSOVER for spec in specs)
+    assert any(spec.aroon_lookback == 25 for spec in specs)
+
+
+def test_generate_ichimoku_grid_uses_hosodas_9_26_52() -> None:
+    specs = generate_ichimoku_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_ICHIMOKU_BREAKOUT for spec in specs)
+    assert any(
+        (spec.ichimoku_conversion, spec.ichimoku_base, spec.ichimoku_span_b) == (9, 26, 52)
+        for spec in specs
+    )
+
+
+def test_generate_vortex_grid_uses_botes_siepman_default() -> None:
+    specs = generate_vortex_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_VORTEX for spec in specs)
+    assert any(spec.vortex_lookback == 14 for spec in specs)
+
+
+def test_generate_linreg_slope_grid() -> None:
+    specs = generate_linreg_slope_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_LINREG_SLOPE for spec in specs)
+
+
+def test_generate_chandelier_exit_grid_uses_lebeaus_default() -> None:
+    specs = generate_chandelier_exit_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_CHANDELIER_EXIT for spec in specs)
+    assert any(
+        (spec.chandelier_lookback, spec.chandelier_multiplier) == (22, 3.0) for spec in specs
+    )
+
+
+def test_generate_sma200_filter_grid_includes_the_classic_200() -> None:
+    specs = generate_sma200_filter_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_SMA200_FILTER for spec in specs)
+    assert any(spec.sma_filter_lookback == 200 for spec in specs)
+
+
+def test_generate_ma_ribbon_grid_produces_ordered_triples() -> None:
+    specs = generate_ma_ribbon_grid("BTC/USDT", "1d")
+    assert len(specs) > 0
+    assert all(spec.family == FAMILY_MA_RIBBON for spec in specs)
+    assert all(
+        spec.ribbon_short < spec.ribbon_mid < spec.ribbon_long  # type: ignore[operator]
+        for spec in specs
+    )

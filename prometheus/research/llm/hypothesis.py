@@ -5,11 +5,14 @@ validation.holdout.access_holdout() or evaluating its own output
 (tests/test_llm_hypothesis_holdout_safety.py enforces both properties by
 static inspection, not by trusting a mock to catch every path).
 
-Reuses the 23 EXISTING StrategySpec families (MOMENTUM/BOLLINGER/
+Reuses the 37 EXISTING StrategySpec families (MOMENTUM/BOLLINGER/
 VOL_BREAKOUT/RSI/MACD/STOCHASTIC/PARABOLIC_SAR/KELTNER/WILLIAMS_R/CCI/
 AWESOME_OSCILLATOR/SUPERTREND/TRIX/KELTNER_REVERSION/BOLLINGER_PCTB/
 ZSCORE/IBS/N_DAY_LOW/CONSECUTIVE_DOWN/SMA_DISTANCE/ULTIMATE_OSCILLATOR/
-MFI/GAP_FADE) -- no new DSL. A malformed LLM response fails
+MFI/GAP_FADE/EMA_CROSSOVER/TRIPLE_MA_ALIGNMENT/DEMA_CROSSOVER/
+HULL_MA_TREND/KAMA_TREND/TSMOM/ADX_DI_CROSSOVER/AROON_CROSSOVER/
+ICHIMOKU_BREAKOUT/VORTEX/LINREG_SLOPE/CHANDELIER_EXIT/SMA200_FILTER/
+MA_RIBBON, plus the ML families) -- no new DSL. A malformed LLM response fails
 StrategySpec's own model_validator and raises; it is never silently
 coerced into an invalid spec.
 
@@ -49,7 +52,17 @@ Respond with ONLY a JSON object with these exact keys:
   N_DAY_LOW: ndaylow_lookback; CONSECUTIVE_DOWN: consecutive_down_days;
   SMA_DISTANCE: sma_dist_lookback, sma_dist_oversold;
   ULTIMATE_OSCILLATOR: uo_short, uo_mid, uo_long, uo_oversold;
-  MFI: mfi_lookback, mfi_oversold; GAP_FADE: gap_fade_threshold)
+  MFI: mfi_lookback, mfi_oversold; GAP_FADE: gap_fade_threshold;
+  EMA_CROSSOVER: ema_fast_window, ema_slow_window; TRIPLE_MA_ALIGNMENT:
+  tma_fast_window, tma_mid_window, tma_slow_window; DEMA_CROSSOVER:
+  dema_fast_window, dema_slow_window; HULL_MA_TREND: hull_lookback;
+  KAMA_TREND: kama_lookback, kama_fast_sc, kama_slow_sc; TSMOM:
+  tsmom_lookback_days, tsmom_skip_days; ADX_DI_CROSSOVER: adx_lookback;
+  AROON_CROSSOVER: aroon_lookback; ICHIMOKU_BREAKOUT: ichimoku_conversion,
+  ichimoku_base, ichimoku_span_b; VORTEX: vortex_lookback; LINREG_SLOPE:
+  linreg_lookback; CHANDELIER_EXIT: chandelier_lookback,
+  chandelier_multiplier; SMA200_FILTER: sma_filter_lookback; MA_RIBBON:
+  ribbon_short, ribbon_mid, ribbon_long)
 - "expected_horizon": integer, bars ahead this signal is claimed to matter
 - "hypothesis_text": a one-paragraph explanation grounded in the provided papers
 - "expected_effect": what measurable effect you expect (e.g. "higher Sharpe",
@@ -196,6 +209,20 @@ async def generate_hypothesis(
             "ULTIMATE_OSCILLATOR": ("uo_short", "uo_mid", "uo_long", "uo_oversold"),
             "MFI": ("mfi_lookback", "mfi_oversold"),
             "GAP_FADE": ("gap_fade_threshold",),
+            "EMA_CROSSOVER": ("ema_fast_window", "ema_slow_window"),
+            "TRIPLE_MA_ALIGNMENT": ("tma_fast_window", "tma_mid_window", "tma_slow_window"),
+            "DEMA_CROSSOVER": ("dema_fast_window", "dema_slow_window"),
+            "HULL_MA_TREND": ("hull_lookback",),
+            "KAMA_TREND": ("kama_lookback", "kama_fast_sc", "kama_slow_sc"),
+            "TSMOM": ("tsmom_lookback_days", "tsmom_skip_days"),
+            "ADX_DI_CROSSOVER": ("adx_lookback",),
+            "AROON_CROSSOVER": ("aroon_lookback",),
+            "ICHIMOKU_BREAKOUT": ("ichimoku_conversion", "ichimoku_base", "ichimoku_span_b"),
+            "VORTEX": ("vortex_lookback",),
+            "LINREG_SLOPE": ("linreg_lookback",),
+            "CHANDELIER_EXIT": ("chandelier_lookback", "chandelier_multiplier"),
+            "SMA200_FILTER": ("sma_filter_lookback",),
+            "MA_RIBBON": ("ribbon_short", "ribbon_mid", "ribbon_long"),
         }[family]
         params = {field: parsed[field] for field in param_fields}
         expected_horizon = parsed["expected_horizon"]

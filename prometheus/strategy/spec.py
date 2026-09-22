@@ -86,6 +86,20 @@ FAMILY_SMA_DISTANCE = "SMA_DISTANCE"
 FAMILY_ULTIMATE_OSCILLATOR = "ULTIMATE_OSCILLATOR"
 FAMILY_MFI = "MFI"
 FAMILY_GAP_FADE = "GAP_FADE"
+FAMILY_EMA_CROSSOVER = "EMA_CROSSOVER"
+FAMILY_TRIPLE_MA_ALIGNMENT = "TRIPLE_MA_ALIGNMENT"
+FAMILY_DEMA_CROSSOVER = "DEMA_CROSSOVER"
+FAMILY_HULL_MA_TREND = "HULL_MA_TREND"
+FAMILY_KAMA_TREND = "KAMA_TREND"
+FAMILY_TSMOM = "TSMOM"
+FAMILY_ADX_DI_CROSSOVER = "ADX_DI_CROSSOVER"
+FAMILY_AROON_CROSSOVER = "AROON_CROSSOVER"
+FAMILY_ICHIMOKU_BREAKOUT = "ICHIMOKU_BREAKOUT"
+FAMILY_VORTEX = "VORTEX"
+FAMILY_LINREG_SLOPE = "LINREG_SLOPE"
+FAMILY_CHANDELIER_EXIT = "CHANDELIER_EXIT"
+FAMILY_SMA200_FILTER = "SMA200_FILTER"
+FAMILY_MA_RIBBON = "MA_RIBBON"
 FAMILIES = (
     FAMILY_MOMENTUM, FAMILY_BOLLINGER, FAMILY_VOL_BREAKOUT, FAMILY_RSI, FAMILY_MACD,
     FAMILY_STOCHASTIC, FAMILY_PARABOLIC_SAR, FAMILY_KELTNER,
@@ -93,6 +107,10 @@ FAMILIES = (
     FAMILY_KELTNER_REVERSION, FAMILY_BOLLINGER_PCTB, FAMILY_ZSCORE, FAMILY_IBS,
     FAMILY_N_DAY_LOW, FAMILY_CONSECUTIVE_DOWN, FAMILY_SMA_DISTANCE,
     FAMILY_ULTIMATE_OSCILLATOR, FAMILY_MFI, FAMILY_GAP_FADE,
+    FAMILY_EMA_CROSSOVER, FAMILY_TRIPLE_MA_ALIGNMENT, FAMILY_DEMA_CROSSOVER,
+    FAMILY_HULL_MA_TREND, FAMILY_KAMA_TREND, FAMILY_TSMOM, FAMILY_ADX_DI_CROSSOVER,
+    FAMILY_AROON_CROSSOVER, FAMILY_ICHIMOKU_BREAKOUT, FAMILY_VORTEX,
+    FAMILY_LINREG_SLOPE, FAMILY_CHANDELIER_EXIT, FAMILY_SMA200_FILTER, FAMILY_MA_RIBBON,
 )
 
 # Each family's own parameter fields -- the set a spec of that family MUST
@@ -134,6 +152,20 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     FAMILY_ULTIMATE_OSCILLATOR: ("uo_short", "uo_mid", "uo_long", "uo_oversold"),
     FAMILY_MFI: ("mfi_lookback", "mfi_oversold"),
     FAMILY_GAP_FADE: ("gap_fade_threshold",),
+    FAMILY_EMA_CROSSOVER: ("ema_fast_window", "ema_slow_window"),
+    FAMILY_TRIPLE_MA_ALIGNMENT: ("tma_fast_window", "tma_mid_window", "tma_slow_window"),
+    FAMILY_DEMA_CROSSOVER: ("dema_fast_window", "dema_slow_window"),
+    FAMILY_HULL_MA_TREND: ("hull_lookback",),
+    FAMILY_KAMA_TREND: ("kama_lookback", "kama_fast_sc", "kama_slow_sc"),
+    FAMILY_TSMOM: ("tsmom_lookback_days", "tsmom_skip_days"),
+    FAMILY_ADX_DI_CROSSOVER: ("adx_lookback",),
+    FAMILY_AROON_CROSSOVER: ("aroon_lookback",),
+    FAMILY_ICHIMOKU_BREAKOUT: ("ichimoku_conversion", "ichimoku_base", "ichimoku_span_b"),
+    FAMILY_VORTEX: ("vortex_lookback",),
+    FAMILY_LINREG_SLOPE: ("linreg_lookback",),
+    FAMILY_CHANDELIER_EXIT: ("chandelier_lookback", "chandelier_multiplier"),
+    FAMILY_SMA200_FILTER: ("sma_filter_lookback",),
+    FAMILY_MA_RIBBON: ("ribbon_short", "ribbon_mid", "ribbon_long"),
 }
 _ALL_PARAM_FIELDS = tuple(
     field for fields in _FAMILY_PARAMS.values() for field in fields
@@ -303,6 +335,89 @@ class StrategySpec(BaseModel):
     # by more than `gap_fade_threshold` (a fraction), fading the gap on
     # the expectation of an intraday-to-next-close reversion back up.
     gap_fade_threshold: float | None = None
+    # EMA_CROSSOVER: the EMA analogue of MOMENTUM's own SMA crossover --
+    # long when the fast EMA is above the slow EMA. A genuinely distinct
+    # construction (exponential vs simple weighting), not a copy of
+    # MOMENTUM under a different name.
+    ema_fast_window: int | None = None
+    ema_slow_window: int | None = None
+    # TRIPLE_MA_ALIGNMENT: long only when three SMAs are in strictly
+    # ascending order (fast > mid > slow), a stronger trend-confirmation
+    # filter than a single crossover.
+    tma_fast_window: int | None = None
+    tma_mid_window: int | None = None
+    tma_slow_window: int | None = None
+    # DEMA_CROSSOVER: Patrick Mulloy's own Double EMA construction
+    # (DEMA = 2*EMA - EMA(EMA)), reduces lag versus a plain EMA. Long
+    # when the fast DEMA is above the slow DEMA.
+    dema_fast_window: int | None = None
+    dema_slow_window: int | None = None
+    # HULL_MA_TREND (Alan Hull's own construction): HMA = WMA(2*WMA(n/2)
+    # - WMA(n), sqrt(n)) -- a weighted-MA-of-differences construction
+    # designed to reduce lag more aggressively than DEMA/TEMA. Long when
+    # today's HMA is rising versus the prior bar's HMA.
+    hull_lookback: int | None = None
+    # KAMA_TREND (Perry Kaufman's own Adaptive Moving Average): the
+    # smoothing constant adapts between kama_fast_sc and kama_slow_sc
+    # periods based on a trailing efficiency ratio (trending vs choppy
+    # markets get different responsiveness). Long when today's KAMA is
+    # rising versus the prior bar's KAMA.
+    kama_lookback: int | None = None
+    kama_fast_sc: int | None = None
+    kama_slow_sc: int | None = None
+    # TSMOM (Moskowitz, Ooi & Pedersen 2012's own time-series momentum,
+    # the cited "12-1 month" convention -- Jegadeesh & Titman's skip-
+    # the-most-recent-month adjustment to avoid short-term reversal
+    # contamination): long when the trailing return over
+    # tsmom_lookback_days, ending tsmom_skip_days before today, is
+    # positive.
+    tsmom_lookback_days: int | None = None
+    tsmom_skip_days: int | None = None
+    # ADX_DI_CROSSOVER (Wilder's own Average Directional Index): long
+    # when +DI crosses above -DI (a real trend developing), using
+    # Wilder's own smoothing construction.
+    adx_lookback: int | None = None
+    # AROON_CROSSOVER (Tushar Chande's own construction): measures bars
+    # since the most recent high/low within the lookback window. Long
+    # when Aroon-Up crosses above Aroon-Down.
+    aroon_lookback: int | None = None
+    # ICHIMOKU_BREAKOUT (Goichi Hosoda's own construction, his own
+    # published 9/26/52 default periods): long when close breaks above
+    # the cloud (the higher of span A / span B, span-B-period-ahead
+    # projected values evaluated as of today's own bar so nothing here
+    # depends on genuinely future data).
+    ichimoku_conversion: int | None = None
+    ichimoku_base: int | None = None
+    ichimoku_span_b: int | None = None
+    # VORTEX (Etienne Botes & Douglas Siepman's own construction): long
+    # when +VI crosses above -VI.
+    vortex_lookback: int | None = None
+    # LINREG_SLOPE: the sign of a rolling linear regression's slope over
+    # the lookback window -- long when the trend line's own slope is
+    # positive.
+    linreg_lookback: int | None = None
+    # CHANDELIER_EXIT (Chuck LeBeau's own construction): a trailing
+    # ATR-based stop from the highest high in the lookback window. Long
+    # while close stays above the trailing stop, flat once it closes
+    # below it (persist-until-exit, the same shape VOL_BREAKOUT/KELTNER
+    # already use).
+    chandelier_lookback: int | None = None
+    chandelier_multiplier: float | None = None
+    # SMA200_FILTER: STRATEGIES_100.md #19's own framing, "simple and
+    # robust baseline" -- long whenever close is above its own single
+    # rolling SMA, flat otherwise. Deliberately simpler than MOMENTUM's
+    # two-MA crossover: one moving average, one condition, no second
+    # window to overfit. The lookback itself is swept (not fixed to
+    # 200), covering the classic 200-day case plus nearby variants.
+    sma_filter_lookback: int | None = None
+    # MA_RIBBON: three SMAs (short/mid/long) forming a "ribbon" -- long
+    # when the ribbon is expanding (short-to-long spread widening versus
+    # the prior bar), a trend-STRENGTH signal distinct from
+    # TRIPLE_MA_ALIGNMENT's trend-DIRECTION signal (alignment order can
+    # stay constant while the ribbon itself compresses or expands).
+    ribbon_short: int | None = None
+    ribbon_mid: int | None = None
+    ribbon_long: int | None = None
 
     # How many bars ahead this strategy's signal is claimed to matter.
     # Required, no default: CLAUDE.md's own rule is "don't invent
@@ -395,6 +510,30 @@ class StrategySpec(BaseModel):
             raise ValueError("mfi_oversold must be in (0, 100)")
         if self.family == FAMILY_GAP_FADE and self.gap_fade_threshold <= 0.0:  # type: ignore[operator]
             raise ValueError("gap_fade_threshold must be positive")
+        if self.family == FAMILY_EMA_CROSSOVER and self.ema_slow_window <= self.ema_fast_window:  # type: ignore[operator]
+            raise ValueError("ema_slow_window must be greater than ema_fast_window")
+        if self.family == FAMILY_TRIPLE_MA_ALIGNMENT and not (
+            self.tma_fast_window < self.tma_mid_window < self.tma_slow_window  # type: ignore[operator]
+        ):
+            raise ValueError("tma_fast_window must be < tma_mid_window must be < tma_slow_window")
+        if self.family == FAMILY_DEMA_CROSSOVER and self.dema_slow_window <= self.dema_fast_window:  # type: ignore[operator]
+            raise ValueError("dema_slow_window must be greater than dema_fast_window")
+        if self.family == FAMILY_KAMA_TREND and self.kama_fast_sc >= self.kama_slow_sc:  # type: ignore[operator]
+            raise ValueError("kama_fast_sc must be less than kama_slow_sc")
+        if self.family == FAMILY_TSMOM and self.tsmom_skip_days >= self.tsmom_lookback_days:  # type: ignore[operator]
+            raise ValueError("tsmom_skip_days must be less than tsmom_lookback_days")
+        if self.family == FAMILY_ICHIMOKU_BREAKOUT and not (
+            self.ichimoku_conversion < self.ichimoku_base < self.ichimoku_span_b  # type: ignore[operator]
+        ):
+            raise ValueError(
+                "ichimoku_conversion must be < ichimoku_base must be < ichimoku_span_b"
+            )
+        if self.family == FAMILY_CHANDELIER_EXIT and self.chandelier_multiplier <= 0.0:  # type: ignore[operator]
+            raise ValueError("chandelier_multiplier must be positive")
+        if self.family == FAMILY_MA_RIBBON and not (
+            self.ribbon_short < self.ribbon_mid < self.ribbon_long  # type: ignore[operator]
+        ):
+            raise ValueError("ribbon_short must be < ribbon_mid must be < ribbon_long")
         return self
 
     @property

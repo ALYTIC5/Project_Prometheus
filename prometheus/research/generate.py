@@ -14,27 +14,41 @@ component (Prompt 7's evolution, Prompt 9's LLM layer) has to beat this.
 from __future__ import annotations
 
 from prometheus.strategy.spec import (
+    FAMILY_ADX_DI_CROSSOVER,
+    FAMILY_AROON_CROSSOVER,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
     FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
+    FAMILY_CHANDELIER_EXIT,
     FAMILY_CONSECUTIVE_DOWN,
+    FAMILY_DEMA_CROSSOVER,
+    FAMILY_EMA_CROSSOVER,
     FAMILY_GAP_FADE,
+    FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
+    FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
+    FAMILY_LINREG_SLOPE,
     FAMILY_MACD,
+    FAMILY_MA_RIBBON,
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RSI,
+    FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
+    FAMILY_TRIPLE_MA_ALIGNMENT,
     FAMILY_TRIX,
+    FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
     StrategySpec,
@@ -159,6 +173,74 @@ _MFI_LOOKBACKS = (14, 21)
 _MFI_OVERSOLD_LEVELS = (20.0, 30.0)
 
 _GAP_FADE_THRESHOLDS = (0.01, 0.02, 0.03)
+
+# Commonly cited EMA crossover pairs: 9/21 (short-term "golden cross"
+# variant), 12/26 (Gerald Appel's own MACD line periods, reused here as
+# a bare EMA cross), 20/50 (the classic medium-term golden/death cross
+# convention) -- enumerated pairs, same shape MACD/SAR grids use.
+_EMA_CROSSOVER_PAIRS = ((9, 21), (12, 26), (20, 50))
+
+# Common triple-MA "alignment" conventions cited in practitioner
+# literature: a short-term (5/20/50), a medium-term (10/20/50), and the
+# classic long-term golden-cross triple (10/50/200).
+_TRIPLE_MA_TRIPLES = ((5, 20, 50), (10, 20, 50), (10, 50, 200))
+
+# Same cited pairs as EMA_CROSSOVER -- DEMA is a distinct construction
+# (Mulloy's double-EMA) but the crossover convention it is applied to is
+# the same well-known pair set.
+_DEMA_CROSSOVER_PAIRS = ((9, 21), (12, 26), (20, 50))
+
+# Alan Hull's own suggested default for daily bars is 20; 9 and 16 are
+# his own commonly cited shorter-horizon variants.
+_HULL_LOOKBACKS = (9, 16, 20)
+
+# Perry Kaufman's own published defaults ("Smarter Trading", 1995):
+# a 10-bar efficiency-ratio lookback, fast SC period 2, slow SC period
+# 30 -- included with a longer-lookback variant (20) and a more
+# conservative slow-SC variant (60), same enumerated-triple shape MACD
+# uses.
+_KAMA_PARAM_SETS = ((10, 2, 30), (20, 2, 30), (10, 2, 60))
+
+# Moskowitz, Ooi & Pedersen (2012)'s own canonical 12-month lookback
+# with Jegadeesh & Titman's cited 1-month skip (252/21 trading days),
+# plus a 6-month variant and a no-skip variant for comparison.
+_TSMOM_PARAM_SETS = ((252, 21), (126, 21), (252, 0))
+
+# Wilder's own default ADX lookback (14), plus a shorter and a longer
+# still-standard variant, same grid shape RSI/CCI use.
+_ADX_LOOKBACKS = (10, 14, 20)
+
+# Tushar Chande's own default (25), plus a shorter and a longer variant.
+_AROON_LOOKBACKS = (14, 25, 50)
+
+# Goichi Hosoda's own original 9/26/52 default (based on a 6-day trading
+# week), plus the commonly cited 7/22/44 adjustment for a 5-day week --
+# both are Hosoda-derived, not invented.
+_ICHIMOKU_PARAM_SETS = ((9, 26, 52), (7, 22, 44))
+
+# Etienne Botes & Douglas Siepman's own default (14), plus a shorter and
+# a longer variant.
+_VORTEX_LOOKBACKS = (10, 14, 21)
+
+# No single universally-cited default exists for a rolling linear-
+# regression slope filter; 20/50/100 are the lookbacks most commonly
+# used for linear-regression trend channels in practitioner charting
+# literature, same enumerated-lookback shape TRIX uses.
+_LINREG_LOOKBACKS = (20, 50, 100)
+
+# Chuck LeBeau's own default (22-day lookback, 3.0x ATR multiplier),
+# plus a shorter-lookback and a tighter-multiplier variant.
+_CHANDELIER_LOOKBACKS = (14, 22)
+_CHANDELIER_MULTIPLIERS = (2.0, 3.0)
+
+# The classic 200-day SMA trend filter, plus 50/100 as nearby, shorter-
+# horizon variants -- same lookbacks SMA_DISTANCE already uses.
+_SMA200_FILTER_LOOKBACKS = (50, 100, 200)
+
+# Common "moving average ribbon" triples cited in practitioner
+# literature: a short-term ribbon (5/10/20), a medium-term ribbon
+# (10/20/50), and a long-term ribbon (20/50/100).
+_MA_RIBBON_TRIPLES = ((5, 10, 20), (10, 20, 50), (20, 50, 100))
 
 
 def generate_grid(symbol: str, timeframe: str, family: str = FAMILY_MOMENTUM) -> list[StrategySpec]:
@@ -598,6 +680,229 @@ def generate_gap_fade_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     return specs
 
 
+def generate_ema_crossover_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for fast, slow in _EMA_CROSSOVER_PAIRS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_EMA_CROSSOVER,
+                symbol=symbol,
+                timeframe=timeframe,
+                ema_fast_window=fast,
+                ema_slow_window=slow,
+                expected_horizon=slow,
+            )
+        )
+    return specs
+
+
+def generate_triple_ma_alignment_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for fast, mid, slow in _TRIPLE_MA_TRIPLES:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_TRIPLE_MA_ALIGNMENT,
+                symbol=symbol,
+                timeframe=timeframe,
+                tma_fast_window=fast,
+                tma_mid_window=mid,
+                tma_slow_window=slow,
+                expected_horizon=slow,
+            )
+        )
+    return specs
+
+
+def generate_dema_crossover_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for fast, slow in _DEMA_CROSSOVER_PAIRS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_DEMA_CROSSOVER,
+                symbol=symbol,
+                timeframe=timeframe,
+                dema_fast_window=fast,
+                dema_slow_window=slow,
+                expected_horizon=slow,
+            )
+        )
+    return specs
+
+
+def generate_hull_ma_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _HULL_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_HULL_MA_TREND,
+                symbol=symbol,
+                timeframe=timeframe,
+                hull_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_kama_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback, fast_sc, slow_sc in _KAMA_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_KAMA_TREND,
+                symbol=symbol,
+                timeframe=timeframe,
+                kama_lookback=lookback,
+                kama_fast_sc=fast_sc,
+                kama_slow_sc=slow_sc,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_tsmom_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback_days, skip_days in _TSMOM_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_TSMOM,
+                symbol=symbol,
+                timeframe=timeframe,
+                tsmom_lookback_days=lookback_days,
+                tsmom_skip_days=skip_days,
+                expected_horizon=lookback_days,
+            )
+        )
+    return specs
+
+
+def generate_adx_di_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _ADX_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_ADX_DI_CROSSOVER,
+                symbol=symbol,
+                timeframe=timeframe,
+                adx_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_aroon_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _AROON_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_AROON_CROSSOVER,
+                symbol=symbol,
+                timeframe=timeframe,
+                aroon_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_ichimoku_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for conversion, base, span_b in _ICHIMOKU_PARAM_SETS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_ICHIMOKU_BREAKOUT,
+                symbol=symbol,
+                timeframe=timeframe,
+                ichimoku_conversion=conversion,
+                ichimoku_base=base,
+                ichimoku_span_b=span_b,
+                expected_horizon=base,
+            )
+        )
+    return specs
+
+
+def generate_vortex_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _VORTEX_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_VORTEX,
+                symbol=symbol,
+                timeframe=timeframe,
+                vortex_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_linreg_slope_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _LINREG_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_LINREG_SLOPE,
+                symbol=symbol,
+                timeframe=timeframe,
+                linreg_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_chandelier_exit_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _CHANDELIER_LOOKBACKS:
+        for multiplier in _CHANDELIER_MULTIPLIERS:
+            specs.append(
+                StrategySpec(
+                    family=FAMILY_CHANDELIER_EXIT,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    chandelier_lookback=lookback,
+                    chandelier_multiplier=multiplier,
+                    expected_horizon=lookback,
+                )
+            )
+    return specs
+
+
+def generate_sma200_filter_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for lookback in _SMA200_FILTER_LOOKBACKS:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_SMA200_FILTER,
+                symbol=symbol,
+                timeframe=timeframe,
+                sma_filter_lookback=lookback,
+                expected_horizon=lookback,
+            )
+        )
+    return specs
+
+
+def generate_ma_ribbon_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
+    specs = []
+    for short, mid, long in _MA_RIBBON_TRIPLES:
+        specs.append(
+            StrategySpec(
+                family=FAMILY_MA_RIBBON,
+                symbol=symbol,
+                timeframe=timeframe,
+                ribbon_short=short,
+                ribbon_mid=mid,
+                ribbon_long=long,
+                expected_horizon=long,
+            )
+        )
+    return specs
+
+
 def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
     """Every classic-template family's grid, combined -- the full
     baseline every future component must beat. Carry (PROMPTS.md's
@@ -629,4 +934,18 @@ def generate_baseline_grid(symbol: str, timeframe: str) -> list[StrategySpec]:
         *generate_ultimate_oscillator_grid(symbol, timeframe),
         *generate_mfi_grid(symbol, timeframe),
         *generate_gap_fade_grid(symbol, timeframe),
+        *generate_ema_crossover_grid(symbol, timeframe),
+        *generate_triple_ma_alignment_grid(symbol, timeframe),
+        *generate_dema_crossover_grid(symbol, timeframe),
+        *generate_hull_ma_grid(symbol, timeframe),
+        *generate_kama_grid(symbol, timeframe),
+        *generate_tsmom_grid(symbol, timeframe),
+        *generate_adx_di_grid(symbol, timeframe),
+        *generate_aroon_grid(symbol, timeframe),
+        *generate_ichimoku_grid(symbol, timeframe),
+        *generate_vortex_grid(symbol, timeframe),
+        *generate_linreg_slope_grid(symbol, timeframe),
+        *generate_chandelier_exit_grid(symbol, timeframe),
+        *generate_sma200_filter_grid(symbol, timeframe),
+        *generate_ma_ribbon_grid(symbol, timeframe),
     ]

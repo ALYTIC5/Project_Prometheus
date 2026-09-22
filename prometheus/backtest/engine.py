@@ -46,31 +46,45 @@ from prometheus.backtest.ml_signal import (
 )
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
+    FAMILY_ADX_DI_CROSSOVER,
+    FAMILY_AROON_CROSSOVER,
     FAMILY_AWESOME_OSCILLATOR,
     FAMILY_BOLLINGER,
     FAMILY_BOLLINGER_PCTB,
     FAMILY_CCI,
+    FAMILY_CHANDELIER_EXIT,
     FAMILY_CONSECUTIVE_DOWN,
+    FAMILY_DEMA_CROSSOVER,
+    FAMILY_EMA_CROSSOVER,
     FAMILY_GAP_FADE,
     FAMILY_GRADIENT_BOOSTING,
+    FAMILY_HULL_MA_TREND,
     FAMILY_IBS,
+    FAMILY_ICHIMOKU_BREAKOUT,
+    FAMILY_KAMA_TREND,
     FAMILY_KELTNER,
     FAMILY_KELTNER_REVERSION,
+    FAMILY_LINREG_SLOPE,
     FAMILY_LOGISTIC_REGRESSION,
     FAMILY_MACD,
+    FAMILY_MA_RIBBON,
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
     FAMILY_PARABOLIC_SAR,
     FAMILY_RANDOM_FOREST,
     FAMILY_RSI,
+    FAMILY_SMA200_FILTER,
     FAMILY_SMA_DISTANCE,
     FAMILY_STOCHASTIC,
     FAMILY_SUPERTREND,
     FAMILY_SVM,
+    FAMILY_TRIPLE_MA_ALIGNMENT,
     FAMILY_TRIX,
+    FAMILY_TSMOM,
     FAMILY_ULTIMATE_OSCILLATOR,
     FAMILY_VOL_BREAKOUT,
+    FAMILY_VORTEX,
     FAMILY_WILLIAMS_R,
     FAMILY_ZSCORE,
     StrategySpec,
@@ -821,6 +835,418 @@ def _gap_fade_signal(bars: pl.DataFrame, threshold: float) -> pl.DataFrame:
     )
 
 
+def _ema_crossover_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
+    """The EMA analogue of _sma_signal's own SMA crossover -- exponential
+    rather than simple weighting is a genuinely distinct, separately
+    cited construction (more weight on recent bars, reacts faster to
+    new trends), not a rebranded copy. Long when the fast EMA is above
+    the slow EMA."""
+    return bars.with_columns(
+        pl.col("close").ewm_mean(span=fast, adjust=False).alias("_fast"),
+        pl.col("close").ewm_mean(span=slow, adjust=False).alias("_slow"),
+    ).with_columns(
+        (pl.col("_fast") > pl.col("_slow"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _triple_ma_alignment_signal(
+    bars: pl.DataFrame, fast: int, mid: int, slow: int
+) -> pl.DataFrame:
+    """Long only when three SMAs are in strictly ascending order (fast >
+    mid > slow) -- a stronger trend-confirmation filter than a single
+    two-line crossover, since a real trend should show consistent
+    ordering across multiple horizons, not just one pair agreeing."""
+    return bars.with_columns(
+        pl.col("close").rolling_mean(fast).alias("_fast"),
+        pl.col("close").rolling_mean(mid).alias("_mid"),
+        pl.col("close").rolling_mean(slow).alias("_slow"),
+    ).with_columns(
+        ((pl.col("_fast") > pl.col("_mid")) & (pl.col("_mid") > pl.col("_slow")))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _dema_crossover_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
+    """Patrick Mulloy's own Double EMA construction: DEMA = 2*EMA -
+    EMA(EMA) -- reduces the lag a plain EMA carries by subtracting out
+    the EMA-of-the-EMA's own smoothing delay. Long when the fast DEMA is
+    above the slow DEMA."""
+    def _dema(span: int) -> pl.Expr:
+        ema1 = pl.col("close").ewm_mean(span=span, adjust=False)
+        return 2.0 * ema1 - ema1.ewm_mean(span=span, adjust=False)
+
+    return bars.with_columns(
+        _dema(fast).alias("_fast"), _dema(slow).alias("_slow")
+    ).with_columns(
+        (pl.col("_fast") > pl.col("_slow"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _hull_ma_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """Alan Hull's own construction: HMA = WMA(2*WMA(close, n/2) -
+    WMA(close, n), round(sqrt(n))) -- a weighted-moving-average-of-
+    differences construction designed to track price more closely (less
+    lag) than a plain, DEMA, or TEMA smoothing. Polars has no built-in
+    weighted-moving-average primitive (same "compute it directly" stance
+    _cci_signal's mean-absolute-deviation already takes), so each WMA is
+    computed via rolling_map with linearly increasing weights. Long
+    when today's HMA exceeds the prior bar's HMA (the trend is rising)."""
+    half = max(1, lookback // 2)
+    sqrt_n = max(1, round(lookback**0.5))
+
+    def _wma(expr: pl.Expr, window: int) -> pl.Expr:
+        weights = list(range(1, window + 1))
+        total = float(sum(weights))
+        return expr.rolling_map(
+            lambda s: sum(w * v for w, v in zip(weights, s)) / total, window_size=window
+        )
+
+    return (
+        bars.with_columns(
+            _wma(pl.col("close"), half).alias("_wma_half"),
+            _wma(pl.col("close"), lookback).alias("_wma_full"),
+        )
+        .with_columns((2.0 * pl.col("_wma_half") - pl.col("_wma_full")).alias("_raw_hma_input"))
+        .with_columns(_wma(pl.col("_raw_hma_input"), sqrt_n).alias("_hma"))
+        .with_columns(
+            (pl.col("_hma") > pl.col("_hma").shift(1))
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _kama_signal(bars: pl.DataFrame, lookback: int, fast_sc: int, slow_sc: int) -> pl.DataFrame:
+    """Perry Kaufman's own Adaptive Moving Average: the smoothing
+    constant adapts every bar between fast_sc- and slow_sc-period
+    responsiveness, based on a trailing efficiency ratio (net directional
+    move over `lookback` bars, divided by the sum of bar-to-bar
+    absolute moves -- 1.0 in a pure trend, near 0 in pure chop).
+    Genuinely sequential -- KAMA_i depends on KAMA_{i-1} and that bar's
+    own adaptive smoothing constant, neither expressible as a pure
+    column expression -- same "real Python loop over numpy arrays"
+    treatment _parabolic_sar_signal already uses. Long when today's KAMA
+    exceeds the prior bar's KAMA."""
+    closes = bars["close"].to_numpy()
+    n = len(closes)
+    kama = [0.0] * n
+    if n <= lookback:
+        return bars.with_columns(pl.Series("position", [0.0] * n))
+
+    fast_alpha = 2.0 / (fast_sc + 1.0)
+    slow_alpha = 2.0 / (slow_sc + 1.0)
+    kama[lookback] = float(closes[lookback])
+    for i in range(lookback + 1, n):
+        change = abs(closes[i] - closes[i - lookback])
+        volatility = sum(abs(closes[j] - closes[j - 1]) for j in range(i - lookback + 1, i + 1))
+        efficiency_ratio = change / volatility if volatility else 0.0
+        smoothing_constant = (efficiency_ratio * (fast_alpha - slow_alpha) + slow_alpha) ** 2
+        kama[i] = kama[i - 1] + smoothing_constant * (closes[i] - kama[i - 1])
+
+    kama_series = pl.Series("_kama", kama)
+    return bars.with_columns(kama_series).with_columns(
+        (pl.col("_kama") > pl.col("_kama").shift(1))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _tsmom_signal(bars: pl.DataFrame, lookback_days: int, skip_days: int) -> pl.DataFrame:
+    """Moskowitz, Ooi & Pedersen (2012)'s own time-series momentum,
+    Jegadeesh & Titman's cited "12-1 month" skip-the-most-recent-month
+    adjustment (avoids short-term reversal contamination of the trend
+    signal): long when the trailing return from `lookback_days` bars ago
+    to `skip_days` bars ago is positive. This is a genuinely different
+    construction from every moving-average family here -- no MA at all,
+    just the sign of a single trailing return over a specific,
+    skip-adjusted window."""
+    anchor_close = pl.col("close").shift(skip_days)
+    lookback_close = pl.col("close").shift(lookback_days)
+    trailing_return = (anchor_close - lookback_close) / lookback_close
+    return bars.with_columns(trailing_return.alias("_tsmom_return")).with_columns(
+        (pl.col("_tsmom_return") > 0.0)
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _adx_di_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """Wilder's own Average Directional Index system ("New Concepts in
+    Technical Trading Systems", 1978): +DM/-DM are the positive/negative
+    parts of consecutive high/low moves, Wilder-smoothed (same alpha=
+    1/lookback recursive EMA _rsi_signal already uses for average
+    gain/loss) into +DI/-DI, and ADX is the Wilder-smoothed average of
+    the DI spread's own absolute percentage. Long when +DI is above -DI
+    AND ADX exceeds 25 -- Wilder's own published threshold for "a real
+    trend is present" (his book's own trending-market convention, not
+    an invented cutoff), so this is a genuinely distinct construction
+    from a bare, unfiltered DI crossover."""
+    prev_high = pl.col("high").shift(1)
+    prev_low = pl.col("low").shift(1)
+    prev_close = pl.col("close").shift(1)
+    up_move = pl.col("high") - prev_high
+    down_move = prev_low - pl.col("low")
+    plus_dm = pl.when((up_move > down_move) & (up_move > 0)).then(up_move).otherwise(0.0)
+    minus_dm = pl.when((down_move > up_move) & (down_move > 0)).then(down_move).otherwise(0.0)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    alpha = 1.0 / lookback
+    return (
+        bars.with_columns(
+            plus_dm.alias("_plus_dm"), minus_dm.alias("_minus_dm"), true_range.alias("_tr")
+        )
+        .with_columns(
+            pl.col("_plus_dm").ewm_mean(alpha=alpha, adjust=False).alias("_smooth_plus_dm"),
+            pl.col("_minus_dm").ewm_mean(alpha=alpha, adjust=False).alias("_smooth_minus_dm"),
+            pl.col("_tr").ewm_mean(alpha=alpha, adjust=False).alias("_atr"),
+        )
+        .with_columns(
+            (100.0 * pl.col("_smooth_plus_dm") / pl.col("_atr")).alias("_plus_di"),
+            (100.0 * pl.col("_smooth_minus_dm") / pl.col("_atr")).alias("_minus_di"),
+        )
+        .with_columns(
+            (
+                100.0
+                * (pl.col("_plus_di") - pl.col("_minus_di")).abs()
+                / (pl.col("_plus_di") + pl.col("_minus_di"))
+            ).alias("_dx")
+        )
+        .with_columns(pl.col("_dx").ewm_mean(alpha=alpha, adjust=False).alias("_adx"))
+        .with_columns(
+            ((pl.col("_plus_di") > pl.col("_minus_di")) & (pl.col("_adx") > 25.0))
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _aroon_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """Tushar Chande's own construction: Aroon-Up = 100 * (lookback -
+    bars_since_highest_high) / lookback, Aroon-Down analogous for the
+    lowest low. Polars has no rolling-argmax primitive, so "bars since
+    the window's extreme" is computed directly via rolling_map (same
+    "no vectorized primitive exists, compute it directly" stance
+    _cci_signal/_hull_ma_signal already take). Long when Aroon-Up
+    crosses above Aroon-Down."""
+    def _bars_since_extreme(s: pl.Series, find_max: bool) -> float:
+        values = s.to_list()
+        idx = values.index(max(values) if find_max else min(values))
+        return float(len(values) - 1 - idx)
+
+    aroon_up = (
+        (lookback - pl.col("high").rolling_map(lambda s: _bars_since_extreme(s, True), lookback))
+        / lookback
+        * 100.0
+    )
+    aroon_down = (
+        (lookback - pl.col("low").rolling_map(lambda s: _bars_since_extreme(s, False), lookback))
+        / lookback
+        * 100.0
+    )
+    return bars.with_columns(aroon_up.alias("_aroon_up"), aroon_down.alias("_aroon_down")).with_columns(
+        (pl.col("_aroon_up") > pl.col("_aroon_down"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _ichimoku_signal(
+    bars: pl.DataFrame, conversion: int, base: int, span_b: int
+) -> pl.DataFrame:
+    """Goichi Hosoda's own construction, his own published 9/26/52
+    default periods. Conversion/base lines are the midpoint of the
+    highest-high/lowest-low over their own windows; leading span A/B are
+    projected `base` periods AHEAD of the data that produced them on a
+    real Ichimoku chart -- for a live signal (not a chart), that is
+    equivalent to comparing TODAY's close against the span A/B values
+    that were computed `base` bars ago, i.e. `.shift(base)` brings the
+    historically-correct cloud value forward to today's row. This is
+    still Law-1-safe: shift(base) only ever looks BACKWARD for the
+    comparison value, never forward. Long when close breaks above the
+    cloud (the higher of span A/B)."""
+    conv_line = (
+        pl.col("high").rolling_max(conversion) + pl.col("low").rolling_min(conversion)
+    ) / 2.0
+    base_line = (pl.col("high").rolling_max(base) + pl.col("low").rolling_min(base)) / 2.0
+    span_a = ((conv_line + base_line) / 2.0).shift(base)
+    span_b_line = (
+        (pl.col("high").rolling_max(span_b) + pl.col("low").rolling_min(span_b)) / 2.0
+    ).shift(base)
+    cloud_top = pl.max_horizontal(span_a, span_b_line)
+    return bars.with_columns(cloud_top.alias("_cloud_top")).with_columns(
+        (pl.col("close") > pl.col("_cloud_top"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _vortex_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """Etienne Botes & Douglas Siepman's own construction (2010):
+    +VM = abs(high - prior_low), -VM = abs(low - prior_high), each
+    summed over the lookback window and divided by summed true range to
+    give +VI/-VI. Long when +VI crosses above -VI."""
+    prev_high = pl.col("high").shift(1)
+    prev_low = pl.col("low").shift(1)
+    prev_close = pl.col("close").shift(1)
+    plus_vm = (pl.col("high") - prev_low).abs()
+    minus_vm = (pl.col("low") - prev_high).abs()
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    return (
+        bars.with_columns(
+            plus_vm.alias("_plus_vm"), minus_vm.alias("_minus_vm"), true_range.alias("_tr")
+        )
+        .with_columns(
+            pl.col("_plus_vm").rolling_sum(lookback).alias("_plus_vm_sum"),
+            pl.col("_minus_vm").rolling_sum(lookback).alias("_minus_vm_sum"),
+            pl.col("_tr").rolling_sum(lookback).alias("_tr_sum"),
+        )
+        .with_columns(
+            (pl.col("_plus_vm_sum") / pl.col("_tr_sum")).alias("_plus_vi"),
+            (pl.col("_minus_vm_sum") / pl.col("_tr_sum")).alias("_minus_vi"),
+        )
+        .with_columns(
+            (pl.col("_plus_vi") > pl.col("_minus_vi"))
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _linreg_slope_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """The sign of a rolling ordinary-least-squares linear regression
+    slope of close over the lookback window -- long when the trend
+    line's own slope is positive. Polars has no rolling-regression
+    primitive, so the slope is computed directly via rolling_map using
+    the closed-form OLS slope (cov(x, y) / var(x), x = 0..window-1),
+    the same "no vectorized primitive exists, compute it directly"
+    stance CCI/Hull/Aroon already take here."""
+    def _ols_slope(s: pl.Series) -> float:
+        y = s.to_list()
+        n = len(y)
+        x_mean = (n - 1) / 2.0
+        y_mean = sum(y) / n
+        cov = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(y))
+        var = sum((i - x_mean) ** 2 for i in range(n))
+        return float(cov / var) if var else 0.0
+
+    return bars.with_columns(
+        pl.col("close").rolling_map(_ols_slope, lookback).alias("_slope")
+    ).with_columns(
+        (pl.col("_slope") > 0.0).cast(pl.Float64).shift(1).fill_null(0.0).alias("position")
+    )
+
+
+def _chandelier_exit_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.DataFrame:
+    """Chuck LeBeau's own construction: a trailing stop set
+    `multiplier` ATRs below the highest high of the lookback window.
+    Long whenever close is above that stop level, flat otherwise --
+    implemented here as the simple, commonly-used stateless form (the
+    stop is recomputed fresh every bar from the window's own current
+    high, not ratcheted/remembered across bars), stated explicitly since
+    some descriptions of Chandelier Exit use a stop that only ever moves
+    in the trade's favor; that stateful variant is a real, separate
+    construction this function does not claim to be."""
+    prev_close = pl.col("close").shift(1)
+    true_range = pl.max_horizontal(
+        pl.col("high") - pl.col("low"),
+        (pl.col("high") - prev_close).abs(),
+        (pl.col("low") - prev_close).abs(),
+    )
+    return (
+        bars.with_columns(true_range.alias("_tr"))
+        .with_columns(pl.col("_tr").ewm_mean(span=lookback, adjust=False).alias("_atr"))
+        .with_columns(pl.col("high").rolling_max(lookback).alias("_highest_high"))
+        .with_columns(
+            (pl.col("_highest_high") - multiplier * pl.col("_atr")).alias("_stop")
+        )
+        .with_columns(
+            (pl.col("close") > pl.col("_stop"))
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
+def _sma200_filter_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
+    """STRATEGIES_100.md #19's own framing: "simple and robust
+    baseline." Long whenever close is above its own single rolling SMA,
+    flat otherwise -- deliberately simpler than MOMENTUM's own two-MA
+    crossover (one moving average, one condition, no second window to
+    overfit)."""
+    return bars.with_columns(
+        pl.col("close").rolling_mean(lookback).alias("_sma")
+    ).with_columns(
+        (pl.col("close") > pl.col("_sma"))
+        .cast(pl.Float64)
+        .shift(1)
+        .fill_null(0.0)
+        .alias("position")
+    )
+
+
+def _ma_ribbon_signal(bars: pl.DataFrame, short: int, mid: int, long: int) -> pl.DataFrame:
+    """Three SMAs (short/mid/long) forming a "ribbon". Long when the
+    ribbon is both correctly ALIGNED (short > mid > long -- an uptrend)
+    AND EXPANDING (today's short-to-long spread wider than the prior
+    bar's) -- a trend-STRENGTH confirmation on top of
+    TRIPLE_MA_ALIGNMENT's own pure trend-DIRECTION signal; alignment
+    alone can persist while the ribbon itself compresses toward a
+    reversal, which this family is built to exclude."""
+    return (
+        bars.with_columns(
+            pl.col("close").rolling_mean(short).alias("_short"),
+            pl.col("close").rolling_mean(mid).alias("_mid"),
+            pl.col("close").rolling_mean(long).alias("_long"),
+        )
+        .with_columns((pl.col("_short") - pl.col("_long")).alias("_spread"))
+        .with_columns(
+            (
+                (pl.col("_short") > pl.col("_mid"))
+                & (pl.col("_mid") > pl.col("_long"))
+                & (pl.col("_spread") > pl.col("_spread").shift(1))
+            )
+            .cast(pl.Float64)
+            .shift(1)
+            .fill_null(0.0)
+            .alias("position")
+        )
+    )
+
+
 def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     """Public seam validation/metrics.py's information-coefficient
     calculation needs: IC is a property of the SIGNAL (does it predict
@@ -957,6 +1383,68 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
     if spec.family == FAMILY_GAP_FADE:
         assert spec.gap_fade_threshold is not None
         return _gap_fade_signal(bars, spec.gap_fade_threshold)
+    if spec.family == FAMILY_EMA_CROSSOVER:
+        assert spec.ema_fast_window is not None and spec.ema_slow_window is not None
+        return _ema_crossover_signal(bars, spec.ema_fast_window, spec.ema_slow_window)
+    if spec.family == FAMILY_TRIPLE_MA_ALIGNMENT:
+        assert (
+            spec.tma_fast_window is not None
+            and spec.tma_mid_window is not None
+            and spec.tma_slow_window is not None
+        )
+        return _triple_ma_alignment_signal(
+            bars, spec.tma_fast_window, spec.tma_mid_window, spec.tma_slow_window
+        )
+    if spec.family == FAMILY_DEMA_CROSSOVER:
+        assert spec.dema_fast_window is not None and spec.dema_slow_window is not None
+        return _dema_crossover_signal(bars, spec.dema_fast_window, spec.dema_slow_window)
+    if spec.family == FAMILY_HULL_MA_TREND:
+        assert spec.hull_lookback is not None
+        return _hull_ma_signal(bars, spec.hull_lookback)
+    if spec.family == FAMILY_KAMA_TREND:
+        assert (
+            spec.kama_lookback is not None
+            and spec.kama_fast_sc is not None
+            and spec.kama_slow_sc is not None
+        )
+        return _kama_signal(bars, spec.kama_lookback, spec.kama_fast_sc, spec.kama_slow_sc)
+    if spec.family == FAMILY_TSMOM:
+        assert spec.tsmom_lookback_days is not None and spec.tsmom_skip_days is not None
+        return _tsmom_signal(bars, spec.tsmom_lookback_days, spec.tsmom_skip_days)
+    if spec.family == FAMILY_ADX_DI_CROSSOVER:
+        assert spec.adx_lookback is not None
+        return _adx_di_signal(bars, spec.adx_lookback)
+    if spec.family == FAMILY_AROON_CROSSOVER:
+        assert spec.aroon_lookback is not None
+        return _aroon_signal(bars, spec.aroon_lookback)
+    if spec.family == FAMILY_ICHIMOKU_BREAKOUT:
+        assert (
+            spec.ichimoku_conversion is not None
+            and spec.ichimoku_base is not None
+            and spec.ichimoku_span_b is not None
+        )
+        return _ichimoku_signal(
+            bars, spec.ichimoku_conversion, spec.ichimoku_base, spec.ichimoku_span_b
+        )
+    if spec.family == FAMILY_VORTEX:
+        assert spec.vortex_lookback is not None
+        return _vortex_signal(bars, spec.vortex_lookback)
+    if spec.family == FAMILY_LINREG_SLOPE:
+        assert spec.linreg_lookback is not None
+        return _linreg_slope_signal(bars, spec.linreg_lookback)
+    if spec.family == FAMILY_CHANDELIER_EXIT:
+        assert spec.chandelier_lookback is not None and spec.chandelier_multiplier is not None
+        return _chandelier_exit_signal(bars, spec.chandelier_lookback, spec.chandelier_multiplier)
+    if spec.family == FAMILY_SMA200_FILTER:
+        assert spec.sma_filter_lookback is not None
+        return _sma200_filter_signal(bars, spec.sma_filter_lookback)
+    if spec.family == FAMILY_MA_RIBBON:
+        assert (
+            spec.ribbon_short is not None
+            and spec.ribbon_mid is not None
+            and spec.ribbon_long is not None
+        )
+        return _ma_ribbon_signal(bars, spec.ribbon_short, spec.ribbon_mid, spec.ribbon_long)
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -1044,6 +1532,49 @@ def _min_bars_for(spec: StrategySpec) -> int:
         return spec.mfi_lookback + 2
     if spec.family == FAMILY_GAP_FADE:
         return 3  # a single-bar gap condition -- just the shift(1)/diff headroom
+    if spec.family == FAMILY_EMA_CROSSOVER:
+        assert spec.ema_slow_window is not None
+        return spec.ema_slow_window + 2
+    if spec.family == FAMILY_TRIPLE_MA_ALIGNMENT:
+        assert spec.tma_slow_window is not None
+        return spec.tma_slow_window + 2
+    if spec.family == FAMILY_DEMA_CROSSOVER:
+        assert spec.dema_slow_window is not None
+        return spec.dema_slow_window * 2 + 2  # EMA-of-EMA needs double the window to warm up
+    if spec.family == FAMILY_HULL_MA_TREND:
+        assert spec.hull_lookback is not None
+        sqrt_n = max(1, round(spec.hull_lookback**0.5))
+        return int(spec.hull_lookback + sqrt_n + 2)
+    if spec.family == FAMILY_KAMA_TREND:
+        assert spec.kama_lookback is not None
+        return spec.kama_lookback + 2
+    if spec.family == FAMILY_TSMOM:
+        assert spec.tsmom_lookback_days is not None
+        return spec.tsmom_lookback_days + 2
+    if spec.family == FAMILY_ADX_DI_CROSSOVER:
+        assert spec.adx_lookback is not None
+        return spec.adx_lookback * 3 + 2  # Wilder smoothing needs several periods to converge
+    if spec.family == FAMILY_AROON_CROSSOVER:
+        assert spec.aroon_lookback is not None
+        return spec.aroon_lookback + 2
+    if spec.family == FAMILY_ICHIMOKU_BREAKOUT:
+        assert spec.ichimoku_base is not None and spec.ichimoku_span_b is not None
+        return spec.ichimoku_base + spec.ichimoku_span_b + 2
+    if spec.family == FAMILY_VORTEX:
+        assert spec.vortex_lookback is not None
+        return spec.vortex_lookback + 2
+    if spec.family == FAMILY_LINREG_SLOPE:
+        assert spec.linreg_lookback is not None
+        return spec.linreg_lookback + 2
+    if spec.family == FAMILY_CHANDELIER_EXIT:
+        assert spec.chandelier_lookback is not None
+        return spec.chandelier_lookback + 2
+    if spec.family == FAMILY_SMA200_FILTER:
+        assert spec.sma_filter_lookback is not None
+        return spec.sma_filter_lookback + 2
+    if spec.family == FAMILY_MA_RIBBON:
+        assert spec.ribbon_long is not None
+        return spec.ribbon_long + 2
     raise ValueError(f"no minimum-bars rule for family {spec.family!r}")
 
 
