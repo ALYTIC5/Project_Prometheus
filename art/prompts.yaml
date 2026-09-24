@@ -10,6 +10,12 @@ style_suffix_world: >-
   greenery, Aegean blue water, warm Mediterranean light from the top-left,
   crisp dark outlines, detailed, no text
 
+style_suffix_terrain: >-
+  ancient Greek landscape ground, isometric pixel art, 2:1 projection,
+  sun-warmed marble and limestone pebbles, olive and cypress greenery nearby,
+  warm Mediterranean light from the top-left, crisp dark outlines, detailed,
+  no text
+
 style_suffix_character: >-
   ancient Greek mythological figure, full body, pixel art, low top-down view,
   sandals, classical Greek clothing, bronze and linen tones, crisp dark

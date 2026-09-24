@@ -262,6 +262,54 @@ hero_fold:
   alchemist: mage
   hybrid: duelist
 
+tiles:
+  grass:
+    greek_name: "Meadow ground"
+    subject: "Mediterranean grass ground with small olive-green tufts and pale stones"
+    details: []
+  plaza:
+    greek_name: "Agora paving"
+    subject: "pale marble plaza paving stones of an agora"
+    details: []
+  road:
+    greek_name: "Cobbled road"
+    subject: "a pale cobbled road of worn marble and limestone setts"
+    details: []
+
+props:
+  olive_tree:
+    greek_name: "Olive tree"
+    subject: "a gnarled olive tree with silvery-green leaves"
+    details: []
+  cypress:
+    greek_name: "Cypress"
+    subject: "a tall slender Mediterranean cypress tree beside a marble path"
+    details: []
+  amphora_pair:
+    greek_name: "Amphora pair"
+    subject: "two terracotta amphorae standing together on marble"
+    details: []
+  column_fragment:
+    greek_name: "Column fragment"
+    subject: "a fallen marble Doric column fragment"
+    details: []
+  tripod_brazier:
+    greek_name: "Tripod brazier"
+    subject: "a bronze tripod brazier with a small flame, on a marble base"
+    details: []
+  stone_bench:
+    greek_name: "Stone bench"
+    subject: "a carved marble bench with a Greek key meander border"
+    details: []
+  herm_statue:
+    greek_name: "Herm"
+    subject: "a marble herm pillar with a bearded bronze-toned head"
+    details: []
+  laurel_bush:
+    greek_name: "Laurel bush"
+    subject: "a round laurel bush beside a terracotta planter"
+    details: []
+
 townsfolk:
   citizen:
     greek_name: "Citizen"

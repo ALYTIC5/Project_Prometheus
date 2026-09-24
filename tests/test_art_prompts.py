@@ -86,7 +86,7 @@ def test_valid_greek_description_passes():
 def test_every_theme_entry_composes_and_passes_lint():
     theme = compose_prompt._load_theme()
     checked = 0
-    for category in ("buildings", "deities", "agents", "heroes", "townsfolk"):
+    for category in ("buildings", "deities", "agents", "heroes", "townsfolk", "tiles", "props"):
         for key in theme[category]:
             text = compose_prompt.compose(key)
             result = prompt_lint.lint(text)
