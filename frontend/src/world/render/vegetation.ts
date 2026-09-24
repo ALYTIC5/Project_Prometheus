@@ -1,9 +1,18 @@
 import * as PIXI from 'pixi.js';
 import { Layer, depthOf, gridToScreen } from '../iso/projection';
 import { PALETTE } from '../sprites/palette';
-import { hashString } from '../sprites/registry';
+import { hashString, isProduction, resolvePropSprite } from '../sprites/registry';
+import { getAtlasFrame } from '../sprites/atlasTextures';
 import { GRID_SIZE, WATER_MAX_X, PLAZA_RADIUS, computeRoadTiles, isInsideAnyFootprint } from './ground';
 import type { Building } from '../../types';
+
+// Real PixelLab art exists for exactly these two tree species (2 variants
+// each) and one bush (laurel, 2 variants) -- see art/registry.json and
+// tools/art/build_r2_manifest.py. Anything else (the tuft, a dead/
+// Underworld tree) has no real art and always draws procedurally.
+const TREE_SPECIES = ['olive_tree', 'cypress'] as const;
+const TREE_VARIANTS_PER_SPECIES = 2;
+const BUSH_VARIANTS = 2;
 
 // Tree line thickness at the island edge, and how close to the Underworld
 // building's centre counts as "the Underworld quarter" for the bare/dead
@@ -54,7 +63,7 @@ function vegetationAt(gx: number, gy: number, dead: boolean): { kind: Kind; vari
   return null;
 }
 
-function drawTree(variant: number, dead: boolean): PIXI.Graphics {
+function drawProceduralTree(variant: number, dead: boolean): PIXI.Graphics {
   const g = new PIXI.Graphics();
   const trunkColor = dead ? PALETTE['slate.dark'] : PALETTE['orange.dark'];
   const canopyColor = dead ? PALETTE['slate.mid'] : [PALETTE['green.dark'], PALETTE['green.mid'], PALETTE['green.light']][variant];
@@ -72,13 +81,48 @@ function drawTree(variant: number, dead: boolean): PIXI.Graphics {
   return g;
 }
 
-function drawBush(variant: number): PIXI.Graphics {
+function drawProceduralBush(variant: number): PIXI.Graphics {
   const g = new PIXI.Graphics();
   const color = variant === 0 ? PALETTE['green.mid'] : PALETTE['green.dark'];
   g.circle(-2, -2, 2.5).fill({ color });
   g.circle(2, -1.5, 2.5).fill({ color });
   g.circle(0, -3, 2.5).fill({ color });
   return g;
+}
+
+/** Real-art sprite for a manifest key, anchored the same way ground.ts's
+ * drawAtlasTile is -- or null on any miss (no manifest, wrong SPRITE_SET,
+ * atlas not loaded yet), in which case the caller falls back to the
+ * procedural draw exactly as before this real art existed. */
+function atlasSprite(name: string, variant: number): PIXI.Sprite | null {
+  if (!isProduction()) return null;
+  const spec = resolvePropSprite(name, variant);
+  if (!spec) return null;
+  const texture = getAtlasFrame(spec);
+  if (!texture) return null;
+  const sprite = new PIXI.Sprite(texture);
+  sprite.anchor.set(spec.anchor!.x / spec.frame!.width, spec.anchor!.y / spec.frame!.height);
+  return sprite;
+}
+
+/** Never for `dead` (Underworld) trees -- there is no bare/withered real
+ * art, and the bare silhouette is a deliberate visual distinction (W3),
+ * not something a live-looking real tree may silently paper over. */
+function drawTree(gx: number, gy: number, variant: number, dead: boolean): PIXI.Container {
+  if (!dead) {
+    const species = TREE_SPECIES[hashString(`veg-species:${gx},${gy}`) % TREE_SPECIES.length];
+    const atlasVariant = hashString(`veg-variant:${gx},${gy}`) % TREE_VARIANTS_PER_SPECIES;
+    const sprite = atlasSprite(species, atlasVariant);
+    if (sprite) return sprite;
+  }
+  return drawProceduralTree(variant, dead);
+}
+
+function drawBush(gx: number, gy: number, variant: number): PIXI.Container {
+  const atlasVariant = hashString(`veg-variant:${gx},${gy}`) % BUSH_VARIANTS;
+  const sprite = atlasSprite('laurel_bush', atlasVariant);
+  if (sprite) return sprite;
+  return drawProceduralBush(variant);
 }
 
 function drawTuft(): PIXI.Graphics {
@@ -115,7 +159,11 @@ export function createVegetation(buildings: Building[]): PIXI.Container[] {
       const { x, y } = gridToScreen(gx, gy);
       const root = new PIXI.Container();
       root.addChild(
-        plant.kind === 'tree' ? drawTree(plant.variant, dead) : plant.kind === 'bush' ? drawBush(plant.variant) : drawTuft(),
+        plant.kind === 'tree'
+          ? drawTree(gx, gy, plant.variant, dead)
+          : plant.kind === 'bush'
+            ? drawBush(gx, gy, plant.variant)
+            : drawTuft(),
       );
       root.x = x;
       root.y = y;

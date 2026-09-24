@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFootprint, resolveSilhouette, resolveSprite } from './registry';
+import { classifyFootprint, resolvePropSprite, resolveSilhouette, resolveSprite } from './registry';
 
 describe('classifyFootprint', () => {
   it('classifies 1x1 as TOWER, 2x2 as MEDIUM, 3x3 as LARGE', () => {
@@ -22,6 +22,20 @@ describe('resolveSprite', () => {
     const active = resolveSprite('monument', 'monument', 'ACTIVE');
     const sealed = resolveSprite('monument', 'monument', 'SEALED');
     expect(sealed).toEqual(active);
+  });
+});
+
+describe('resolvePropSprite', () => {
+  // SPRITE_SET is read once at module load from window.__SPRITE_SET__, so a
+  // unit test can't flip it to 'production' without a module-reset dance
+  // this file doesn't otherwise use (same reason resolveTerrainSprite has
+  // no dedicated test either) -- this only covers the placeholder-mode
+  // fallback every caller relies on when no manifest is loaded. Production
+  // behaviour is verified by tools/art/build_r2_manifest.py's own output
+  // review, not a unit test.
+  it('returns null with no production manifest loaded, for any name/variant', () => {
+    expect(resolvePropSprite('olive_tree', 0)).toBeNull();
+    expect(resolvePropSprite('not_a_real_prop', 0)).toBeNull();
   });
 });
 

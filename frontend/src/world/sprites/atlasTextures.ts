@@ -8,6 +8,7 @@ const ATLAS_URLS = [
   '/sprites/buildings_atlas.png',
   '/sprites/terrain_atlas.png',
   '/sprites/characters_atlas.png',
+  '/sprites/props_atlas.png',
 ];
 
 const baseTextures = new Map<string, PIXI.Texture>();
@@ -21,12 +22,21 @@ export async function loadAtlasTextures(): Promise<void> {
   if (!isProduction() || baseTextures.size > 0) return;
   for (const url of ATLAS_URLS) {
     const filename = url.split('/').pop()!;
-    const texture = await PIXI.Assets.load<PIXI.Texture>({
-      src: url,
-      data: { scaleMode: 'nearest' },
-    });
-    texture.source.scaleMode = 'nearest';
-    baseTextures.set(filename, texture);
+    try {
+      const texture = await PIXI.Assets.load<PIXI.Texture>({
+        src: url,
+        data: { scaleMode: 'nearest' },
+      });
+      texture.source.scaleMode = 'nearest';
+      baseTextures.set(filename, texture);
+    } catch {
+      // One missing/broken atlas (a category with no shipped art yet, e.g.
+      // props_atlas.png before any prop is packed) must not take the whole
+      // renderer down -- getAtlasFrame() already returns null for any spec
+      // whose atlas never loaded, and every call site falls back to
+      // procedural drawing on null, same as a missing manifest key.
+      console.warn(`Could not load atlas ${url} -- entries referencing it fall back to procedural`);
+    }
   }
 }
 

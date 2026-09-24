@@ -4,9 +4,17 @@
 **HUMAN GATE 1: cleared** — user approved treasury variation 0 (clean white
 marble, terracotta roof, gold pediment).
 
-**Account state:** PixelLab trial account #5 nearly exhausted (35/40 spent,
-reconciled against `art/registry.json`; 5 remain, deliberately not spent —
-see "Treasury" below). No jobs queued or running.
+**Account state:** PixelLab trial account #5 fully exhausted (40/40, reconciled
+against `art/registry.json`). No jobs queued or running.
+
+**World wiring: done for everything that passed.** All 8 props + 3 good tree/
+bush variants + 2 tiles are packed into real atlases and
+`manifest.production.json`, and `render/vegetation.ts` now draws real
+olive_tree/cypress/laurel_bush art in `SPRITE_SET=production` instead of
+procedural shapes. Full detail in `docs/STYLE_BIBLE.md`'s "World wiring"
+section. Re-run `python -m tools.art.build_r2_manifest` any time a new R2
+asset is added or replaced — it's idempotent and re-packs from
+`art/raw/` each time.
 
 ## Done this account, all pass `check_asset --key <key>` (law W11)
 
@@ -23,6 +31,21 @@ see "Treasury" below). No jobs queued or running.
 | plaza tile | 64×64 | `art/raw/tiles/plaza.png` (top face 64×41 → squash) |
 
 All 8 props are done. R2's prop list is complete.
+
+**Tree/bush variants (spent the account's last 5 generations on these,
+seeds only — same proven prompts/canvases, so no re-fail risk):**
+
+| Asset | Result |
+|---|---|
+| olive_tree_v2 (seed 101) | ✅ pass, now wired as `prop_olive_tree_1` |
+| cypress_v3 (seed 505) | ✅ pass, wired as `prop_cypress_1` |
+| laurel_bush_v2 (seed 303) | ✅ pass, wired as `prop_laurel_bush_1` |
+| cypress_v2 (seed 202) | ❌ clipped top/bottom, discarded |
+| olive_tree_v3 (seed 404) | ❌ clipped left, discarded |
+
+3 of 5 variants passed — real seed-to-seed variance in framing even with an
+identical prompt/canvas, worth knowing before assuming a reroll is "free" of
+risk just because the prompt already worked once.
 
 **Known imperfection (not a scale failure, not blocking):** most props still
 carry a small square base/plinth despite `style_suffix_prop` asking for "no
@@ -59,11 +82,15 @@ linear (73% fill at 168, 93% at 256) — do not guess a third canvas size.
 
 1. Palette-lock `art/prompts.yaml`/pipeline to the final treasury (already
    using its palette + grass for all R2 props).
-2. Implement the tile ingest squash (top face → 64×32) for grass/road/plaza —
-   not built yet, doesn't block generation.
-3. Build `artifacts/gates/gate1_style_board.png` v2 with the passing assets,
-   confirm nothing else needs Gate 1 sign-off (style already approved; scale
-   was a build-quality gate, not part of Gate 1 itself).
+2. ~~Implement the tile ingest squash~~ DONE — `tools/art/build_r2_manifest.py`
+   crops to bbox + NEAREST-resizes to 64×32 at ingest. Applies to any tile;
+   `road.png` passed scale but has no consumer in `ground.ts` yet (no atlas
+   hook for road tiles exists there — only the default-fill and plaza slots
+   do), so it's validated but unused, same status as the 5 unplaced props.
+3. ~~Build a v2 style board~~ DONE — `artifacts/gates/r2_props_scaled.png`,
+   `artifacts/gates/r2_atlas_check.png` (packed atlas contents). Re-run
+   `python -m tools.art.build_r2_manifest` and re-render the treasury into
+   the same manifest once it passes scale.
 4. Move to R3. Before generating ANY character: character canvas/height has
    NO scale rule in `art/theme.yaml` yet (law W11 refuses it) — ask the user
    to decide character height in tiles first.

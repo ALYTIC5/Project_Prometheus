@@ -133,5 +133,42 @@ not from an image that doesn't exist.
 
 ## Approved anchor
 
-*(R2 has not yet run. This section is filled in once a style anchor is
-generated and approved — see the Greek Rebuild prompt pack's own R2 gate.)*
+**HUMAN GATE 1: cleared.** Variation 0 (clean white marble, terracotta roof,
+gold pediment) approved by the user — `art/raw/buildings/treasury_anchor_c0.png`.
+This is the STYLE reference: palette and look for every later asset derive
+from it (see "World scale" above for why the shipped treasury still needs a
+larger re-render before it's usable in-world).
+
+## World wiring (R2 -> live renderer)
+
+`tools/art/build_r2_manifest.py` packs every scale-passing R2 asset into real
+atlases and `frontend/src/world/sprites/manifest.production.json`:
+
+- **Tiles** (`terrain_atlas.png`): `terrain_grass`, `terrain_cobblestone`.
+  Each tile is squashed at ingest (crop to opaque bbox, NEAREST resize to
+  64×32) — the fix for the canvas-to-content mismatch noted above; no
+  further generation needed for this.
+- **Props** (`props_atlas.png`): all 8 R2 props, keyed `prop_<name>_<variant>`
+  (olive_tree/cypress/laurel_bush have 2 variants each; the other 5 have 1).
+  Anchor = bottom-centre of each sprite's own opaque bbox
+  (`tools/art/common.py`'s `anchor_prop`).
+- **Wired into the live renderer:** `render/vegetation.ts`'s tree/bush scatter
+  now draws real olive_tree/cypress/laurel_bush art (in `SPRITE_SET=production`)
+  instead of procedural PixiJS shapes, picked by an independent deterministic
+  hash per tile — falls back to the original procedural draw on any miss.
+  A "dead" (Underworld-zone) tree always stays procedural: there is no
+  bare/withered real art, and that's a deliberate visual distinction, not a
+  gap to paper over.
+- **Packed but NOT yet placed:** amphora_pair, column_fragment,
+  tripod_brazier, stone_bench, herm_statue. They're in `props_atlas.png` and
+  the manifest, ready for `resolvePropSprite`, but no render call site
+  scatters them yet — that's a future decor-placement step, not done here.
+- **Fixed two latent bugs found while wiring this up:** `tools/art/common.py`'s
+  `SPRITES_DIR` pointed at a directory that no longer exists
+  (`frontend/src/sprites` → `frontend/src/world/sprites`), and
+  `atlasTextures.ts` had no per-atlas error handling, so one missing atlas
+  file would have broken the entire renderer instead of falling back to
+  procedural for just that category.
+- **To see it:** run the frontend with `NEXT_PUBLIC_SPRITE_SET=production`.
+  Treasury/building art is NOT part of this manifest yet (still fails scale
+  — see above), so buildings keep rendering procedurally regardless.

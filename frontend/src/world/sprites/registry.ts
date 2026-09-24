@@ -284,6 +284,15 @@ export function resolveTerrainSprite(key: string): AtlasSpec | null {
   return productionManifest[key] ?? null;
 }
 
+/** Standalone decor sprite key: `prop_<name>_<variant>` (see
+ * tools/art/build_r2_manifest.py). Returns null on a missing manifest,
+ * an unknown name, or a variant index past what was generated for it --
+ * callers fall back to procedural drawing, same as every other resolver. */
+export function resolvePropSprite(name: string, variant: number): AtlasSpec | null {
+  if (!productionManifest) return null;
+  return productionManifest[`prop_${name}_${variant}`] ?? null;
+}
+
 /** Raw manifest lookup for a named PixelLab character that isn't an
  * AgentRole worker -- gods, heroes, harbour NPCs. Key format matches
  * import_pixellab.py's naming exactly: `${characterFolder}_${action}_r${rotation}`

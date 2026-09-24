@@ -1,0 +1,236 @@
+{
+  "prop_amphora_pair_0": {
+    "anchor": {
+      "x": 16,
+      "y": 27
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 32,
+      "x": 34,
+      "y": 58
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_column_fragment_0": {
+    "anchor": {
+      "x": 16,
+      "y": 25
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 32,
+      "x": 68,
+      "y": 58
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_cypress_0": {
+    "anchor": {
+      "x": 16,
+      "y": 53
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 56,
+      "width": 32,
+      "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_cypress_1": {
+    "anchor": {
+      "x": 16,
+      "y": 49
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 56,
+      "width": 32,
+      "x": 34,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_herm_statue_0": {
+    "anchor": {
+      "x": 16,
+      "y": 44
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 32,
+      "x": 136,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_laurel_bush_0": {
+    "anchor": {
+      "x": 16,
+      "y": 34
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 40,
+      "width": 32,
+      "x": 170,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_laurel_bush_1": {
+    "anchor": {
+      "x": 16,
+      "y": 33
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 40,
+      "width": 32,
+      "x": 204,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_olive_tree_0": {
+    "anchor": {
+      "x": 16,
+      "y": 40
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 32,
+      "x": 68,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_olive_tree_1": {
+    "anchor": {
+      "x": 16,
+      "y": 44
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 48,
+      "width": 32,
+      "x": 102,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_stone_bench_0": {
+    "anchor": {
+      "x": 16,
+      "y": 26
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 32,
+      "x": 102,
+      "y": 58
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "prop_tripod_brazier_0": {
+    "anchor": {
+      "x": 16,
+      "y": 37
+    },
+    "atlas": "props_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 40,
+      "width": 32,
+      "x": 0,
+      "y": 58
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_cobblestone": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_grass": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  }
+}

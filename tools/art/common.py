@@ -22,7 +22,7 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MOCKUPS = REPO_ROOT / "Mockups"
 ART = REPO_ROOT / "art"
-SPRITES_DIR = REPO_ROOT / "frontend" / "src" / "sprites"
+SPRITES_DIR = REPO_ROOT / "frontend" / "src" / "world" / "sprites"
 # Atlas PNGs must be fetchable at runtime via a plain URL (PIXI.Assets.load),
 # not bundled as a webpack asset import -- Next.js's static export (`output:
 # 'export'`) serves frontend/public/ verbatim, so images live there while
