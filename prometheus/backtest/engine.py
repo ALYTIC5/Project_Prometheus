@@ -1922,6 +1922,13 @@ class _RawBacktest:
     total_costs: float
 
 
+
+def min_bars_for(spec: StrategySpec) -> int:
+    """Public name for _min_bars_for -- experiments/runner.py's
+    enqueue-time history check needs the exact same warm-up rule
+    run_backtest enforces, not a second copy of it."""
+    return _min_bars_for(spec)
+
 def _run_accounting(
     bars: pl.DataFrame, positions: list[float], cost_model: CostModel
 ) -> _RawBacktest:

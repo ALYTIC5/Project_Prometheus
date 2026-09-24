@@ -42,7 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchmark_curve
 from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
-from prometheus.backtest.engine import run_backtest
+from prometheus.backtest.engine import min_bars_for, run_backtest
 from prometheus.backtest.portfolio_engine import run_portfolio_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, ValidationResult, get_session
 from prometheus.core.health import record_failure
@@ -52,7 +52,7 @@ from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
 from prometheus.data.universe import membership_windows
 from prometheus.experiments.failure import classify_exception, classify_result
-from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
+from prometheus.experiments.queue import Job, claim, enqueue, fail, release, succeed
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
@@ -68,6 +68,27 @@ from prometheus.validation.regime import classify_current_regime, regime_breakdo
 from prometheus.validation.scoring import ScoreInputs
 
 _UPDATE_STRATEGY_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
+
+
+class InsufficientDataRecorded(ValueError):
+    """run_one's insufficient-data outcome, AFTER it has already been
+    recorded (Experiment + REJECT Decision + strategies.status=REJECTED).
+    Still a ValueError so every existing caller/test that expects run_one
+    to raise on too-few bars is unchanged; carries the experiment id so
+    drain_queue can treat the job as done instead of failed.
+
+    Found 2026-09-24: drain_queue treated this like any transient error --
+    retried it (each retry minting ANOTHER strategy id + experiment row for
+    the same deterministic outcome), dead-lettered it after max_attempts,
+    which deleted the job row and freed its idempotency key, so the next
+    cycle's enqueue_baseline_grid re-enqueued it and the loop repeated
+    forever: thousands of dead-letters per cycle, job_health pinned at 100%
+    failure, and the id counters burning -- the same exhaustion class
+    next_strategy_id's own docstring already records once."""
+
+    def __init__(self, message: str, experiment_id: str) -> None:
+        super().__init__(message)
+        self.experiment_id = experiment_id
 _UNIVERSE_CONFIG_PATH = "config/universe.yaml"
 
 
@@ -198,7 +219,7 @@ async def run_one(
             _UPDATE_STRATEGY_STATUS, {"status": "REJECTED", "id": strategy_id}
         )
         await session.commit()
-        raise
+        raise InsufficientDataRecorded(str(exc), experiment_id) from exc
     compute_cost = time.perf_counter() - started
 
     await record_benchmark_curve(session, benchmark_result.equity_curve)
@@ -829,6 +850,67 @@ async def _validate_one_spec(
 _RUN_BACKTEST_KIND = "run_backtest"
 
 
+_SELECT_BAR_COUNTS = text(
+    """
+    SELECT symbol, timeframe, COUNT(*) AS n
+      FROM ohlcv_bars
+     WHERE symbol = ANY(:symbols) AND event_time >= :since
+     GROUP BY symbol, timeframe
+    """
+)
+
+
+async def _bar_counts(
+    session: AsyncSession, specs: Sequence[StrategySpec | RotationSpec], days: int
+) -> dict[tuple[str, str], int]:
+    symbols = sorted(
+        {
+            symbol
+            for spec in specs
+            for symbol in ([spec.symbol] if isinstance(spec, StrategySpec) else spec.universe)
+        }
+    )
+    if not symbols:
+        return {}
+    since = datetime.now(UTC) - timedelta(days=days)
+    rows = (await session.execute(_SELECT_BAR_COUNTS, {"symbols": symbols, "since": since})).all()
+    return {(r.symbol, r.timeframe): int(r.n) for r in rows}
+
+
+def specs_with_enough_history(
+    specs: Sequence[StrategySpec | RotationSpec], bar_counts: dict[tuple[str, str], int]
+) -> list[StrategySpec | RotationSpec]:
+    """Only specs whose data already covers their own warm-up -- the same
+    rule the engine enforces at run time (min_bars_for / a rotation's
+    lookback_days), checked BEFORE enqueueing. Enqueue is idempotent per
+    config_hash, so a spec enqueued too early used to run once, record an
+    INSUFFICIENT_DATA reject, and never be retried even after the data
+    arrived (DOT/USDT and LTC/USDT had zero bars ingested until
+    2026-09-24; every one of their specs was burned that way). Deferred
+    specs are simply picked up by a later cycle once ingestion catches up.
+    Approximate by design (bar counts in the window, not the exact
+    point-in-time as_of view) -- run_one's own guard still catches any
+    residual shortfall, now as a terminal InsufficientDataRecorded."""
+    runnable: list[StrategySpec | RotationSpec] = []
+    for spec in specs:
+        if isinstance(spec, StrategySpec):
+            # +1: the window count can include the current bar, which the
+            # engine's point-in-time as_of view excludes until it's
+            # available -- without the margin a spec sitting exactly on its
+            # warm-up boundary would be admitted, fail at run time, get
+            # released, and be re-admitted every cycle.
+            if bar_counts.get((spec.symbol, spec.timeframe), 0) >= min_bars_for(spec) + 1:
+                runnable.append(spec)
+        else:
+            available = max(
+                (bar_counts.get((symbol, spec.timeframe), 0) for symbol in spec.universe),
+                default=0,
+            )
+            if available > (spec.lookback_days or 0) + 1:
+                runnable.append(spec)
+    return runnable
+
+
 async def enqueue_specs(
     symbol: str,
     timeframe: str,
@@ -853,7 +935,12 @@ async def enqueue_specs(
     pair, is what identifies its grid."""
     job_ids = []
     async with get_session() as session:
-        for spec in specs:
+        bar_counts = await _bar_counts(session, specs, days)
+        runnable = specs_with_enough_history(specs, bar_counts)
+        skipped = len(specs) - len(runnable)
+        if skipped:
+            print(f"enqueue_specs: deferring {skipped} spec(s) until enough history exists")
+        for spec in runnable:
             idempotency_key = hashlib.sha256(
                 f"{_RUN_BACKTEST_KIND}|{spec.config_hash()}|{days}".encode()
             ).hexdigest()
@@ -983,6 +1070,18 @@ async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = No
         ran += 1
         try:
             experiment_id = await _run_job(job)
+        except InsufficientDataRecorded:
+            # Not enough history yet for this spec's warm-up: already
+            # recorded honestly by run_one (INSUFFICIENT_DATA reject).
+            # Retrying can't help until ingestion catches up, dead-
+            # lettering would count a non-failure as a failure, and
+            # succeeding would mark the spec done forever. Release it --
+            # enqueue_specs' history check re-admits it once the data
+            # exists. See InsufficientDataRecorded / queue.release.
+            async with get_session() as session:
+                await release(session, job_id=job.id, worker_id=resolved_worker_id)
+                await session.commit()
+            continue
         except Exception as exc:
             # queue.fail() already persists str(exc) to jobs.last_error /
             # jobs_dead_letter -- invisible outside a direct DB read until

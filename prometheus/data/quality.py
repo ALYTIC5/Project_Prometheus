@@ -1,6 +1,17 @@
 """Quality checks run on every ingest: gaps, duplicate timestamps,
 non-positive prices, impossible OHLC relationships, volume spikes,
 stale bars. Failures quarantine the batch; they never silently pass.
+
+Volume spikes are WARNINGS, not quarantine-worthy failures (2026-09-24):
+a volume spike is a real market event (listings, liquidations, news), not
+evidence the prices are wrong -- and check_volume_spikes was calibrated
+on a 30-bar synthetic series. On real 800-bar Binance.US daily windows it
+tripped for 11 of 14 sampled symbols (BTC included), and because
+quarantine rejects the WHOLE fetched batch, one spike day blocked hundreds
+of clean bars: DOT/USDT and LTC/USDT had zero bars ever ingested, and
+every other symbol's data froze the first day a spike entered its window.
+Warnings are still persisted verbatim on the raw ingestion row
+(quality_issues.warnings) -- flagged, never silently passed.
 """
 from __future__ import annotations
 
@@ -14,6 +25,8 @@ _BAR_HOURS = {"1h": 1, "4h": 4, "1d": 24}
 @dataclass
 class QualityReport:
     issues: list[str] = field(default_factory=list)
+    # Recorded on the raw row but not quarantine-worthy -- see module docstring.
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -149,7 +162,6 @@ def run_quality_checks(
     issues += check_duplicate_timestamps(frame)
     issues += check_price_validity(frame)
     issues += check_ohlc_relationships(frame)
-    issues += check_volume_spikes(frame)
     if not skip_stale_check:
         issues += check_stale_bars(frame)
-    return QualityReport(issues=issues)
+    return QualityReport(issues=issues, warnings=check_volume_spikes(frame))
