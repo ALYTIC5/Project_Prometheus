@@ -43,6 +43,12 @@ later, R2 (style anchor) should be re-run with `style_images` added to its
   column_fragment) come back as whole scenes or buildings: the world
   style suffix's "terracotta roof tiles" pulls them there. Props need their
   own style suffix without roof tiles before those two are re-run.
+- **World scale (1 tile = 64 px wide):** 2×2 building ≈ 128 px content
+  width (treasury anchor: 122 ✓). Props must stay well under one tile:
+  small props (amphora, bench, brazier, herm) ≤ ~24 px wide, trees ≤ ~32 px
+  wide. Generate props on a 32 px canvas, not 64. The R2 64 px props (content
+  34–60 px wide) are ~2× too large and must not ship as-is. Check the
+  content bounding box, not just the canvas, before ingesting any asset.
 
 ## Camera and light
 

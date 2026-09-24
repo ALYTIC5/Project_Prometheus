@@ -30,6 +30,9 @@ registry, tagged `trial_account_4`.
 3. Re-run `plaza` tile (`create_isometric_tile`, 1 gen).
 4. Implement the ingest squash (top face → 64×32) for tiles.
 5. Palette-lock after the Gate 1 pick; if the pick is not c0, remap props locally.
+6. **Scale:** the 6 good props are ~2× too large for the world (see STYLE_BIBLE
+   "World scale"). Regenerate all 8 props on a 32 px canvas (~8 gens) rather
+   than downscaling. Total remaining for R2 is then ~10–12 gens, not 3–6.
 
 ## On resume
 - `get_balance` first; confirm it is a NEW account (account #4 shows 0 remaining).
