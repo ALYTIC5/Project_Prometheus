@@ -29,6 +29,7 @@ import hashlib
 import time
 import uuid
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -60,7 +61,7 @@ from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.decay import DecayProfile, compute_decay
 from prometheus.validation.decision import Evidence, decide
-from prometheus.validation.metrics import ValidationMetrics, compute_metrics
+from prometheus.validation.metrics import ValidationMetrics, compute_metrics, signal_frame_or_none
 from prometheus.validation.metrics import hit_rate as compute_hit_rate
 from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
 from prometheus.validation.regime import classify_current_regime, regime_breakdown
@@ -403,10 +404,27 @@ async def validate_specs(
     # real failure modes caught by actually running this against real
     # data, not by any offline test.
     trial_sharpes: list[float] = []
-    validated_specs: list[tuple[StrategySpec, Any, Any]] = []
+    validated_specs: list[tuple[StrategySpec, Any, Any, pl.DataFrame | None]] = []
     for spec, result in per_spec:
+        # Computed ONCE here and threaded through to both compute_metrics
+        # (IC+ICIR) and, below, compute_decay (9 horizons + claimed) --
+        # each used to call signal_for() fresh, ~12 redundant
+        # recomputations of the same per-family indicator per spec. See
+        # validation/metrics.py's signal_frame_or_none docstring for the
+        # 2026-09-24 incident this fixes (harmless at 4 working families,
+        # expensive enough at 47 to stall the research concern in
+        # production for hours the same day the signal-strength fix
+        # shipped).
+        signal_error: str | None = None
         try:
-            validation_metrics = compute_metrics(result.equity_curve, result.turnover, bars, spec)
+            signaled = signal_frame_or_none(bars, spec)
+        except Exception as exc:
+            signaled = None
+            signal_error = repr(exc)
+        try:
+            validation_metrics = compute_metrics(
+                result.equity_curve, result.turnover, bars, spec, signaled=signaled
+            )
         except Exception as exc:
             record_failure(
                 "research",
@@ -414,7 +432,22 @@ async def validate_specs(
                 context=f"validate_grid family={spec.family} hash={spec.config_hash()}",
             )
             continue
-        validated_specs.append((spec, result, validation_metrics))
+        if signal_error is not None:
+            # compute_metrics only records THIS failure when it derives
+            # signaled itself; here runner.py already knows what broke,
+            # so make sure it still lands in metric_failures rather than
+            # being silently dropped because compute_metrics was handed
+            # signaled=None and had no way to tell "declared False" apart
+            # from "we already tried and it broke".
+            validation_metrics = replace(
+                validation_metrics,
+                metric_failures={
+                    **validation_metrics.metric_failures,
+                    "information_coefficient": signal_error,
+                    "icir": signal_error,
+                },
+            )
+        validated_specs.append((spec, result, validation_metrics, signaled))
         if validation_metrics.risk is not None and validation_metrics.risk.sharpe is not None:
             trial_sharpes.append(validation_metrics.risk.sharpe)
 
@@ -425,7 +458,7 @@ async def validate_specs(
     current_regime = classify_current_regime(bars)
 
     experiment_ids: list[str] = []
-    for spec, result, validation_metrics in validated_specs:
+    for spec, result, validation_metrics, signaled in validated_specs:
         row = (
             await session.execute(
                 _SELECT_LATEST_EXPERIMENT_FOR_SPEC, {"config_hash": spec.config_hash()}
@@ -436,7 +469,12 @@ async def validate_specs(
         experiment_id, strategy_id = row.id, row.strategy_id
         decay_metric_failure: str | None = None
         try:
-            decay_profile = compute_decay(bars, spec)
+            # Reuses the SAME signal_frame_or_none() result the first loop
+            # already computed for this spec -- see compute_decay's own
+            # docstring on why recomputing it here (as this call used to,
+            # 10 more signal_for() calls per spec) was the actual
+            # production incident.
+            decay_profile = compute_decay(bars, spec, signaled=signaled)
         except Exception as exc:
             # Same independence rule compute_metrics already applies:
             # decay failing must not drop a spec that already has real
@@ -946,6 +984,14 @@ async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = No
         try:
             experiment_id = await _run_job(job)
         except Exception as exc:
+            # queue.fail() already persists str(exc) to jobs.last_error /
+            # jobs_dead_letter -- invisible outside a direct DB read until
+            # now. record_failure surfaces it the same way every other
+            # isolation boundary in this codebase does: ERROR-level log +
+            # worker_health tally, so a whole family/kind failing here
+            # shows up the same cycle instead of only as a growing
+            # jobs_dead_letter count nobody's watching.
+            record_failure("drain_queue", exc, context=f"job_id={job.id} kind={job.kind}")
             async with get_session() as session:
                 await fail(session, job_id=job.id, worker_id=resolved_worker_id, error=str(exc))
                 await session.commit()

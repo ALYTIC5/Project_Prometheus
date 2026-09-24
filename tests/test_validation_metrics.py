@@ -220,3 +220,60 @@ def test_metric_failure_persists_partial_result_not_a_dropped_row(
     assert "information_coefficient" in result.metric_failures
     assert "icir" in result.metric_failures
     assert "SignalStrengthContractViolation" in result.metric_failures["information_coefficient"]
+
+
+def test_compute_metrics_calls_signal_for_at_most_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression for the 2026-09-24 production incident: compute_metrics
+    used to call signal_for(bars, spec) independently for IC and for
+    ICIR (2x per spec), and experiments/runner.py's own compute_decay
+    call added 10 more (9 DECAY_HORIZONS + claimed) -- harmless while
+    only 4 families ever reached this code, expensive enough once the
+    signal-strength fix let 43 more through that the research concern
+    stalled in production for hours the same day. compute_metrics alone
+    must never call signal_for more than once per spec."""
+    calls = []
+    real_signal_for = metrics_module.signal_for
+
+    def _counting_signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
+        calls.append(spec.config_hash())
+        return real_signal_for(bars, spec)
+
+    monkeypatch.setattr(metrics_module, "signal_for", _counting_signal_for)
+
+    rows = _trending_bars(200)
+    bars = pl.DataFrame(rows)
+    equity_curve = tuple((r["available_at"].isoformat(), 1000.0 + i) for i, r in enumerate(rows))
+    compute_metrics(equity_curve, turnover=3.0, bars=bars, spec=_SPEC)
+
+    assert len(calls) == 1
+
+
+def test_compute_metrics_and_compute_decay_share_a_precomputed_signal_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The actual fix: experiments/runner.py computes signal_frame_or_none
+    ONCE per spec and passes it to both compute_metrics and compute_decay
+    via their `signaled=` parameter -- simulated here directly, since
+    runner.py itself needs a DB session. Total signal_for() calls across
+    BOTH functions must stay at exactly the one the caller already did,
+    not the ~12 the pre-fix code needed."""
+    calls = []
+    real_signal_for = metrics_module.signal_for
+
+    def _counting_signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
+        calls.append(spec.config_hash())
+        return real_signal_for(bars, spec)
+
+    monkeypatch.setattr(metrics_module, "signal_for", _counting_signal_for)
+
+    rows = _trending_bars(300)
+    bars = pl.DataFrame(rows)
+    equity_curve = tuple((r["available_at"].isoformat(), 1000.0 + i) for i, r in enumerate(rows))
+
+    signaled = metrics_module.signal_frame_or_none(bars, _SPEC)
+    assert len(calls) == 1  # the caller's own one-time computation
+
+    compute_metrics(equity_curve, turnover=3.0, bars=bars, spec=_SPEC, signaled=signaled)
+    compute_decay(bars, _SPEC, signaled=signaled)
+
+    assert len(calls) == 1  # neither function called signal_for again
