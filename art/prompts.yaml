@@ -16,6 +16,13 @@ style_suffix_terrain: >-
   warm Mediterranean light from the top-left, crisp dark outlines, detailed,
   no text
 
+# Props: a single small object. No roof tiles, water or scenery -- those words
+# turned R2's amphora/column prompts into whole scenes and buildings.
+style_suffix_prop: >-
+  single small ancient Greek object, isometric pixel art, 2:1 projection,
+  marble, bronze and terracotta tones, warm Mediterranean light from the
+  top-left, crisp dark outlines, no ground, no plinth, no scenery, no text
+
 style_suffix_character: >-
   ancient Greek mythological figure, full body, pixel art, low top-down view,
   sandals, classical Greek clothing, bronze and linen tones, crisp dark

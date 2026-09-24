@@ -309,19 +309,19 @@ props:
     details: []
   cypress:
     greek_name: "Cypress"
-    subject: "a tall slender Mediterranean cypress tree beside a marble path"
+    subject: "a tall slender Mediterranean cypress tree"
     details: []
   amphora_pair:
     greek_name: "Amphora pair"
-    subject: "two terracotta amphorae standing together on marble"
+    subject: "two terracotta amphorae standing side by side"
     details: []
   column_fragment:
     greek_name: "Column fragment"
-    subject: "a fallen marble Doric column fragment"
+    subject: "a single broken marble Doric column drum lying on its side"
     details: []
   tripod_brazier:
     greek_name: "Tripod brazier"
-    subject: "a bronze tripod brazier with a small flame, on a marble base"
+    subject: "a bronze tripod brazier with a small flame"
     details: []
   stone_bench:
     greek_name: "Stone bench"

@@ -23,8 +23,8 @@ registry, tagged `trial_account_4`.
 
 ## Remaining for R2 (estimated 3–6 generations on the next account)
 
-1. Add a props-specific style suffix to `art/prompts.yaml` (no "terracotta roof tiles"),
-   route `compose()` props to it, keep lint green.
+1. ~~Props-specific style suffix~~ DONE: `style_suffix_prop` (no roof tiles/water/
+   scenery, "no ground, no plinth"); prop subjects no longer mention marble bases.
 2. Re-run `amphora_pair` and `column_fragment` via `create_image_pixflux`
    (1 gen each, 64px, isometric, forced palette from chosen anchor + grass).
 3. Re-run `plaza` tile (`create_isometric_tile`, 1 gen).

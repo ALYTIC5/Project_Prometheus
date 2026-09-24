@@ -39,7 +39,7 @@ _CATEGORY_STYLE_SUFFIX = {
     "heroes": "style_suffix_character",
     "townsfolk": "style_suffix_character",
     "tiles": "style_suffix_terrain",
-    "props": "style_suffix_world",
+    "props": "style_suffix_prop",
 }
 # Building keys that are a god's temple, not a system building, use the
 # "temple" template instead of "building" -- deities.yaml's own family keys
