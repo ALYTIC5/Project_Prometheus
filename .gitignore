@@ -24,14 +24,18 @@ frontend/out/
 frontend/next-env.d.ts
 
 # art pipeline intermediates — regenerable by `make art`, never committed.
-# art/sliced/overrides.json is the ONE exception: it holds every hand-made
-# naming and anchor decision and is the pipeline's real source of truth.
+# art/sliced/overrides.json is a real hand-made source of truth. theme.yaml
+# and prompts.yaml (Greek Rebuild R1) are also hand-authored source data, not
+# generated/derived art -- every PixelLab description is composed from them,
+# so they belong in git like any other source file.
 art/*
 !art/sliced/
 art/sliced/*
 !art/sliced/overrides.json
 !art/coverage_matrix.json
 !art/RESUME.md
+!art/theme.yaml
+!art/prompts.yaml
 
 # World Track verification output (contact sheets, screenshots) --
 # regenerable from art/ + the renderer, same posture as art/* above.

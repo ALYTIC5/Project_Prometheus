@@ -1,0 +1,275 @@
+# Greek Rebuild theme data (R1). The ONLY place Greek names, footprints,
+# canvas sizes and subject/detail vocabulary live -- tools/art/compose_prompt.py
+# reads this (plus art/prompts.yaml's style suffixes and lexicon) to build every
+# PixelLab description. Never hand-write a description into a tool call.
+#
+# `key` for buildings matches (or extends) frontend/src/world/sprites/registry.ts's
+# existing SILHOUETTE/STOREYS building-kind keys where they already exist
+# (oracle, forge, harbour, watchtower, library, vault, arena, treasury, archive,
+# underworld, temple, monument) -- those are real backend/rendering identifiers,
+# not renamed here. New kinds (evolution_lab, temple_of_knowledge, observatory,
+# hall_of_legends, machine_temple) do not exist in registry.ts yet; wiring them
+# in is R4/R6 work, not R1's.
+
+buildings:
+  library:
+    greek_name: "The Mouseion"
+    footprint: [3, 3]
+    subject: "a grand library with an Ionic colonnade"
+    details: ["Ionic colonnade", "papyrus scroll racks visible inside", "marble facade", "terracotta roof tiles"]
+  forge:
+    greek_name: "Forge of Prometheus"
+    footprint: [3, 3]
+    subject: "a stone smithy with a glowing hearth"
+    details: ["bronze doors", "glowing hearth", "stone chimney", "terracotta roof tiles"]
+  evolution_lab:
+    greek_name: "Workshop of Daedalus"
+    footprint: [3, 3]
+    subject: "an open-air inventor's workshop"
+    details: ["wooden frames", "bronze gears", "a small maze hedge", "marble columns"]
+  oracle:
+    greek_name: "Oracle of Delphi"
+    footprint: [4, 4]
+    subject: "a Doric temple on a raised terrace"
+    details: ["Doric colonnade", "raised stone terrace", "a bronze tripod", "a vapour vent"]
+  vault:
+    greek_name: "The Adyton"
+    footprint: [2, 2]
+    subject: "a small windowless marble sanctum"
+    details: ["windowless marble walls", "massive bronze doors", "no windows"]
+  arena:
+    greek_name: "The Amphitheatre"
+    footprint: [4, 4]
+    subject: "a white marble amphitheatre"
+    details: ["white marble tiers", "a sand floor", "open top", "Doric columns at the entrance"]
+  treasury:
+    greek_name: "Treasury of the Polis"
+    footprint: [3, 3]
+    subject: "a small Doric treasury building"
+    details: ["Doric portico", "gold-leaf pediment", "marble steps"]
+  harbour:
+    greek_name: "Harbour of Piraeus"
+    footprint: [3, 3]
+    subject: "a stone quay with a moored trireme"
+    details: ["stone quay", "a moored trireme", "wooden mooring posts"]
+  archive:
+    greek_name: "The Stoa"
+    footprint: [3, 3]
+    subject: "a long colonnade with record niches"
+    details: ["long colonnade", "record niches", "marble columns", "terracotta roof"]
+  underworld:
+    greek_name: "Gate of Hades"
+    footprint: [3, 3]
+    subject: "a cave mouth in a cliff face beside the river Styx"
+    details: ["cave mouth in a cliff", "the black river Styx", "Charon's boat", "an iron gate"]
+  watchtower:
+    greek_name: "The Pharos"
+    footprint: [2, 2]
+    subject: "a lighthouse tower with a fire beacon"
+    details: ["a tall lighthouse tower", "a fire beacon", "marble base"]
+  temple_of_knowledge:
+    greek_name: "Temple of Mnemosyne"
+    footprint: [4, 4]
+    subject: "a large Ionic temple"
+    details: ["large Ionic colonnade", "an owl relief", "a scroll relief", "marble pediment"]
+  monument:
+    greek_name: "The Stele"
+    footprint: [1, 1]
+    subject: "a weathered marble column"
+    details: ["a weathered marble column", "stacked stone drums", "a blank inscription panel"]
+  observatory:
+    greek_name: "Tower of the Winds"
+    footprint: [2, 2]
+    subject: "an octagonal marble tower"
+    details: ["an octagonal marble tower", "a sundial", "a bronze wind vane"]
+  hall_of_legends:
+    greek_name: "The Heroon"
+    footprint: [3, 3]
+    subject: "a hero shrine ringed with statues"
+    details: ["a hero shrine", "marble statues on plinths", "a laurel-wreathed entrance"]
+  machine_temple:
+    greek_name: "Workshop of Hephaestus"
+    footprint: [3, 3]
+    subject: "a smoky workshop with bronze automata"
+    details: ["a smoky bronze workshop", "bronze automata", "a forge chimney"]
+
+# Deities: one temple each, 3x3 footprint (the temple building itself uses the
+# generic "temple" theme entry above; this table is the GOD figure standing in it).
+deities:
+  zeus:
+    family: momentum
+    greek_name: "Zeus"
+    canvas: 64
+    subject: "a powerful god of thunder and storms"
+    details: ["a thunderbolt", "an eagle", "storm clouds", "a flowing himation"]
+  poseidon:
+    family: mean_reversion
+    greek_name: "Poseidon"
+    canvas: 64
+    subject: "a calm god of tides and the sea"
+    details: ["a trident", "flowing tides", "a circular fountain motif", "sea-blue robes"]
+  gaia:
+    family: value
+    greek_name: "Gaia"
+    canvas: 64
+    subject: "an ancient earth goddess"
+    details: ["roots and stone", "an earthen robe", "a patient, weathered face"]
+  ares:
+    family: volatility
+    greek_name: "Ares"
+    canvas: 64
+    subject: "a fierce god of chaos and war"
+    details: ["fire and embers", "a jagged bronze weapon", "cracked dark armor"]
+  moirai:
+    family: event_driven
+    greek_name: "The Moirai"
+    canvas: 64
+    subject: "the three Fates, weavers of destiny"
+    details: ["a spindle", "a thread", "a pair of shears", "pale robes"]
+  apollo_artemis:
+    family: stat_arb
+    greek_name: "Apollo and Artemis"
+    canvas: 64
+    subject: "twin gods of sun and moon in perfect balance"
+    details: ["a golden sun disc", "a silver crescent moon", "symmetrical twin figures"]
+  athena:
+    family: machine_learning
+    greek_name: "Athena"
+    canvas: 64
+    subject: "a wise goddess of strategy and craft"
+    details: ["an owl", "a bronze automaton companion", "geometric patterns on her armor"]
+  demeter:
+    family: macro
+    greek_name: "Demeter"
+    canvas: 64
+    subject: "a goddess of harvest and the turning seasons"
+    details: ["sheaves of wheat", "a wreath of grain", "earthen and gold robes"]
+  prometheus:
+    family: evolution
+    greek_name: "Prometheus"
+    canvas: 64
+    subject: "the titan who stole fire for creation"
+    details: ["stolen fire", "a forge hammer", "scorched bronze armor"]
+  pythia:
+    family: validation
+    greek_name: "The Pythia"
+    canvas: 64
+    subject: "the Delphic oracle seated on her tripod"
+    details: ["a bronze tripod", "laurel wreath", "a vapour trance", "flowing white robes"]
+  themis:
+    family: risk
+    greek_name: "Themis"
+    canvas: 64
+    subject: "the unbending goddess of law and justice"
+    details: ["a set of scales", "a sword", "a blindfold", "rigid stone-grey robes"]
+  hades_charon:
+    family: archive
+    greek_name: "Hades, with Charon"
+    canvas: 64
+    subject: "the keeper of the underworld and his ferryman"
+    details: ["a dark crown", "a ferryman's pole", "the river Styx", "pale ghostly light"]
+
+agents:
+  builder:
+    greek_name: "Stonemason"
+    canvas: 48
+    subject: "a Greek stonemason"
+    details: ["a short exomis tunic", "a felt pilos cap", "a chisel and mallet"]
+  scribe:
+    greek_name: "Scribe"
+    canvas: 48
+    subject: "a Greek scribe"
+    details: ["a papyrus scroll", "a reed stylus", "a plain chiton"]
+  engineer:
+    greek_name: "Bronzesmith"
+    canvas: 48
+    subject: "a Greek bronzesmith"
+    details: ["an exomis tunic", "a leather apron", "a bronze hammer"]
+  experimenter:
+    greek_name: "Natural philosopher"
+    canvas: 48
+    subject: "a Greek natural philosopher"
+    details: ["a chiton", "an amphora", "a measuring cup"]
+  statistician:
+    greek_name: "Geometer"
+    canvas: 48
+    subject: "a Greek geometer"
+    details: ["a himation", "a compass", "a wax tablet"]
+  guardian:
+    greek_name: "Hoplite"
+    canvas: 48
+    subject: "a Greek hoplite guard"
+    details: ["a bronze Corinthian helmet", "a round aspis shield", "a spear"]
+  auditor:
+    greek_name: "Magistrate"
+    canvas: 48
+    subject: "a Greek magistrate (archon)"
+    details: ["a long himation", "a wax tablet", "a staff of office"]
+  necromancer:
+    greek_name: "Priestess of Hades"
+    canvas: 48
+    subject: "a Greek priestess of Hades"
+    details: ["a dark peplos", "a torch", "a veil"]
+  scholar:
+    greek_name: "Philosopher"
+    canvas: 48
+    subject: "an elderly Greek philosopher"
+    details: ["a grey beard", "a himation", "a scroll"]
+  prophet:
+    greek_name: "Sibyl"
+    canvas: 48
+    subject: "a Greek sibyl"
+    details: ["a laurel wreath", "a flowing peplos"]
+  messenger:
+    greek_name: "Herald"
+    canvas: 48
+    subject: "a Greek herald"
+    details: ["winged sandals", "a kerykeion staff"]
+  historian:
+    greek_name: "Record-keeper"
+    canvas: 48
+    subject: "a Greek record-keeper"
+    details: ["a scroll satchel", "an oil lamp"]
+
+heroes:
+  tank:
+    greek_name: "Heavy hoplite"
+    canvas: 48
+    subject: "a heavily armored Greek hoplite hero"
+    details: ["a full bronze panoply", "a crested Corinthian helmet"]
+  fast:
+    greek_name: "Peltast"
+    canvas: 48
+    subject: "a light and fast Greek peltast"
+    details: ["a light tunic", "a crescent shield", "javelins"]
+  duelist:
+    greek_name: "Twin-blade duelist"
+    canvas: 48
+    subject: "a Greek duelist with two blades"
+    details: ["two short xiphos swords", "a crested helmet"]
+  mage:
+    greek_name: "Bronze automaton"
+    canvas: 48
+    subject: "a Talos-style bronze automaton"
+    details: ["a bronze body", "glowing seams", "an ancient mechanical design"]
+
+# Archetypes not yet released fold onto the four heroes above (theme.yaml's own
+# source of truth for the mapping -- world/pantheon.py's hero_fold reads this).
+hero_fold:
+  rogue: fast
+  scout: fast
+  volatility: fast
+  alchemist: mage
+  hybrid: duelist
+
+townsfolk:
+  citizen:
+    greek_name: "Citizen"
+    canvas: 48
+    subject: "a Greek citizen"
+    details: ["an amphora carried on the shoulder", "a simple chiton"]
+  merchant:
+    greek_name: "Olive merchant"
+    canvas: 48
+    subject: "a Greek merchant"
+    details: ["an olive-oil jar", "a coin pouch", "a himation"]

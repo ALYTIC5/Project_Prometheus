@@ -1,0 +1,127 @@
+# Greek Rebuild prompt composition data (R1). The ONLY place style suffixes,
+# the required-vocabulary lexicon and the banned-word list live.
+# tools/art/compose_prompt.py reads this + art/theme.yaml to build every
+# PixelLab description; tools/art/prompt_lint.py enforces the rules below on
+# every composed description before it's ever sent to a tool call.
+
+style_suffix_world: >-
+  ancient Greek mythological city, isometric pixel art, 2:1 projection,
+  white marble and terracotta roof tiles, bronze accents, olive and cypress
+  greenery, Aegean blue water, warm Mediterranean light from the top-left,
+  crisp dark outlines, detailed, no text
+
+style_suffix_character: >-
+  ancient Greek mythological figure, full body, pixel art, low top-down view,
+  sandals, classical Greek clothing, bronze and linen tones, crisp dark
+  outline, no text
+
+# At least 2 of these must appear (case-insensitive, whole-word) in any
+# composed description. compose_prompt.py normally satisfies this on its own
+# via theme.yaml's own subject/details text, but prompt_lint.py checks the
+# FINAL composed string regardless of where the words came from.
+lexicon:
+  - marble
+  - bronze
+  - terracotta
+  - chiton
+  - himation
+  - peplos
+  - exomis
+  - laurel
+  - olive
+  - amphora
+  - papyrus
+  - doric
+  - ionic
+  - corinthian
+  - pediment
+  - colonnade
+  - stoa
+  - agora
+  - trireme
+  - aspis
+  - xiphos
+  - kerykeion
+  - sandals
+  - owl
+  - meander
+  - aegean
+  - tripod
+
+# None of these may appear anywhere in a composed description (case-
+# insensitive, whole-word match -- "helmet" alone is banned but "Corinthian
+# helmet" / "bronze crested helmet" is allowed per the two explicit
+# exceptions below, checked as substrings before the whole-word ban applies).
+banned:
+  - hard hat
+  - jeans
+  - denim
+  - shirt
+  - trousers
+  - boots
+  - sneakers
+  - hoodie
+  - modern
+  - medieval
+  - gothic
+  - castle
+  - knight
+  - plate armour
+  - plate armor
+  - windmill
+  - timber-framed
+  - tavern
+  - inn
+  - cathedral
+  - chapel
+  - steampunk
+  - sci-fi
+  - neon
+  - cyberpunk
+  - anime
+  - chibi
+  - 3d render
+  - photo
+
+# "helmet" is banned UNLESS immediately preceded by one of these (checked
+# before the whole-word ban is applied) -- Corinthian/bronze-crested helmets
+# are the correct Greek hoplite headgear, not a banned generic "helmet".
+helmet_exceptions:
+  - corinthian
+  - bronze crested
+  - bronze-crested
+  - crested
+
+max_description_length: 900
+
+templates:
+  building: >-
+    {subject}, in the style of {greek_name}. Features: {details}.
+    2:1 isometric pixel-art game sprite, full building, centered, isolated,
+    no background, no text, no UI. {style_suffix}
+  temple: >-
+    {subject}, the shrine of {greek_name}. Features: {details}.
+    2:1 isometric pixel-art game sprite, full building, centered, isolated,
+    no background, no text, no UI. {style_suffix}
+  deity: >-
+    {subject}, {greek_name}. Features: {details}. Original depiction, not a
+    copy of any specific classical statue. 2:1 isometric pixel-art game
+    sprite, full body, centered, isolated character, readable silhouette,
+    no background, no text, no UI. {style_suffix}
+  agent: >-
+    {subject}, a {greek_name}. Features: {details}. 2:1 isometric pixel-art
+    game character, full body, centered, isolated, eight directions,
+    no background, no text, no UI. {style_suffix}
+  hero: >-
+    {subject}, the {greek_name}. Features: {details}. 2:1 isometric pixel-art
+    game character, full body, centered, isolated, eight-direction character,
+    no background, no text, no UI. {style_suffix}
+  townsfolk: >-
+    {subject}, a {greek_name}. Features: {details}. 2:1 isometric pixel-art
+    game character, full body, centered, isolated, eight directions,
+    no background, no text, no UI. {style_suffix}
+  prop: >-
+    {subject}. 2:1 isometric pixel-art game object, centered, isolated,
+    no background, no text, no UI. {style_suffix}
+  tile: >-
+    {subject}, top-down isometric tile. {style_suffix}
