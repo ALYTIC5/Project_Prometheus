@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve
+from prometheus.backtest.costs import apply_cost
 from prometheus.backtest.engine import STARTING_CAPITAL
 from prometheus.core.db import PaperFinding
 from prometheus.data.loaders import load_point_in_time
@@ -142,7 +143,9 @@ async def check_worse_than_holding(
     pit, _data_version_hash = await load_point_in_time(
         session, [symbol], "1d", window_start, as_of_cutoff
     )
-    benchmark = compute_benchmark_curve(pit, [symbol], as_of_cutoff)
+    benchmark = compute_benchmark_curve(
+        pit, [symbol], window_start=window_start, window_end=as_of_cutoff, cost_model=apply_cost
+    )
     if not benchmark.equity_curve:
         return False
 

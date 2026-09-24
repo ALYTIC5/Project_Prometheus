@@ -61,6 +61,11 @@ class Evidence:
     # direction, so those verdicts stand on their own); only PROMOTE is
     # gated, below.
     metric_failures: tuple[str, ...] = ()
+    # Law 8: True when the result's benchmark universe or window differs
+    # from the strategy's own. Checked FIRST -- a comparison against the
+    # wrong benchmark can't support any verdict, WORSE_THAN_HOLDING
+    # included.
+    benchmark_mismatch: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,6 +77,13 @@ class DecisionResult:
 
 def decide(evidence: Evidence) -> DecisionResult:
     score_result = compute_score(evidence.score_inputs)
+
+    # 0. A mismatched benchmark means every comparison below is against
+    #    the wrong thing -- held for research, never scored as a verdict.
+    if evidence.benchmark_mismatch:
+        return DecisionResult(
+            Verdict.CONTINUE_RESEARCH, score_result.score, ["BENCHMARK_MISMATCH"]
+        )
 
     # 1. WORSE_THAN_HOLDING first, before anything else.
     if score_result.worse_than_holding:

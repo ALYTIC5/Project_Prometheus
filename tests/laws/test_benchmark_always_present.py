@@ -11,7 +11,8 @@ from datetime import UTC, datetime, timedelta
 import polars as pl
 
 from prometheus.backtest.benchmark import VsBenchmark, compute_benchmark_curve
-from prometheus.backtest.engine import run_backtest
+from prometheus.backtest.costs import apply_cost
+from prometheus.backtest.engine import run_backtest, warmup_start_index
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import StrategySpec
 
@@ -71,7 +72,14 @@ def test_caller_supplied_benchmark_result_is_reused_not_recomputed() -> None:
     )
     cutoff = rows[-1]["available_at"]
 
-    precomputed = compute_benchmark_curve(pit, [_SYMBOL], cutoff)
+    # The caller-supplied benchmark must cover the strategy's own
+    # post-warm-up window (Law 8) -- run_backtest now checks that.
+    window_start = pit.as_of(cutoff).sort("available_at")["available_at"][
+        warmup_start_index(spec)
+    ]
+    precomputed = compute_benchmark_curve(
+        pit, [_SYMBOL], window_start=window_start, window_end=cutoff, cost_model=apply_cost
+    )
     result = run_backtest(pit, spec, cutoff, benchmark_result=precomputed)
 
     expected_excess_return = (

@@ -136,3 +136,18 @@ def test_retire_only_reachable_from_a_prior_promote() -> None:
         )
     )
     assert regressed.verdict == Verdict.RETIRE
+
+
+def test_benchmark_mismatch_blocks_every_verdict_including_promote() -> None:
+    """Law 8: a comparison against the wrong benchmark supports no verdict
+    -- checked before WORSE_THAN_HOLDING, and never VALIDATED."""
+    evidence = _evidence(benchmark_mismatch=True)
+    result = decide(evidence)
+    assert result.verdict == Verdict.CONTINUE_RESEARCH
+    assert result.reason_codes == ["BENCHMARK_MISMATCH"]
+
+    worse = _evidence(
+        benchmark_mismatch=True,
+        score_inputs=_inputs(excess_return=-2.0, excess_sharpe=-0.5),
+    )
+    assert decide(worse).reason_codes == ["BENCHMARK_MISMATCH"]

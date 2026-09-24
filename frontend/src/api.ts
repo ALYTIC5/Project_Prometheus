@@ -4,6 +4,7 @@ import type {
   ClustersResponse,
   ExperimentDetail,
   ExperimentRow,
+  ScatterPointRow,
   PaperTradingResponse,
   PipelineStatusResponse,
   QueueStatus,
@@ -55,6 +56,15 @@ export async function fetchStrategies(): Promise<{ strategies: StrategyRow[]; to
 export async function fetchExperiments(): Promise<{ experiments: ExperimentRow[]; total: number }> {
   const res = await fetch(`${API_BASE}/experiments/`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Experiments fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchExperimentsScatter(): Promise<{
+  points: ScatterPointRow[];
+  total: number;
+}> {
+  const res = await fetch(`${API_BASE}/experiments/scatter`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Experiments scatter fetch failed: ${res.status}`);
   return res.json();
 }
 

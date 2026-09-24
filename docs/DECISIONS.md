@@ -55,3 +55,36 @@ and `validation/decision.py` refuses `PROMOTE` while `metric_failures` is
 non-empty, rather than the whole spec silently vanishing. Full detail:
 `tests/test_validation_metrics.py`'s module docstring and the
 2026-09-24 session transcript.
+
+## Law 8 benchmark: own universe, own post-warm-up window, hard-checked (2026-09-24)
+
+Audit of an Oracle scatter showing every point at one benchmark return
+found no shared global benchmark -- the chart simply plotted the latest 200
+experiments, which were one or two symbols (98.6% of 441k experiments were
+result-less insufficient-data rejects from the retry churn). It did find:
+
+- **Warm-up mismatch.** The benchmark entered on bar 1 of the loaded
+  history; a strategy can't hold a position until its declared warm-up
+  (`engine.min_bars_for`) is over, so a 200-day SMA was charged ~200 days of
+  buy-and-hold it could never have held. Now both the strategy's equity
+  curve and its benchmark start at `engine.warmup_start_index(spec)`
+  (rotation: the first rebalance date), and `benchmark.assert_benchmark_matches`
+  raises `BenchmarkMismatch` if universe or first/last date differ.
+  EMA-based families (MACD/TRIX/Keltner/SAR) emit positions before their
+  declared warm-up while their indicators are unconverged; those bars are
+  no longer counted.
+- **Entry cost.** `run_one`'s stored `benchmark_return_pct` measured
+  curve[0]→curve[-1], and curve[0] is already net of entry cost -- the
+  benchmark was excused its own cost. Now measured from STARTING_CAPITAL.
+- **I5.** `benchmark_equity` keyed by date alone (last writer wins across
+  universes) -> keyed by (universe_key, date), migration 0018. Pre-existing
+  rows are labelled LEGACY_MIXED and ignored.
+- `compute_benchmark_curve` takes universe, window_start, window_end and
+  cost_model as required arguments -- no defaults for anything Law-8
+  defining. `decision.decide` returns CONTINUE_RESEARCH/BENCHMARK_MISMATCH
+  first if a result's benchmark doesn't match its strategy.
+- Enforced by `tests/laws/test_benchmark_matches_universe.py` across every
+  single-asset and rotation family, with decoy symbols in the data.
+- Backfill: a one-time worker step (marker `bench_fix_0924`) re-queues every
+  already-succeeded backtest job once; re-runs append superseding
+  experiment/result rows (Law 6), spread over cycles by the drain budget.

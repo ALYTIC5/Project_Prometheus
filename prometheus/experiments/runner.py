@@ -30,7 +30,7 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -40,7 +40,12 @@ from cpz_quant.certification.overfitting import probability_of_backtest_overfitt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchmark_curve
+from prometheus.backtest.benchmark import (
+    STARTING_CAPITAL,
+    BenchmarkMismatch,
+    assert_benchmark_matches,
+    record_benchmark_curve,
+)
 from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
 from prometheus.backtest.engine import min_bars_for, run_backtest
 from prometheus.backtest.portfolio_engine import run_portfolio_backtest
@@ -121,6 +126,16 @@ def _build_experiment(
     )
 
 
+def _iso_window(start: date | None, end: date | None) -> list[str | None]:
+    return [start.isoformat() if start else None, end.isoformat() if end else None]
+
+
+def _curve_window(curve: tuple[tuple[str, float], ...]) -> list[str | None]:
+    if not curve:
+        return [None, None]
+    return [curve[0][0][:10], curve[-1][0][:10]]
+
+
 async def run_one(
     session: AsyncSession,
     spec: StrategySpec | RotationSpec,
@@ -165,23 +180,18 @@ async def run_one(
 
     experiment_id = await next_experiment_id()
     started = time.perf_counter()
-    # Computed before run_backtest so it can be passed in and reused --
-    # run_backtest computes its own benchmark_result internally by default
-    # (Law 8: every BacktestResult carries a real vs_benchmark, not just
-    # usually-true-because-the-caller-remembered-to), but runner.py also
-    # needs the raw curve to record for the world view, so passing it in
-    # avoids computing it twice.
-    benchmark_result = compute_benchmark_curve(pit, universe_symbols, end, cost_model=cost_model)
+    # The benchmark is computed INSIDE the backtest (strategy_result.
+    # benchmark), over the strategy's own universe and realised post-
+    # warm-up window, and checked there -- never precomputed here over a
+    # different window (2026-09-24 benchmark audit).
     try:
         if isinstance(spec, RotationSpec):
             membership = await membership_windows(session, "etf", list(spec.universe))
             strategy_result = run_portfolio_backtest(
-                pit, spec, membership, end, cost_model=cost_model, benchmark_result=benchmark_result
+                pit, spec, membership, end, cost_model=cost_model
             )
         else:
-            strategy_result = run_backtest(
-                pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
-            )
+            strategy_result = run_backtest(pit, spec, end, cost_model=cost_model)
     except ValueError as exc:
         session.add(
             _build_experiment(
@@ -222,12 +232,14 @@ async def run_one(
         raise InsufficientDataRecorded(str(exc), experiment_id) from exc
     compute_cost = time.perf_counter() - started
 
-    await record_benchmark_curve(session, benchmark_result.equity_curve)
-    benchmark_curve = benchmark_result.equity_curve
+    benchmark_result = strategy_result.benchmark
+    await record_benchmark_curve(session, benchmark_result)
+    # From STARTING_CAPITAL, not curve[0]: curve[0] is already net of the
+    # entry cost, and Law 8 requires the benchmark to pay the same cost
+    # model the strategy does -- the previous first-to-last formula quietly
+    # excused the benchmark its own entry cost.
     benchmark_return_pct = (
-        (benchmark_curve[-1][1] - benchmark_curve[0][1]) / benchmark_curve[0][1] * 100
-        if len(benchmark_curve) >= 2
-        else 0.0
+        (benchmark_result.final_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100
     )
     beats_benchmark = strategy_result.total_return_pct > benchmark_return_pct
     reason_codes = classify_result(strategy_result, benchmark_return_pct=benchmark_return_pct)
@@ -258,6 +270,13 @@ async def run_one(
                 "gross_return_pct": strategy_result.gross_return_pct,
                 "total_costs": strategy_result.total_costs,
                 "benchmark_return_pct": benchmark_return_pct,
+                # Law 8 provenance: exactly which universe and window this
+                # benchmark covered, next to the strategy's own window.
+                "benchmark_universe": list(benchmark_result.universe),
+                "benchmark_window": _iso_window(
+                    benchmark_result.window_start, benchmark_result.window_end
+                ),
+                "strategy_window": _curve_window(strategy_result.equity_curve),
                 "cost_config_hash": cost_config_hash,
                 "vs_benchmark": {
                     "excess_return": strategy_result.vs_benchmark.excess_return,
@@ -356,15 +375,18 @@ async def validate_specs(
     cost_config, _cost_config_hash = load_cost_config()
     cost_model = make_cost_model(cost_config)
     pit, _data_version_hash = await load_point_in_time(session, [symbol], timeframe, start, end)
-    benchmark_result = compute_benchmark_curve(pit, [symbol], end, cost_model=cost_model)
     bars = pit.as_of(end).filter(pl.col("symbol") == symbol).sort("available_at")
 
     per_spec: list[tuple[StrategySpec, Any]] = []
     for spec in specs:
         try:
-            result = run_backtest(
-                pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
-            )
+            # Each spec gets its OWN benchmark (its own post-warm-up
+            # window) -- one shared per-symbol curve compared every spec
+            # against the same full-history window regardless of warm-up.
+            result = run_backtest(pit, spec, end, cost_model=cost_model)
+        except BenchmarkMismatch as exc:
+            record_failure("research", exc, context=f"benchmark hash={spec.config_hash()}")
+            continue
         except ValueError:
             continue  # not enough bars yet for this spec's slow_window
         per_spec.append((spec, result))
@@ -624,10 +646,7 @@ async def validate_rotation_specs(
                 session, all_symbols, spec.timeframe, start, end
             )
             membership = await membership_windows(session, "etf", all_symbols)
-            benchmark_result = compute_benchmark_curve(pit, all_symbols, end, cost_model=cost_model)
-            result = run_portfolio_backtest(
-                pit, spec, membership, end, cost_model=cost_model, benchmark_result=benchmark_result
-            )
+            result = run_portfolio_backtest(pit, spec, membership, end, cost_model=cost_model)
         except ValueError:
             continue  # not enough bars yet for this spec's universe/lookback
         per_spec.append((spec, result))
@@ -776,12 +795,22 @@ async def _validate_one_spec(
     prior = (
         await session.execute(_SELECT_LATEST_VERDICT_FOR_FINGERPRINT, {"fp": spec.config_hash()})
     ).first()
+    strategy_universe = (
+        (spec.symbol,) if isinstance(spec, StrategySpec) else tuple(spec.universe)
+    )
+    try:
+        assert_benchmark_matches(result.benchmark, strategy_universe, result.equity_curve)
+        benchmark_mismatch = False
+    except BenchmarkMismatch as exc:
+        record_failure("research", exc, context=f"benchmark hash={spec.config_hash()}")
+        benchmark_mismatch = True
     evidence = Evidence(
         score_inputs=score_inputs,
         turnover=result.turnover,
         consistent_across_regimes=consistent_across_regimes,
         previous_verdict=prior.verdict if prior is not None else None,
         metric_failures=tuple(metric_failures),
+        benchmark_mismatch=benchmark_mismatch,
     )
     decision_result = decide(evidence)
 

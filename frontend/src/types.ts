@@ -268,6 +268,23 @@ export interface ExperimentRow {
   benchmark_return_pct: number | null;
 }
 
+/** GET /experiments/scatter -- one point per spec (its latest result),
+ * every symbol/universe. benchmark_universe/benchmark_window are null for
+ * results written before the 2026-09-24 Law 8 benchmark fix. */
+export interface ScatterPointRow {
+  id: string;
+  config_hash: string;
+  family: string;
+  symbol: string | null;
+  universe: string[] | null;
+  total_return_pct: number;
+  benchmark_return_pct: number;
+  benchmark_universe: string[] | null;
+  benchmark_window: [string | null, string | null] | null;
+  decision: string | null;
+  created_at: string;
+}
+
 export interface ExperimentResultRow {
   payload: Record<string, unknown>;
   created_at: string;

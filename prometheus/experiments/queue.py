@@ -251,6 +251,27 @@ async def succeed(
     return result.scalar_one_or_none() is not None
 
 
+_REQUEUE_SUCCEEDED = text(
+    """
+    UPDATE jobs
+       SET status = 'pending', attempts = 0, claimed_by = NULL, heartbeat_at = NULL,
+           progress_pct = 0.0, run_at = now()
+     WHERE status = 'succeeded' AND kind = :kind
+    RETURNING id
+    """
+)
+
+
+async def requeue_succeeded(session: AsyncSession, *, kind: str) -> int:
+    """Puts every already-succeeded job of `kind` back to pending, same
+    row and idempotency_key (so no duplicate job is ever created). For a
+    deliberate, one-off re-run after an engine correction -- the re-runs
+    append NEW experiment/result rows; the old ones are untouched (Law 6).
+    Does not commit; the caller owns the transaction."""
+    result = await session.execute(_REQUEUE_SUCCEEDED, {"kind": kind})
+    return len(result.fetchall())
+
+
 async def release(session: AsyncSession, *, job_id: str, worker_id: str) -> bool:
     """Removes a claimed job WITHOUT retrying or dead-lettering it, freeing
     its idempotency_key so a later enqueue can recreate it. For outcomes

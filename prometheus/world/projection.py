@@ -296,13 +296,27 @@ async def get_benchmark_curve(session: AsyncSession) -> list[dict[str, Any]]:
     `benchmark_value` on /scoreboard/. Found and fixed as part of
     PROMPT 5 (docs/DEFERRED.md)."""
     try:
+        # One curve per universe since migration 0018. The world has one
+        # Monument, so it shows the most recently recorded universe's curve
+        # -- labelled with that universe, never a blend of several (the old
+        # date-keyed table was last-writer-wins across every symbol, I5).
+        # LEGACY_MIXED rows predate per-universe keys and are ignored.
         result = await session.execute(
             text(
-                "SELECT date, equity FROM benchmark_equity ORDER BY date LIMIT 1000",
+                """
+                SELECT date, equity, universe_key FROM benchmark_equity
+                 WHERE universe_key = (
+                     SELECT universe_key FROM benchmark_equity
+                      WHERE universe_key <> 'LEGACY_MIXED'
+                      ORDER BY created_at DESC LIMIT 1)
+                 ORDER BY date LIMIT 1000
+                """,
             ),
         )
         rows = result.fetchall()
-        return [{"date": r[0].isoformat(), "equity": float(r[1])} for r in rows]
+        return [
+            {"date": r[0].isoformat(), "equity": float(r[1]), "universe": r[2]} for r in rows
+        ]
     except Exception:
         # Same shared-session poisoning risk as _count_rows: an aborted
         # statement must be rolled back or every later query on this session

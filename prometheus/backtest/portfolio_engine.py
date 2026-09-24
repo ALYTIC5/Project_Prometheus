@@ -16,7 +16,7 @@ See docs/superpowers/specs/2026-09-21-cross-sectional-rotation-design.md.
 """
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 
 import polars as pl
 
@@ -24,6 +24,7 @@ import numpy as np
 
 from prometheus.backtest.benchmark import (
     BenchmarkResult,
+    assert_benchmark_matches,
     compute_benchmark_curve,
     compute_vs_benchmark,
 )
@@ -874,6 +875,12 @@ def run_portfolio_backtest(
 
         equity = cash + sum(dollar_alloc.values())
         gross_equity = gross_cash + sum(gross_dollar_alloc.values())
+        if idx < first_idx:
+            # Warm-up: no position is possible yet, so these dates are not
+            # part of the strategy's realised window -- and therefore not
+            # part of its Law 8 benchmark window either (see
+            # engine.warmup_start_index for the single-asset rule).
+            continue
         peak = max(peak, equity)
         if peak:
             max_drawdown = max(max_drawdown, (peak - equity) / peak)
@@ -885,8 +892,13 @@ def run_portfolio_backtest(
 
     if benchmark_result is None:
         benchmark_result = compute_benchmark_curve(
-            pit, list(spec.universe), as_of_cutoff, cost_model=cost_model
+            pit,
+            list(spec.universe),
+            window_start=datetime.combine(all_dates[first_idx], time.min, tzinfo=UTC),
+            window_end=as_of_cutoff,
+            cost_model=cost_model,
         )
+    assert_benchmark_matches(benchmark_result, tuple(spec.universe), equity_curve)
     vs_benchmark = compute_vs_benchmark(equity_curve, max_drawdown * 100, benchmark_result)
 
     return BacktestResult(
@@ -897,4 +909,5 @@ def run_portfolio_backtest(
         gross_return_pct=gross_return_pct,
         total_costs=total_costs,
         vs_benchmark=vs_benchmark,
+        benchmark=benchmark_result,
     )

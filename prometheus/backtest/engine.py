@@ -34,6 +34,7 @@ import polars as pl
 from prometheus.backtest.benchmark import (
     BenchmarkResult,
     VsBenchmark,
+    assert_benchmark_matches,
     compute_benchmark_curve,
     compute_vs_benchmark,
 )
@@ -113,6 +114,10 @@ class BacktestResult:
     gross_return_pct: float
     total_costs: float
     vs_benchmark: VsBenchmark
+    # The exact Law 8 benchmark this result was compared against --
+    # universe and window included, so runner.run_one records THIS curve
+    # (not a separately computed one) and validation can check it.
+    benchmark: BenchmarkResult
 
 
 def _sma_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
@@ -1992,7 +1997,8 @@ def run_backtest_from_positions(
     generator. `positions` must have exactly one entry per row of
     `pit.as_of(as_of_cutoff)` filtered to `symbol`, in that same sorted
     order -- the caller's responsibility, same as signal_for()'s own
-    output shape.
+    output shape. No spec means no declared warm-up, so the window is the
+    full series (benchmark window_start=None, explicitly).
     """
     bars = pit.as_of(as_of_cutoff).filter(pl.col("symbol") == symbol).sort("available_at")
     if bars.height != len(positions):
@@ -2002,8 +2008,9 @@ def run_backtest_from_positions(
     raw = _run_accounting(bars, positions, cost_model)
     if benchmark_result is None:
         benchmark_result = compute_benchmark_curve(
-            pit, [symbol], as_of_cutoff, cost_model=cost_model
+            pit, [symbol], window_start=None, window_end=as_of_cutoff, cost_model=cost_model
         )
+    assert_benchmark_matches(benchmark_result, (symbol,), raw.equity_curve)
     vs_benchmark = compute_vs_benchmark(raw.equity_curve, raw.max_drawdown_pct, benchmark_result)
     return BacktestResult(
         equity_curve=raw.equity_curve,
@@ -2013,7 +2020,18 @@ def run_backtest_from_positions(
         gross_return_pct=raw.gross_return_pct,
         total_costs=raw.total_costs,
         vs_benchmark=vs_benchmark,
+        benchmark=benchmark_result,
     )
+
+
+def warmup_start_index(spec: StrategySpec) -> int:
+    """Index of the strategy's first tradable bar: the last bar of the
+    engine's own declared warm-up (min_bars_for - 1). The Law 8 window
+    starts here for BOTH the strategy's equity curve and its benchmark --
+    before it the strategy structurally cannot hold a position, so
+    charging it buy-and-hold over that span compared two different
+    windows (2026-09-24 benchmark audit, finding e)."""
+    return _min_bars_for(spec) - 1
 
 
 def run_backtest(
@@ -2024,6 +2042,9 @@ def run_backtest(
     cost_model: CostModel = apply_cost,
     benchmark_result: BenchmarkResult | None = None,
 ) -> BacktestResult:
+    """`benchmark_result`, if passed, must already be the benchmark for
+    this spec's own universe and realised window -- it is checked, and a
+    mismatch raises BenchmarkMismatch rather than being silently used."""
     bars = pit.as_of(as_of_cutoff).filter(pl.col("symbol") == spec.symbol).sort("available_at")
     min_bars = _min_bars_for(spec)
     if bars.height < min_bars:
@@ -2033,12 +2054,20 @@ def run_backtest(
         )
 
     signaled = signal_for(bars, spec)
-    raw = _run_accounting(bars, signaled["position"].to_list(), cost_model)
+    start = warmup_start_index(spec)
+    positions = signaled["position"].to_list()[start:]
+    window_bars = bars.slice(start)
+    raw = _run_accounting(window_bars, positions, cost_model)
 
     if benchmark_result is None:
         benchmark_result = compute_benchmark_curve(
-            pit, [spec.symbol], as_of_cutoff, cost_model=cost_model
+            pit,
+            [spec.symbol],
+            window_start=window_bars["available_at"][0],
+            window_end=as_of_cutoff,
+            cost_model=cost_model,
         )
+    assert_benchmark_matches(benchmark_result, (spec.symbol,), raw.equity_curve)
     vs_benchmark = compute_vs_benchmark(raw.equity_curve, raw.max_drawdown_pct, benchmark_result)
 
     return BacktestResult(
@@ -2049,4 +2078,5 @@ def run_backtest(
         gross_return_pct=raw.gross_return_pct,
         total_costs=raw.total_costs,
         vs_benchmark=vs_benchmark,
+        benchmark=benchmark_result,
     )
