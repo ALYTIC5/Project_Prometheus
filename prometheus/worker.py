@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -71,6 +72,11 @@ from prometheus.core.cadence import (
     RESEARCH_INTERVAL_SECONDS as _RESEARCH_INTERVAL_SECONDS,
 )
 from prometheus.core.db import get_session
+from prometheus.core.health import (
+    alert_discord_for_threshold_breaches,
+    flush_cycle,
+    record_failure,
+)
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingest_etf import backfill_etf
@@ -84,7 +90,12 @@ from prometheus.experiments.ablation import (
     register_ml_component,
     register_svm_component,
 )
-from prometheus.experiments.queue import enqueue, get_queue_settings, reap_stale_claims
+from prometheus.experiments.queue import (
+    enqueue,
+    get_queue_settings,
+    reap_stale_claims,
+    requeue_succeeded,
+)
 from prometheus.experiments.runner import (
     drain_queue,
     enqueue_baseline_grid,
@@ -212,6 +223,28 @@ _UPSERT_CADENCE = text(
     ON CONFLICT (concern) DO UPDATE SET last_run_at = now()
     """
 )
+
+
+# One-time backfill marker (worker_cadence row; never re-run once present).
+# 2026-09-24 Law 8 benchmark fix: every result recorded before it compared
+# the strategy against a buy-and-hold over the full loaded history instead of
+# the strategy's own post-warm-up window. Re-running each already-succeeded
+# backtest job once appends a superseding experiment/result under the
+# corrected benchmark; the drain's time budget spreads it across cycles.
+_BENCHMARK_BACKFILL_MARKER = "bench_fix_0924"
+
+
+async def _run_one_time_backfills() -> None:
+    async with get_session() as session:
+        done = (
+            await session.execute(_SELECT_CADENCE, {"concern": _BENCHMARK_BACKFILL_MARKER})
+        ).first()
+        if done is not None:
+            return
+        requeued = await requeue_succeeded(session, kind=_RUN_BACKTEST_KIND)
+        await session.execute(_UPSERT_CADENCE, {"concern": _BENCHMARK_BACKFILL_MARKER})
+        await session.commit()
+    print(f"worker: benchmark backfill re-queued {requeued} succeeded backtest job(s)")
 
 
 async def is_due(session: AsyncSession, *, concern: str, interval_seconds: float) -> bool:
@@ -386,7 +419,7 @@ async def _run_ingest() -> None:
     try:
         await backfill_etf(_INGEST_CATCHUP_DAYS)
     except Exception as exc:
-        print(f"worker: ETF ingest failed (crypto ingest unaffected): {exc!r}")
+        record_failure("ingest", exc, context="etf")
 
 
 async def _run_llm_ingestion() -> list[str]:
@@ -445,7 +478,7 @@ async def _run_ablation() -> list[str]:
                 result = await register_fn(session)
             verdicts.append(f"{name}={result.verdict}")
         except Exception as exc:
-            print(f"worker: ablation component {name!r} failed: {exc!r}")
+            record_failure("ablation", exc, context=f"component={name!r}")
 
     await _register(
         "evolution",
@@ -496,6 +529,7 @@ _ML_GRID_GENERATORS = (
 
 
 async def _run_research() -> list[str]:
+    research_started = time.monotonic()
     symbols = load_universe_symbols()
     for symbol in symbols:
         await enqueue_baseline_grid(
@@ -522,7 +556,15 @@ async def _run_research() -> list[str]:
             priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
         )
 
-    ran = await drain_queue()
+    # Half the research interval for backtests, leaving the rest for
+    # validation/evolution/LLM so the cycle actually completes and
+    # mark_run fires -- an operational budget (same class of choice as
+    # _GRID_LOOKBACK_DAYS), not a statistical threshold. See
+    # drain_queue's `deadline` docstring for the incident behind it.
+    phase_started = time.monotonic()
+    ran = await drain_queue(deadline=research_started + _RESEARCH_INTERVAL_SECONDS * 0.5)
+    print(f"research: drained {len(ran)} job(s) in {time.monotonic() - phase_started:.0f}s")
+    phase_started = time.monotonic()
 
     # The Oracle (PROMPTS.md PROMPT 5): re-scores every symbol's grid
     # against real PBO/DSR/decay/regime evidence and writes
@@ -530,29 +572,45 @@ async def _run_research() -> list[str]:
     # component (RANDOM_FOREST/GRADIENT_BOOSTING/LOGISTIC_REGRESSION/
     # SVM), not just MOMENTUM -- see
     # docs/superpowers/specs/2026-09-20-random-forest-strategy-design.md.
+    #
+    # Budgeted and rotated (2026-09-24): re-validating every symbol's full
+    # grid re-runs every backtest -- hours of work -- so the unbounded loop
+    # never finished inside the 30-minute slot and research.mark_run never
+    # fired. Each unit (one symbol's grids, or one rotation family) is
+    # started only while there's budget left (85% of the slot, leaving
+    # room for evolution/LLM), and the starting unit rotates with each
+    # research slot so every unit is re-validated over successive cycles.
+    units: list[tuple[str, Any]] = [("symbol", symbol) for symbol in symbols] + [
+        ("rotation", generate) for generate in ROTATION_GRID_GENERATORS
+    ]
+    offset = int(time.time() // _RESEARCH_INTERVAL_SECONDS) % max(len(units), 1)
+    validation_deadline = research_started + _RESEARCH_INTERVAL_SECONDS * 0.85
     validated: list[str] = []
+    units_done = 0
     async with get_session() as session:
-        for symbol in symbols:
-            validated.extend(
-                await validate_baseline_grid(session, symbol, _TIMEFRAME, _GRID_LOOKBACK_DAYS)
-            )
-            for generate_ml_grid in _ML_GRID_GENERATORS:
+        for kind, unit in units[offset:] + units[:offset]:
+            if time.monotonic() >= validation_deadline:
+                break
+            if kind == "symbol":
                 validated.extend(
-                    await validate_specs(
-                        session, symbol, _TIMEFRAME,
-                        generate_ml_grid(symbol, _TIMEFRAME), _GRID_LOOKBACK_DAYS,
+                    await validate_baseline_grid(session, unit, _TIMEFRAME, _GRID_LOOKBACK_DAYS)
+                )
+                for generate_ml_grid in _ML_GRID_GENERATORS:
+                    validated.extend(
+                        await validate_specs(
+                            session, unit, _TIMEFRAME,
+                            generate_ml_grid(unit, _TIMEFRAME), _GRID_LOOKBACK_DAYS,
+                        )
                     )
+            else:
+                validated.extend(
+                    await validate_rotation_specs(session, unit(), _GRID_LOOKBACK_DAYS)
                 )
-
-        # Same fixed-universe-per-family reasoning as the enqueue loop
-        # above: outside the `for symbol in symbols:` loop, once per
-        # rotation family per cycle, not once per crypto symbol.
-        for generate_rotation_grid in ROTATION_GRID_GENERATORS:
-            validated.extend(
-                await validate_rotation_specs(
-                    session, generate_rotation_grid(), _GRID_LOOKBACK_DAYS
-                )
-            )
+            units_done += 1
+    print(
+        f"research: validated {units_done}/{len(units)} unit(s) "
+        f"(starting at #{offset}), {len(validated)} verdict(s)"
+    )
 
     # PROMPT 7: one bounded evolution step, after validate_grid so this
     # cycle's mutation/crossover parents are selected using freshly
@@ -562,6 +620,7 @@ async def _run_research() -> list[str]:
     # "one symbol's grid runs once" bounding rather than growing this
     # cycle's work by however many children get produced.
     async with get_session() as session:
+        print(f"research: validation took {time.monotonic() - phase_started:.0f}s")
         evolved_job_ids = await _run_evolution_step(session)
         await session.commit()
 
@@ -587,7 +646,7 @@ async def _run_research() -> list[str]:
             if llm_job_id is not None:
                 print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
         except Exception as exc:
-            print(f"worker: LLM hypothesis step failed: {exc!r}")
+            record_failure("research", exc, context="llm_hypothesis_step")
     if evolved_job_ids:
         print(f"worker: enqueued {len(evolved_job_ids)} evolved candidate(s): {evolved_job_ids}")
 
@@ -843,7 +902,7 @@ async def _run_paper() -> None:
                         as_of_cutoff=as_of_cutoff,
                     )
         except Exception as exc:
-            print(f"worker: paper concern failed for strategy {row.id}: {exc!r}")
+            record_failure("paper", exc, context=f"strategy_id={row.id}")
             continue
 
 
@@ -865,7 +924,14 @@ async def run_once() -> list[str]:
         if reaped:
             print(f"worker: reclaimed {len(reaped)} stale claim(s): {reaped}")
     except Exception as exc:  # I9: one concern's failure must not sink the tick
-        print(f"worker: reap_stale_claims failed: {exc!r}")
+        record_failure("reap_stale_claims", exc)
+
+    cycle_started_at = datetime.now(UTC)
+
+    try:
+        await _run_one_time_backfills()
+    except Exception as exc:
+        record_failure("backfill", exc)
 
     ran: list[str] = []
     async with get_session() as session:
@@ -897,7 +963,7 @@ async def run_once() -> list[str]:
             async with get_session() as session:
                 await mark_run(session, concern="ingest")
         except Exception as exc:
-            print(f"worker: ingest concern failed: {exc!r}")
+            record_failure("ingest", exc)
 
     if research_due:
         try:
@@ -905,7 +971,7 @@ async def run_once() -> list[str]:
             async with get_session() as session:
                 await mark_run(session, concern="research")
         except Exception as exc:
-            print(f"worker: research concern failed: {exc!r}")
+            record_failure("research", exc)
 
     if paper_due:
         try:
@@ -913,7 +979,7 @@ async def run_once() -> list[str]:
             async with get_session() as session:
                 await mark_run(session, concern="paper")
         except Exception as exc:
-            print(f"worker: paper concern failed: {exc!r}")
+            record_failure("paper", exc)
 
     if llm_ingestion_due:
         try:
@@ -923,7 +989,7 @@ async def run_once() -> list[str]:
             if ingested:
                 print(f"worker: ingested {len(ingested)} paper(s): {ingested}")
         except Exception as exc:
-            print(f"worker: llm_ingestion concern failed: {exc!r}")
+            record_failure("llm_ingestion", exc)
 
     if ablation_due:
         try:
@@ -933,7 +999,20 @@ async def run_once() -> list[str]:
             if verdicts:
                 print(f"worker: ablation verdicts: {verdicts}")
         except Exception as exc:
-            print(f"worker: ablation concern failed: {exc!r}")
+            record_failure("ablation", exc)
+
+    # Step 4's minimal monitoring: persist this cycle's failure tally
+    # (empty -> no rows, no-op) and alert on any exception type that
+    # crossed the threshold -- unconditional, so a cycle that failed
+    # entirely (e.g. every concern's is_due check itself raised) still
+    # gets whatever was recorded flushed rather than losing it silently.
+    try:
+        async with get_session() as session:
+            flushed = await flush_cycle(session, cycle_started_at=cycle_started_at)
+            await session.commit()
+        alert_discord_for_threshold_breaches(flushed)
+    except Exception as exc:
+        print(f"worker: flush_cycle failed (failure tally lost this cycle): {exc!r}")
 
     return ran
 

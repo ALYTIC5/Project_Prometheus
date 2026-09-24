@@ -154,7 +154,12 @@ def test_benchmark_pays_exactly_one_entry_cost_when_price_never_moves() -> None:
     rows = [_bar_row(_SYMBOL, i, 100.0) for i in range(30)]
     pit = PointInTimeFrame(pl.DataFrame(rows))
 
-    result = compute_benchmark_curve(pit, [_SYMBOL], rows[-1]["available_at"])
+    result = compute_benchmark_curve(
+        pit, [_SYMBOL],
+        window_start=None,
+        window_end=rows[-1]["available_at"],
+        cost_model=apply_cost,
+    )
 
     entry_cost = apply_cost(STARTING_CAPITAL)
     expected_equity = STARTING_CAPITAL - entry_cost
@@ -182,7 +187,12 @@ def test_buy_and_hold_produces_a_positive_return_on_a_rising_market() -> None:
     silently make every null-suite comparison meaningless."""
     rows = _trending_bars(_N_BARS)
     pit = PointInTimeFrame(pl.DataFrame(rows))
-    result = compute_benchmark_curve(pit, [_SYMBOL], rows[-1]["available_at"])
+    result = compute_benchmark_curve(
+        pit, [_SYMBOL],
+        window_start=None,
+        window_end=rows[-1]["available_at"],
+        cost_model=apply_cost,
+    )
     assert result.final_value > STARTING_CAPITAL
 
 

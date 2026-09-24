@@ -52,6 +52,20 @@ class Evidence:
     # of them until this module has run at least twice against the same
     # fingerprint). RETIRE is only reachable once something WAS promoted.
     previous_verdict: str | None = None
+    # Names of any metric that failed to compute for this spec (see
+    # validation/metrics.py's ValidationMetrics.metric_failures) --
+    # non-empty means the evidence behind this decision is incomplete,
+    # not just imperfect. Never invented as a reason to reject outright
+    # (WORSE_THAN_HOLDING/REJECT/DORMANT/QUARANTINE/REGIME_SPECIALIST
+    # don't depend on IC/ICIR being trustworthy in the "good news"
+    # direction, so those verdicts stand on their own); only PROMOTE is
+    # gated, below.
+    metric_failures: tuple[str, ...] = ()
+    # Law 8: True when the result's benchmark universe or window differs
+    # from the strategy's own. Checked FIRST -- a comparison against the
+    # wrong benchmark can't support any verdict, WORSE_THAN_HOLDING
+    # included.
+    benchmark_mismatch: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,6 +77,13 @@ class DecisionResult:
 
 def decide(evidence: Evidence) -> DecisionResult:
     score_result = compute_score(evidence.score_inputs)
+
+    # 0. A mismatched benchmark means every comparison below is against
+    #    the wrong thing -- held for research, never scored as a verdict.
+    if evidence.benchmark_mismatch:
+        return DecisionResult(
+            Verdict.CONTINUE_RESEARCH, score_result.score, ["BENCHMARK_MISMATCH"]
+        )
 
     # 1. WORSE_THAN_HOLDING first, before anything else.
     if score_result.worse_than_holding:
@@ -92,8 +113,16 @@ def decide(evidence: Evidence) -> DecisionResult:
         )
 
     # 5. Survives deflation and clears PBO -- the strongest evidence
-    #    this pipeline can currently produce.
+    #    this pipeline can currently produce. Incomplete evidence must
+    #    never look like complete evidence: a metric that failed to
+    #    compute (not merely absent-by-design) holds this at
+    #    CONTINUE_RESEARCH rather than reaching VALIDATED/CHAMPION-
+    #    eligible status on a partial read.
     if dsr is not None and dsr > 0 and (pbo is None or pbo <= _PBO_OVERFIT_CUTOFF):
+        if evidence.metric_failures:
+            return DecisionResult(
+                Verdict.CONTINUE_RESEARCH, score_result.score, ["INCOMPLETE_EVIDENCE"]
+            )
         return DecisionResult(Verdict.PROMOTE, score_result.score, [])
 
     # 6. DSR computed but non-positive -- doesn't survive multiple-testing

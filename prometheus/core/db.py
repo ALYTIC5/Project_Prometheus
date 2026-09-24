@@ -136,6 +136,8 @@ class BenchmarkEquity(Base):
     __tablename__ = "benchmark_equity"
 
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    # benchmark.universe_key() -- one curve per universe (migration 0018).
+    universe_key: Mapped[str] = mapped_column(sa.String())
     date: Mapped[date] = mapped_column(sa.Date)
     equity: Mapped[float] = mapped_column(sa.Numeric(20, 8, asdecimal=False))
     created_at: Mapped[datetime] = mapped_column(

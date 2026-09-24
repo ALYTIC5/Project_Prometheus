@@ -121,6 +121,73 @@ FAMILIES = (
     FAMILY_INSIDE_BAR_BREAKOUT, FAMILY_VOL_REGIME_SWITCH, FAMILY_VOL_OF_VOL_FILTER,
 )
 
+# The signal-strength contract (validation/metrics.py's IC/ICIR calculation):
+# every family whose signal_for() output is expected to carry a continuous
+# `_signal_strength` column, keyed here so metrics.py never has to guess at
+# runtime. True means signal_for() MUST emit `_signal_strength` -- if it
+# doesn't, that's a real bug (SignalStrengthContractViolation), not a reason
+# to quietly return None. False is a declared, deliberate absence: these six
+# families are breakout/regime-switch constructions built from boolean
+# state-machine conditions with no cited continuous form (VOL_BREAKOUT/
+# SQUEEZE_BREAKOUT/NR7_BREAKOUT/INSIDE_BAR_BREAKOUT are persist-until-exit or
+# single-trigger-event patterns; VOL_REGIME_SWITCH/VOL_OF_VOL_FILTER switch
+# between two boolean conditions) -- IC/ICIR are honestly None for these,
+# same "absent beats fabricated" rule RotationSpec's own information_
+# coefficient=None already uses (experiments/runner.py's
+# validate_rotation_specs). Every FAMILIES member plus the four ML families
+# (not in FAMILIES -- see research/ml/generate.py) must have an entry;
+# tests/test_validation_metrics.py parametrizes over every one to keep this
+# honest as new families are added.
+EMITS_SIGNAL_STRENGTH: dict[str, bool] = {
+    FAMILY_MOMENTUM: True,
+    FAMILY_BOLLINGER: True,
+    FAMILY_VOL_BREAKOUT: False,
+    FAMILY_RSI: True,
+    FAMILY_MACD: True,
+    FAMILY_RANDOM_FOREST: True,
+    FAMILY_GRADIENT_BOOSTING: True,
+    FAMILY_LOGISTIC_REGRESSION: True,
+    FAMILY_SVM: True,
+    FAMILY_STOCHASTIC: True,
+    FAMILY_PARABOLIC_SAR: True,
+    FAMILY_KELTNER: True,
+    FAMILY_WILLIAMS_R: True,
+    FAMILY_CCI: True,
+    FAMILY_AWESOME_OSCILLATOR: True,
+    FAMILY_SUPERTREND: True,
+    FAMILY_TRIX: True,
+    FAMILY_KELTNER_REVERSION: True,
+    FAMILY_BOLLINGER_PCTB: True,
+    FAMILY_ZSCORE: True,
+    FAMILY_IBS: True,
+    FAMILY_N_DAY_LOW: True,
+    FAMILY_CONSECUTIVE_DOWN: True,
+    FAMILY_SMA_DISTANCE: True,
+    FAMILY_ULTIMATE_OSCILLATOR: True,
+    FAMILY_MFI: True,
+    FAMILY_GAP_FADE: True,
+    FAMILY_EMA_CROSSOVER: True,
+    FAMILY_TRIPLE_MA_ALIGNMENT: True,
+    FAMILY_DEMA_CROSSOVER: True,
+    FAMILY_HULL_MA_TREND: True,
+    FAMILY_KAMA_TREND: True,
+    FAMILY_TSMOM: True,
+    FAMILY_ADX_DI_CROSSOVER: True,
+    FAMILY_AROON_CROSSOVER: True,
+    FAMILY_ICHIMOKU_BREAKOUT: True,
+    FAMILY_VORTEX: True,
+    FAMILY_LINREG_SLOPE: True,
+    FAMILY_CHANDELIER_EXIT: True,
+    FAMILY_SMA200_FILTER: True,
+    FAMILY_MA_RIBBON: True,
+    FAMILY_SQUEEZE_BREAKOUT: False,
+    FAMILY_ATR_BREAKOUT: True,
+    FAMILY_NR7_BREAKOUT: False,
+    FAMILY_INSIDE_BAR_BREAKOUT: False,
+    FAMILY_VOL_REGIME_SWITCH: False,
+    FAMILY_VOL_OF_VOL_FILTER: False,
+}
+
 # Each family's own parameter fields -- the set a spec of that family MUST
 # have set, with every other family's fields left None. Enforced by
 # _params_match_family below, not left to convention: a spec claiming two

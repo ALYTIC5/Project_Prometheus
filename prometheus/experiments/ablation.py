@@ -171,7 +171,11 @@ def run_ablation_trial(
             f"expected {len(baseline_positions)}"
         )
 
-    benchmark_result = compute_benchmark_curve(pit, [spec.symbol], cutoff, cost_model=cost_model)
+    # Both arms are full position series (no per-spec warm-up trim), so
+    # the benchmark window is explicitly the full series too.
+    benchmark_result = compute_benchmark_curve(
+        pit, [spec.symbol], window_start=None, window_end=cutoff, cost_model=cost_model
+    )
 
     disabled_started = time.perf_counter()
     disabled_result = run_backtest_from_positions(

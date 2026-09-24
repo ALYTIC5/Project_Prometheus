@@ -24,6 +24,7 @@ import {
   fetchClusters,
   fetchExperimentDetail,
   fetchExperiments,
+  fetchExperimentsScatter,
   fetchPaperTrading,
   fetchPipelineStatus,
   fetchQueueStatus,
@@ -86,6 +87,14 @@ export function useExperimentsQuery(intervalMs: number = POLL_INTERVAL_MS) {
   return useQuery({
     queryKey: ['experiments'],
     queryFn: fetchExperiments,
+    refetchInterval: intervalMs,
+  });
+}
+
+export function useExperimentsScatterQuery(intervalMs: number = POLL_INTERVAL_MS) {
+  return useQuery({
+    queryKey: ['experiments-scatter'],
+    queryFn: fetchExperimentsScatter,
     refetchInterval: intervalMs,
   });
 }

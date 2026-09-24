@@ -183,7 +183,12 @@ async def ingest_symbol(
         else:
             await session.execute(_INSERT_BAR, bar)
     await session.execute(
-        _UPDATE_RAW_STATUS, {"status": "normalized", "quality_issues": None, "id": raw_id}
+        _UPDATE_RAW_STATUS,
+        {
+            "status": "normalized",
+            "quality_issues": {"warnings": report.warnings} if report.warnings else None,
+            "id": raw_id,
+        },
     )
     await session.commit()
 

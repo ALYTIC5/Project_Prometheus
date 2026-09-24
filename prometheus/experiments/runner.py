@@ -29,7 +29,8 @@ import hashlib
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -39,18 +40,24 @@ from cpz_quant.certification.overfitting import probability_of_backtest_overfitt
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.backtest.benchmark import compute_benchmark_curve, record_benchmark_curve
+from prometheus.backtest.benchmark import (
+    STARTING_CAPITAL,
+    BenchmarkMismatch,
+    assert_benchmark_matches,
+    record_benchmark_curve,
+)
 from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
-from prometheus.backtest.engine import run_backtest
+from prometheus.backtest.engine import min_bars_for, run_backtest
 from prometheus.backtest.portfolio_engine import run_portfolio_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, ValidationResult, get_session
+from prometheus.core.health import record_failure
 from prometheus.core.ids import next_experiment_id, next_strategy_id
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
 from prometheus.data.universe import membership_windows
 from prometheus.experiments.failure import classify_exception, classify_result
-from prometheus.experiments.queue import Job, claim, enqueue, fail, succeed
+from prometheus.experiments.queue import Job, claim, enqueue, fail, release, succeed
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
@@ -59,13 +66,34 @@ from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.decay import DecayProfile, compute_decay
 from prometheus.validation.decision import Evidence, decide
-from prometheus.validation.metrics import ValidationMetrics, compute_metrics
+from prometheus.validation.metrics import ValidationMetrics, compute_metrics, signal_frame_or_none
 from prometheus.validation.metrics import hit_rate as compute_hit_rate
 from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
 from prometheus.validation.regime import classify_current_regime, regime_breakdown
 from prometheus.validation.scoring import ScoreInputs
 
 _UPDATE_STRATEGY_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
+
+
+class InsufficientDataRecorded(ValueError):
+    """run_one's insufficient-data outcome, AFTER it has already been
+    recorded (Experiment + REJECT Decision + strategies.status=REJECTED).
+    Still a ValueError so every existing caller/test that expects run_one
+    to raise on too-few bars is unchanged; carries the experiment id so
+    drain_queue can treat the job as done instead of failed.
+
+    Found 2026-09-24: drain_queue treated this like any transient error --
+    retried it (each retry minting ANOTHER strategy id + experiment row for
+    the same deterministic outcome), dead-lettered it after max_attempts,
+    which deleted the job row and freed its idempotency key, so the next
+    cycle's enqueue_baseline_grid re-enqueued it and the loop repeated
+    forever: thousands of dead-letters per cycle, job_health pinned at 100%
+    failure, and the id counters burning -- the same exhaustion class
+    next_strategy_id's own docstring already records once."""
+
+    def __init__(self, message: str, experiment_id: str) -> None:
+        super().__init__(message)
+        self.experiment_id = experiment_id
 _UNIVERSE_CONFIG_PATH = "config/universe.yaml"
 
 
@@ -96,6 +124,16 @@ def _build_experiment(
         hypothesis=hypothesis,
         change_set=change_set,
     )
+
+
+def _iso_window(start: date | None, end: date | None) -> list[str | None]:
+    return [start.isoformat() if start else None, end.isoformat() if end else None]
+
+
+def _curve_window(curve: tuple[tuple[str, float], ...]) -> list[str | None]:
+    if not curve:
+        return [None, None]
+    return [curve[0][0][:10], curve[-1][0][:10]]
 
 
 async def run_one(
@@ -142,23 +180,18 @@ async def run_one(
 
     experiment_id = await next_experiment_id()
     started = time.perf_counter()
-    # Computed before run_backtest so it can be passed in and reused --
-    # run_backtest computes its own benchmark_result internally by default
-    # (Law 8: every BacktestResult carries a real vs_benchmark, not just
-    # usually-true-because-the-caller-remembered-to), but runner.py also
-    # needs the raw curve to record for the world view, so passing it in
-    # avoids computing it twice.
-    benchmark_result = compute_benchmark_curve(pit, universe_symbols, end, cost_model=cost_model)
+    # The benchmark is computed INSIDE the backtest (strategy_result.
+    # benchmark), over the strategy's own universe and realised post-
+    # warm-up window, and checked there -- never precomputed here over a
+    # different window (2026-09-24 benchmark audit).
     try:
         if isinstance(spec, RotationSpec):
             membership = await membership_windows(session, "etf", list(spec.universe))
             strategy_result = run_portfolio_backtest(
-                pit, spec, membership, end, cost_model=cost_model, benchmark_result=benchmark_result
+                pit, spec, membership, end, cost_model=cost_model
             )
         else:
-            strategy_result = run_backtest(
-                pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
-            )
+            strategy_result = run_backtest(pit, spec, end, cost_model=cost_model)
     except ValueError as exc:
         session.add(
             _build_experiment(
@@ -196,15 +229,17 @@ async def run_one(
             _UPDATE_STRATEGY_STATUS, {"status": "REJECTED", "id": strategy_id}
         )
         await session.commit()
-        raise
+        raise InsufficientDataRecorded(str(exc), experiment_id) from exc
     compute_cost = time.perf_counter() - started
 
-    await record_benchmark_curve(session, benchmark_result.equity_curve)
-    benchmark_curve = benchmark_result.equity_curve
+    benchmark_result = strategy_result.benchmark
+    await record_benchmark_curve(session, benchmark_result)
+    # From STARTING_CAPITAL, not curve[0]: curve[0] is already net of the
+    # entry cost, and Law 8 requires the benchmark to pay the same cost
+    # model the strategy does -- the previous first-to-last formula quietly
+    # excused the benchmark its own entry cost.
     benchmark_return_pct = (
-        (benchmark_curve[-1][1] - benchmark_curve[0][1]) / benchmark_curve[0][1] * 100
-        if len(benchmark_curve) >= 2
-        else 0.0
+        (benchmark_result.final_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100
     )
     beats_benchmark = strategy_result.total_return_pct > benchmark_return_pct
     reason_codes = classify_result(strategy_result, benchmark_return_pct=benchmark_return_pct)
@@ -235,6 +270,13 @@ async def run_one(
                 "gross_return_pct": strategy_result.gross_return_pct,
                 "total_costs": strategy_result.total_costs,
                 "benchmark_return_pct": benchmark_return_pct,
+                # Law 8 provenance: exactly which universe and window this
+                # benchmark covered, next to the strategy's own window.
+                "benchmark_universe": list(benchmark_result.universe),
+                "benchmark_window": _iso_window(
+                    benchmark_result.window_start, benchmark_result.window_end
+                ),
+                "strategy_window": _curve_window(strategy_result.equity_curve),
                 "cost_config_hash": cost_config_hash,
                 "vs_benchmark": {
                     "excess_return": strategy_result.vs_benchmark.excess_return,
@@ -333,15 +375,18 @@ async def validate_specs(
     cost_config, _cost_config_hash = load_cost_config()
     cost_model = make_cost_model(cost_config)
     pit, _data_version_hash = await load_point_in_time(session, [symbol], timeframe, start, end)
-    benchmark_result = compute_benchmark_curve(pit, [symbol], end, cost_model=cost_model)
     bars = pit.as_of(end).filter(pl.col("symbol") == symbol).sort("available_at")
 
     per_spec: list[tuple[StrategySpec, Any]] = []
     for spec in specs:
         try:
-            result = run_backtest(
-                pit, spec, end, cost_model=cost_model, benchmark_result=benchmark_result
-            )
+            # Each spec gets its OWN benchmark (its own post-warm-up
+            # window) -- one shared per-symbol curve compared every spec
+            # against the same full-history window regardless of warm-up.
+            result = run_backtest(pit, spec, end, cost_model=cost_model)
+        except BenchmarkMismatch as exc:
+            record_failure("research", exc, context=f"benchmark hash={spec.config_hash()}")
+            continue
         except ValueError:
             continue  # not enough bars yet for this spec's slow_window
         per_spec.append((spec, result))
@@ -402,14 +447,50 @@ async def validate_specs(
     # real failure modes caught by actually running this against real
     # data, not by any offline test.
     trial_sharpes: list[float] = []
-    validated_specs: list[tuple[StrategySpec, Any, Any]] = []
+    validated_specs: list[tuple[StrategySpec, Any, Any, pl.DataFrame | None]] = []
     for spec, result in per_spec:
+        # Computed ONCE here and threaded through to both compute_metrics
+        # (IC+ICIR) and, below, compute_decay (9 horizons + claimed) --
+        # each used to call signal_for() fresh, ~12 redundant
+        # recomputations of the same per-family indicator per spec. See
+        # validation/metrics.py's signal_frame_or_none docstring for the
+        # 2026-09-24 incident this fixes (harmless at 4 working families,
+        # expensive enough at 47 to stall the research concern in
+        # production for hours the same day the signal-strength fix
+        # shipped).
+        signal_error: str | None = None
         try:
-            validation_metrics = compute_metrics(result.equity_curve, result.turnover, bars, spec)
+            signaled = signal_frame_or_none(bars, spec)
         except Exception as exc:
-            print(f"validate_grid: metrics failed for {spec.config_hash()}: {exc!r}")
+            signaled = None
+            signal_error = repr(exc)
+        try:
+            validation_metrics = compute_metrics(
+                result.equity_curve, result.turnover, bars, spec, signaled=signaled
+            )
+        except Exception as exc:
+            record_failure(
+                "research",
+                exc,
+                context=f"validate_grid family={spec.family} hash={spec.config_hash()}",
+            )
             continue
-        validated_specs.append((spec, result, validation_metrics))
+        if signal_error is not None:
+            # compute_metrics only records THIS failure when it derives
+            # signaled itself; here runner.py already knows what broke,
+            # so make sure it still lands in metric_failures rather than
+            # being silently dropped because compute_metrics was handed
+            # signaled=None and had no way to tell "declared False" apart
+            # from "we already tried and it broke".
+            validation_metrics = replace(
+                validation_metrics,
+                metric_failures={
+                    **validation_metrics.metric_failures,
+                    "information_coefficient": signal_error,
+                    "icir": signal_error,
+                },
+            )
+        validated_specs.append((spec, result, validation_metrics, signaled))
         if validation_metrics.risk is not None and validation_metrics.risk.sharpe is not None:
             trial_sharpes.append(validation_metrics.risk.sharpe)
 
@@ -420,7 +501,7 @@ async def validate_specs(
     current_regime = classify_current_regime(bars)
 
     experiment_ids: list[str] = []
-    for spec, result, validation_metrics in validated_specs:
+    for spec, result, validation_metrics, signaled in validated_specs:
         row = (
             await session.execute(
                 _SELECT_LATEST_EXPERIMENT_FOR_SPEC, {"config_hash": spec.config_hash()}
@@ -429,7 +510,33 @@ async def validate_specs(
         if row is None:
             continue  # run_one hasn't recorded this spec yet -- next cycle
         experiment_id, strategy_id = row.id, row.strategy_id
-        decay_profile = compute_decay(bars, spec)
+        decay_metric_failure: str | None = None
+        try:
+            # Reuses the SAME signal_frame_or_none() result the first loop
+            # already computed for this spec -- see compute_decay's own
+            # docstring on why recomputing it here (as this call used to,
+            # 10 more signal_for() calls per spec) was the actual
+            # production incident.
+            decay_profile = compute_decay(bars, spec, signaled=signaled)
+        except Exception as exc:
+            # Same independence rule compute_metrics already applies:
+            # decay failing must not drop a spec that already has real
+            # risk/turnover/IC evidence -- fall back to an honestly-empty
+            # DecayProfile and record the failure, rather than letting it
+            # propagate into the `except Exception: continue` below and
+            # silently discard everything computed so far for this spec.
+            decay_metric_failure = repr(exc)
+            decay_profile = DecayProfile(
+                ic_by_horizon={},
+                claimed_horizon=spec.expected_horizon,
+                claimed_horizon_ic=None,
+                claimed_horizon_p_value=None,
+                has_power_at_claimed_horizon=None,
+            )
+
+        metric_failures = dict(validation_metrics.metric_failures)
+        if decay_metric_failure is not None:
+            metric_failures["decay"] = decay_metric_failure
 
         try:
             await _validate_one_spec(
@@ -438,6 +545,7 @@ async def validate_specs(
                 result=result,
                 validation_metrics=validation_metrics,
                 decay_profile=decay_profile,
+                metric_failures=metric_failures,
                 experiment_id=experiment_id,
                 strategy_id=strategy_id,
                 pbo_value=pbo_value,
@@ -453,7 +561,11 @@ async def validate_specs(
             # worker's own drain_queue applies the identical isolation
             # rule per job via fail(), this is the same principle applied
             # per spec inside one validation pass.
-            print(f"validate_grid: skipping {spec.config_hash()}: {exc!r}")
+            record_failure(
+                "research",
+                exc,
+                context=f"validate_grid family={spec.family} hash={spec.config_hash()}",
+            )
             continue
         experiment_ids.append(experiment_id)
 
@@ -534,10 +646,7 @@ async def validate_rotation_specs(
                 session, all_symbols, spec.timeframe, start, end
             )
             membership = await membership_windows(session, "etf", all_symbols)
-            benchmark_result = compute_benchmark_curve(pit, all_symbols, end, cost_model=cost_model)
-            result = run_portfolio_backtest(
-                pit, spec, membership, end, cost_model=cost_model, benchmark_result=benchmark_result
-            )
+            result = run_portfolio_backtest(pit, spec, membership, end, cost_model=cost_model)
         except ValueError:
             continue  # not enough bars yet for this spec's universe/lookback
         per_spec.append((spec, result))
@@ -623,9 +732,12 @@ async def validate_rotation_specs(
                 # instrument classify_current_regime could read.
                 current_regime="UNKNOWN",
                 cluster_info=cluster_info_by_hash.get(spec.config_hash()),
+                metric_failures=validation_metrics.metric_failures,
             )
         except Exception as exc:
-            print(f"validate_rotation_specs: skipping {spec.config_hash()}: {exc!r}")
+            record_failure(
+                "research", exc, context=f"validate_rotation_specs hash={spec.config_hash()}"
+            )
             continue
         experiment_ids.append(experiment_id)
 
@@ -648,6 +760,7 @@ async def _validate_one_spec(
     n_trials_for_deflation: int,
     current_regime: str,
     cluster_info: dict[str, Any] | None,
+    metric_failures: dict[str, str],
 ) -> None:
     strategy_equity_values = [equity for _, equity in result.equity_curve]
 
@@ -682,11 +795,22 @@ async def _validate_one_spec(
     prior = (
         await session.execute(_SELECT_LATEST_VERDICT_FOR_FINGERPRINT, {"fp": spec.config_hash()})
     ).first()
+    strategy_universe = (
+        (spec.symbol,) if isinstance(spec, StrategySpec) else tuple(spec.universe)
+    )
+    try:
+        assert_benchmark_matches(result.benchmark, strategy_universe, result.equity_curve)
+        benchmark_mismatch = False
+    except BenchmarkMismatch as exc:
+        record_failure("research", exc, context=f"benchmark hash={spec.config_hash()}")
+        benchmark_mismatch = True
     evidence = Evidence(
         score_inputs=score_inputs,
         turnover=result.turnover,
         consistent_across_regimes=consistent_across_regimes,
         previous_verdict=prior.verdict if prior is not None else None,
+        metric_failures=tuple(metric_failures),
+        benchmark_mismatch=benchmark_mismatch,
     )
     decision_result = decide(evidence)
 
@@ -714,6 +838,12 @@ async def _validate_one_spec(
         # return variance) -- an honest "not clustered", not a fabricated
         # singleton.
         "cluster": cluster_info,
+        # Which named metrics failed to compute and why, never silently
+        # absorbed -- see validation/metrics.py's ValidationMetrics.
+        # metric_failures docstring. Empty for the overwhelming majority
+        # of specs; non-empty is a real signal something needs attention,
+        # surfaced verbatim rather than guessed away.
+        "metric_failures": metric_failures,
     }
 
     session.add(
@@ -749,6 +879,67 @@ async def _validate_one_spec(
 _RUN_BACKTEST_KIND = "run_backtest"
 
 
+_SELECT_BAR_COUNTS = text(
+    """
+    SELECT symbol, timeframe, COUNT(*) AS n
+      FROM ohlcv_bars
+     WHERE symbol = ANY(:symbols) AND event_time >= :since
+     GROUP BY symbol, timeframe
+    """
+)
+
+
+async def _bar_counts(
+    session: AsyncSession, specs: Sequence[StrategySpec | RotationSpec], days: int
+) -> dict[tuple[str, str], int]:
+    symbols = sorted(
+        {
+            symbol
+            for spec in specs
+            for symbol in ([spec.symbol] if isinstance(spec, StrategySpec) else spec.universe)
+        }
+    )
+    if not symbols:
+        return {}
+    since = datetime.now(UTC) - timedelta(days=days)
+    rows = (await session.execute(_SELECT_BAR_COUNTS, {"symbols": symbols, "since": since})).all()
+    return {(r.symbol, r.timeframe): int(r.n) for r in rows}
+
+
+def specs_with_enough_history(
+    specs: Sequence[StrategySpec | RotationSpec], bar_counts: dict[tuple[str, str], int]
+) -> list[StrategySpec | RotationSpec]:
+    """Only specs whose data already covers their own warm-up -- the same
+    rule the engine enforces at run time (min_bars_for / a rotation's
+    lookback_days), checked BEFORE enqueueing. Enqueue is idempotent per
+    config_hash, so a spec enqueued too early used to run once, record an
+    INSUFFICIENT_DATA reject, and never be retried even after the data
+    arrived (DOT/USDT and LTC/USDT had zero bars ingested until
+    2026-09-24; every one of their specs was burned that way). Deferred
+    specs are simply picked up by a later cycle once ingestion catches up.
+    Approximate by design (bar counts in the window, not the exact
+    point-in-time as_of view) -- run_one's own guard still catches any
+    residual shortfall, now as a terminal InsufficientDataRecorded."""
+    runnable: list[StrategySpec | RotationSpec] = []
+    for spec in specs:
+        if isinstance(spec, StrategySpec):
+            # +1: the window count can include the current bar, which the
+            # engine's point-in-time as_of view excludes until it's
+            # available -- without the margin a spec sitting exactly on its
+            # warm-up boundary would be admitted, fail at run time, get
+            # released, and be re-admitted every cycle.
+            if bar_counts.get((spec.symbol, spec.timeframe), 0) >= min_bars_for(spec) + 1:
+                runnable.append(spec)
+        else:
+            available = max(
+                (bar_counts.get((symbol, spec.timeframe), 0) for symbol in spec.universe),
+                default=0,
+            )
+            if available > (spec.lookback_days or 0) + 1:
+                runnable.append(spec)
+    return runnable
+
+
 async def enqueue_specs(
     symbol: str,
     timeframe: str,
@@ -773,7 +964,12 @@ async def enqueue_specs(
     pair, is what identifies its grid."""
     job_ids = []
     async with get_session() as session:
-        for spec in specs:
+        bar_counts = await _bar_counts(session, specs, days)
+        runnable = specs_with_enough_history(specs, bar_counts)
+        skipped = len(specs) - len(runnable)
+        if skipped:
+            print(f"enqueue_specs: deferring {skipped} spec(s) until enough history exists")
+        for spec in runnable:
             idempotency_key = hashlib.sha256(
                 f"{_RUN_BACKTEST_KIND}|{spec.config_hash()}|{days}".encode()
             ).hexdigest()
@@ -885,16 +1081,30 @@ async def _run_job(job: Job) -> str:
         )
 
 
-async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = None) -> list[str]:
-    """Claims and runs jobs until the queue has none runnable or max_jobs
-    is reached (None = drain fully -- the scheduled-worker cron use case,
-    PROMPTS.md PROMPT 7 adds the schedule that calls this). Each claim is
-    committed in its own transaction before _run_job does any work, per
-    queue.claim's documented rule."""
+async def drain_queue(
+    *,
+    worker_id: str | None = None,
+    max_jobs: int | None = None,
+    deadline: float | None = None,
+) -> list[str]:
+    """Claims and runs jobs until the queue has none runnable, max_jobs is
+    reached, or time.monotonic() passes `deadline` (None = no limit). Each
+    claim is committed in its own transaction before _run_job does any
+    work, per queue.claim's documented rule.
+
+    `deadline` exists because an unbounded drain (thousands of pending
+    jobs, several hundred of them ML walk-forward fits at ~10s each) ran
+    longer than the research concern's own 30-minute slot: validation,
+    evolution and mark_run all sit AFTER the drain, so the cycle never
+    completed and research's last_run_at froze for hours (2026-09-24).
+    Jobs left unclaimed simply stay pending for the next cycle."""
     resolved_worker_id = worker_id or f"runner-{uuid.uuid4().hex[:12]}"
     experiment_ids: list[str] = []
     ran = 0
     while max_jobs is None or ran < max_jobs:
+        if deadline is not None and time.monotonic() >= deadline:
+            print(f"drain_queue: time budget reached after {ran} job(s); rest stay pending")
+            break
         async with get_session() as session:
             job = await claim(session, worker_id=resolved_worker_id)
             await session.commit()
@@ -903,7 +1113,27 @@ async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = No
         ran += 1
         try:
             experiment_id = await _run_job(job)
+        except InsufficientDataRecorded:
+            # Not enough history yet for this spec's warm-up: already
+            # recorded honestly by run_one (INSUFFICIENT_DATA reject).
+            # Retrying can't help until ingestion catches up, dead-
+            # lettering would count a non-failure as a failure, and
+            # succeeding would mark the spec done forever. Release it --
+            # enqueue_specs' history check re-admits it once the data
+            # exists. See InsufficientDataRecorded / queue.release.
+            async with get_session() as session:
+                await release(session, job_id=job.id, worker_id=resolved_worker_id)
+                await session.commit()
+            continue
         except Exception as exc:
+            # queue.fail() already persists str(exc) to jobs.last_error /
+            # jobs_dead_letter -- invisible outside a direct DB read until
+            # now. record_failure surfaces it the same way every other
+            # isolation boundary in this codebase does: ERROR-level log +
+            # worker_health tally, so a whole family/kind failing here
+            # shows up the same cycle instead of only as a growing
+            # jobs_dead_letter count nobody's watching.
+            record_failure("drain_queue", exc, context=f"job_id={job.id} kind={job.kind}")
             async with get_session() as session:
                 await fail(session, job_id=job.id, worker_id=resolved_worker_id, error=str(exc))
                 await session.commit()

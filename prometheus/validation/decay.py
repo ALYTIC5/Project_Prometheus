@@ -13,6 +13,7 @@ from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.metrics import (
     information_coefficient,
     information_coefficient_with_pvalue,
+    signal_frame_or_none,
 )
 
 # Bars, not calendar days -- at the deterministic grid's 1d timeframe these
@@ -37,11 +38,33 @@ class DecayProfile:
     has_power_at_claimed_horizon: bool | None
 
 
-def compute_decay(bars: pl.DataFrame, spec: StrategySpec) -> DecayProfile:
-    ic_by_horizon = {h: information_coefficient(bars, spec, h) for h in DECAY_HORIZONS}
+_UNCOMPUTED = object()  # sentinel: "caller didn't pass one, compute it yourself"
+
+
+def compute_decay(
+    bars: pl.DataFrame, spec: StrategySpec, *, signaled: pl.DataFrame | None = _UNCOMPUTED  # type: ignore[assignment]
+) -> DecayProfile:
+    """`signaled` lets a caller that already called signal_frame_or_none
+    for this spec (experiments/runner.py, sharing it with compute_metrics)
+    pass the result straight through -- this function used to call
+    signal_for() 10 times per spec (once per DECAY_HORIZONS entry plus
+    the claimed horizon), on top of compute_metrics's own 2 calls; see
+    metrics.py's signal_frame_or_none docstring for the 2026-09-24
+    incident that made this matter (harmless at 4 working families,
+    expensive enough at 47 to stall the research concern in production).
+    Omit it (the default sentinel) to compute it once internally here,
+    unchanged behavior for every existing caller/test."""
+    resolved_signaled = signal_frame_or_none(bars, spec) if signaled is _UNCOMPUTED else signaled
+
+    ic_by_horizon = {
+        h: information_coefficient(bars, spec, h, signaled=resolved_signaled)
+        for h in DECAY_HORIZONS
+    }
 
     claimed = spec.expected_horizon
-    claimed_result = information_coefficient_with_pvalue(bars, spec, claimed)
+    claimed_result = information_coefficient_with_pvalue(
+        bars, spec, claimed, signaled=resolved_signaled
+    )
     if claimed not in ic_by_horizon:
         ic_by_horizon[claimed] = claimed_result[0] if claimed_result is not None else None
 

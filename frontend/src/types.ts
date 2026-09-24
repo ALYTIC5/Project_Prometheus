@@ -268,6 +268,23 @@ export interface ExperimentRow {
   benchmark_return_pct: number | null;
 }
 
+/** GET /experiments/scatter -- one point per spec (its latest result),
+ * every symbol/universe. benchmark_universe/benchmark_window are null for
+ * results written before the 2026-09-24 Law 8 benchmark fix. */
+export interface ScatterPointRow {
+  id: string;
+  config_hash: string;
+  family: string;
+  symbol: string | null;
+  universe: string[] | null;
+  total_return_pct: number;
+  benchmark_return_pct: number;
+  benchmark_universe: string[] | null;
+  benchmark_window: [string | null, string | null] | null;
+  decision: string | null;
+  created_at: string;
+}
+
 export interface ExperimentResultRow {
   payload: Record<string, unknown>;
   created_at: string;
@@ -330,8 +347,32 @@ export interface PipelineConcern {
   is_due: boolean;
 }
 
+/** One (concern, exception_type) tally from core/health.py's
+ * worker_health table, over the route's own recent window. */
+export interface PipelineRecentFailure {
+  concern: string;
+  exception_type: string;
+  failure_count: number;
+  sample_message: string | null;
+  last_seen_at: string;
+}
+
+/** Real job outcomes from `jobs`/`jobs_dead_letter` over the route's own
+ * recent window -- failure_rate is null on zero completed jobs (nothing
+ * ran, not "nothing failed"). unhealthy is the >20%-in-window banner
+ * trigger. */
+export interface PipelineJobHealth {
+  window_hours: number;
+  succeeded: number;
+  dead_lettered: number;
+  failure_rate: number | null;
+  unhealthy: boolean;
+}
+
 export interface PipelineStatusResponse {
   concerns: PipelineConcern[];
+  recent_failures: PipelineRecentFailure[];
+  job_health: PipelineJobHealth;
 }
 
 /** GET /research-papers/'s shape -- PROMPT 9's daily arXiv ingestion. */

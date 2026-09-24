@@ -89,10 +89,17 @@ async def test_enqueue_specs_enqueues_a_non_momentum_spec() -> None:
         family="BOLLINGER", symbol="BTC/USDT", timeframe="1d",
         lookback_window=20, band_multiplier=2.0, expected_horizon=20,
     )
-    job_ids = await enqueue_specs(
-        "BTC/USDT", "1d", [spec], 800,
-        priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
-    )
+    # This test is about non-MOMENTUM specs reaching the queue at all; the
+    # empty test DB has no bars, so bypass the enqueue-time history check
+    # (covered separately by tests/test_enqueue_history_filter.py).
+    with patch(
+        "prometheus.experiments.runner.specs_with_enough_history",
+        new=lambda specs, _counts: list(specs),
+    ):
+        job_ids = await enqueue_specs(
+            "BTC/USDT", "1d", [spec], 800,
+            priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
+        )
     assert len(job_ids) == 1
 
 
@@ -125,6 +132,14 @@ async def test_enqueue_specs_tags_spec_kind_by_isinstance() -> None:
             return_value=_FakeSessionCtx(fake_session),
         ),
         patch("prometheus.experiments.runner.enqueue", new=AsyncMock(side_effect=_fake_enqueue)),
+        # The enqueue-time history check (tests/test_enqueue_history_filter.py)
+        # needs a real bar-count query; this test is about spec_kind tagging,
+        # so both specs are treated as having enough history.
+        patch("prometheus.experiments.runner._bar_counts", new=AsyncMock(return_value={})),
+        patch(
+            "prometheus.experiments.runner.specs_with_enough_history",
+            new=lambda specs, _counts: list(specs),
+        ),
     ):
         await enqueue_specs(
             "", "", [strategy_spec, rotation_spec], 800,

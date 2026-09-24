@@ -46,7 +46,9 @@ def test_single_symbol_matches_100_percent_allocation() -> None:
     pit = PointInTimeFrame(pl.DataFrame(rows))
     cutoff = rows[-1]["available_at"]
 
-    result = compute_benchmark_curve(pit, ["BTC/USDT"], cutoff)
+    result = compute_benchmark_curve(
+        pit, ["BTC/USDT"], window_start=None, window_end=cutoff, cost_model=apply_cost
+    )
 
     expected_equity = STARTING_CAPITAL - apply_cost(STARTING_CAPITAL)
     assert all(equity == expected_equity for _, equity in result.equity_curve)
@@ -59,7 +61,9 @@ def test_two_symbols_split_capital_equally() -> None:
     pit = PointInTimeFrame(pl.DataFrame(rows))
     cutoff = _START + timedelta(days=4, minutes=5)
 
-    result = compute_benchmark_curve(pit, ["BTC/USDT", "ETH/USDT"], cutoff)
+    result = compute_benchmark_curve(
+        pit, ["BTC/USDT", "ETH/USDT"], window_start=None, window_end=cutoff, cost_model=apply_cost
+    )
 
     per_symbol_share = STARTING_CAPITAL / 2
     expected_leg = per_symbol_share - apply_cost(per_symbol_share)
@@ -92,10 +96,17 @@ def test_two_symbols_combined_curve_sums_both_legs_at_a_shared_timestamp() -> No
     def linear_cost_model(notional: float) -> float:
         return notional * 0.001
 
-    btc_full = compute_benchmark_curve(pit, ["BTC/USDT"], cutoff, cost_model=linear_cost_model)
-    eth_full = compute_benchmark_curve(pit, ["ETH/USDT"], cutoff, cost_model=linear_cost_model)
+    btc_full = compute_benchmark_curve(
+        pit, ["BTC/USDT"], window_start=None, window_end=cutoff, cost_model=linear_cost_model
+    )
+    eth_full = compute_benchmark_curve(
+        pit, ["ETH/USDT"], window_start=None, window_end=cutoff, cost_model=linear_cost_model
+    )
     combined = compute_benchmark_curve(
-        pit, ["BTC/USDT", "ETH/USDT"], cutoff, cost_model=linear_cost_model
+        pit, ["BTC/USDT", "ETH/USDT"],
+        window_start=None,
+        window_end=cutoff,
+        cost_model=linear_cost_model,
     )
 
     btc_half = {day: equity / 2 for day, equity in btc_full.equity_curve}
@@ -116,7 +127,12 @@ def test_a_symbol_with_no_data_yet_is_excluded_not_fatal() -> None:
     pit = PointInTimeFrame(pl.DataFrame(rows))
     cutoff = rows[-1]["available_at"]
 
-    result = compute_benchmark_curve(pit, ["BTC/USDT", "NOTLISTEDYET/USDT"], cutoff)
+    result = compute_benchmark_curve(
+        pit, ["BTC/USDT", "NOTLISTEDYET/USDT"],
+        window_start=None,
+        window_end=cutoff,
+        cost_model=apply_cost,
+    )
 
     # Only BTC contributed -- equity reflects BTC's own post-entry-cost
     # half-share growth, not a crash or a silently-fabricated second leg.
@@ -128,4 +144,6 @@ def test_rejects_empty_symbol_list() -> None:
     rows = _flat_bars("BTC/USDT", 3, 100.0)
     pit = PointInTimeFrame(pl.DataFrame(rows))
     with pytest.raises(ValueError, match="at least one symbol"):
-        compute_benchmark_curve(pit, [], rows[-1]["available_at"])
+        compute_benchmark_curve(
+        pit, [], window_start=None, window_end=rows[-1]["available_at"], cost_model=apply_cost
+    )

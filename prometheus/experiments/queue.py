@@ -231,6 +231,12 @@ _SUCCEED = text(
 )
 
 
+_RELEASE = text(
+    "DELETE FROM jobs WHERE id = :job_id AND claimed_by = :worker_id AND status = 'claimed' "
+    "RETURNING id"
+)
+
+
 async def succeed(
     session: AsyncSession, *, job_id: str, worker_id: str, experiment_id: str | None = None
 ) -> bool:
@@ -242,6 +248,41 @@ async def succeed(
     result = await session.execute(
         _SUCCEED, {"job_id": job_id, "worker_id": worker_id, "experiment_id": experiment_id}
     )
+    return result.scalar_one_or_none() is not None
+
+
+_REQUEUE_SUCCEEDED = text(
+    """
+    UPDATE jobs
+       SET status = 'pending', attempts = 0, claimed_by = NULL, heartbeat_at = NULL,
+           progress_pct = 0.0, run_at = now()
+     WHERE status = 'succeeded' AND kind = :kind
+    RETURNING id
+    """
+)
+
+
+async def requeue_succeeded(session: AsyncSession, *, kind: str) -> int:
+    """Puts every already-succeeded job of `kind` back to pending, same
+    row and idempotency_key (so no duplicate job is ever created). For a
+    deliberate, one-off re-run after an engine correction -- the re-runs
+    append NEW experiment/result rows; the old ones are untouched (Law 6).
+    Does not commit; the caller owns the transaction."""
+    result = await session.execute(_REQUEUE_SUCCEEDED, {"kind": kind})
+    return len(result.fetchall())
+
+
+async def release(session: AsyncSession, *, job_id: str, worker_id: str) -> bool:
+    """Removes a claimed job WITHOUT retrying or dead-lettering it, freeing
+    its idempotency_key so a later enqueue can recreate it. For outcomes
+    that are neither success nor a real failure -- runner.drain_queue uses
+    it for "not enough history yet" (InsufficientDataRecorded): retrying
+    can't help until ingestion catches up, dead-lettering pollutes the
+    failure record with non-failures, and succeeding would mark the spec
+    permanently done before its data ever arrived. The enqueue-time
+    history check (runner.specs_with_enough_history) decides when it
+    comes back. False means this worker no longer owned the job."""
+    result = await session.execute(_RELEASE, {"job_id": job_id, "worker_id": worker_id})
     return result.scalar_one_or_none() is not None
 
 

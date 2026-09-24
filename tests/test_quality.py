@@ -70,8 +70,11 @@ def test_volume_spike_flagged() -> None:
     rows = [_bar("BTC/USDT", i, 100, 101, 99, 100, 1000.0) for i in range(30)]
     rows[15]["volume"] = 10_000_000.0  # wildly beyond 20 sigma of a flat series
     report = run_quality_checks(pl.DataFrame(rows), "1h")
-    assert not report.passed
-    assert any("volume spike" in issue for issue in report.issues)
+    # Flagged as a warning, not a quarantine: a volume spike is a real
+    # market event, not evidence the prices are wrong (see quality.py's
+    # module docstring for the production incident behind this).
+    assert report.passed
+    assert any("volume spike" in warning for warning in report.warnings)
 
 
 def _frame_with_gap(gap_hours: float) -> pl.DataFrame:

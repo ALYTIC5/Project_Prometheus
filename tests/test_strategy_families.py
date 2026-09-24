@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from prometheus.backtest.engine import run_backtest, signal_for
+from prometheus.backtest.engine import run_backtest, signal_for, warmup_start_index
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import StrategySpec
 from tests.test_null_strategies import _bar_row
@@ -559,7 +559,12 @@ def test_engine_agrees_with_signal_for_across_all_thirteen_families() -> None:
     """run_backtest's own turnover must equal the sum of |position
     changes| in signal_for()'s own output -- a real end-to-end
     consistency check that the engine trades exactly the position series
-    the signal generator reports, for every family, not just MOMENTUM."""
+    the signal generator reports, for every family, not just MOMENTUM.
+
+    Measured over the evaluated window (from engine.warmup_start_index,
+    the Law 8 window both the strategy and its benchmark share since
+    2026-09-24): holding a position at the window's first bar is an entry
+    and counts as a trade, exactly as the benchmark pays its own entry."""
     prices = [100.0 + (i % 7) for i in range(60)]
     rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(prices)]
     bars = pl.DataFrame(rows)
@@ -570,8 +575,8 @@ def test_engine_agrees_with_signal_for_across_all_thirteen_families() -> None:
         _williams_r_spec(), _cci_spec(), _ao_spec(), _supertrend_spec(), _trix_spec(),
     ):
         result = run_backtest(pit, spec, rows[-1]["available_at"])
-        positions = signal_for(bars, spec)["position"].to_list()
-        expected_turnover = sum(
-            abs(positions[i] - positions[i - 1]) for i in range(1, len(positions))
+        window = signal_for(bars, spec)["position"].to_list()[warmup_start_index(spec):]
+        expected_turnover = abs(window[0]) + sum(
+            abs(window[i] - window[i - 1]) for i in range(1, len(window))
         )
         assert result.turnover == expected_turnover

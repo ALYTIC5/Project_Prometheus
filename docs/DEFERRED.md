@@ -575,7 +575,7 @@ change).
   `_weights_for` / either `available_at` cutoff in
   `portfolio_engine.py`.
 
-- **I5: `benchmark_equity` is one global curve, overwritten per spec.**
+- **[RESOLVED 2026-09-24 — migration 0018, per-universe `universe_key`; see docs/DECISIONS.md] I5: `benchmark_equity` is one global curve, overwritten per spec.**
   `backtest/benchmark.py`'s `record_benchmark_curve` upserts `ON
   CONFLICT (date) DO UPDATE`, keyed on `date` ALONE -- so every spec's
   own buy-and-hold curve overwrites the same global row for that date.

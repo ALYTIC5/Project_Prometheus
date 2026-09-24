@@ -30,18 +30,33 @@ from cpz_quant.certification.analytics import compute_risk_analytics
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.backtest.costs import CostModel, apply_cost
+from prometheus.backtest.costs import CostModel
 from prometheus.data.schema import PointInTimeFrame
 
 STARTING_CAPITAL = 1000.0
 
 _UPSERT_BENCHMARK_EQUITY = text(
     """
-    INSERT INTO benchmark_equity (date, equity)
-    VALUES (:date, :equity)
-    ON CONFLICT (date) DO UPDATE SET equity = EXCLUDED.equity
+    INSERT INTO benchmark_equity (universe_key, date, equity)
+    VALUES (:universe_key, :date, :equity)
+    ON CONFLICT (universe_key, date) DO UPDATE SET equity = EXCLUDED.equity
     """
 )
+
+
+class BenchmarkMismatch(Exception):
+    """Law 8: a benchmark whose universe or window differs from its
+    strategy's. Deliberately NOT a ValueError -- runner.run_one treats
+    ValueError from a backtest as insufficient data; this is a bug, never
+    a data shortfall."""
+
+
+def universe_key(symbols: list[str] | tuple[str, ...]) -> str:
+    """Stable identity of a benchmark universe -- sorted, comma-joined --
+    so benchmark_equity keeps one curve per universe instead of every
+    spec overwriting the same date-keyed global row (docs/DEFERRED.md
+    I5)."""
+    return ",".join(sorted(symbols))
 
 
 @dataclass(frozen=True)
@@ -49,6 +64,35 @@ class BenchmarkResult:
     equity_curve: list[tuple[date, float]]
     max_drawdown_pct: float
     final_value: float
+    # Law 8 provenance, carried so a mismatch is checkable after the fact
+    # (validation's BENCHMARK_MISMATCH gate, the law test) rather than
+    # only by reading the call site.
+    universe: tuple[str, ...] = ()
+    window_start: date | None = None
+    window_end: date | None = None
+
+
+def assert_benchmark_matches(
+    benchmark: BenchmarkResult,
+    strategy_universe: tuple[str, ...],
+    strategy_curve: tuple[tuple[str, float], ...],
+) -> None:
+    """Hard Law 8 check: same universe, same first and last date as the
+    strategy's own realised equity curve. Raises BenchmarkMismatch --
+    never silently compares against the wrong thing."""
+    if tuple(sorted(benchmark.universe)) != tuple(sorted(strategy_universe)):
+        raise BenchmarkMismatch(
+            f"benchmark universe {benchmark.universe} != strategy universe {strategy_universe}"
+        )
+    if not strategy_curve or not benchmark.equity_curve:
+        return
+    strategy_start = datetime.fromisoformat(strategy_curve[0][0]).date()
+    strategy_end = datetime.fromisoformat(strategy_curve[-1][0]).date()
+    if (benchmark.window_start, benchmark.window_end) != (strategy_start, strategy_end):
+        raise BenchmarkMismatch(
+            f"benchmark window {benchmark.window_start}..{benchmark.window_end} != "
+            f"strategy window {strategy_start}..{strategy_end}"
+        )
 
 
 @dataclass(frozen=True)
@@ -127,9 +171,10 @@ def compute_vs_benchmark(
 def compute_benchmark_curve(
     pit: PointInTimeFrame,
     symbols: list[str],
-    as_of_cutoff: datetime,
     *,
-    cost_model: CostModel = apply_cost,
+    window_start: datetime | None,
+    window_end: datetime,
+    cost_model: CostModel,
 ) -> BenchmarkResult:
     """Law 8's own words: "equal-weight for multi-asset, 100% for single-
     asset" -- one formula, not two code paths. STARTING_CAPITAL splits
@@ -140,6 +185,15 @@ def compute_benchmark_curve(
     lengths honestly rather than assuming they all share identical
     timestamps (true of this project's crypto universe today, not a safe
     assumption to bake into the math).
+
+    Every argument that defines WHAT is being compared is required, with
+    no default (2026-09-24, Law 8): `symbols` is the strategy's own
+    universe, `window_start`/`window_end` its own realised window (None
+    start = explicitly "from the first available bar"), `cost_model` the
+    same cost model the strategy used. The entry happens on the first bar
+    at or after window_start -- i.e. the strategy's first tradable bar
+    after its warm-up, not bar 1 of the loaded history, so a 200-day SMA
+    isn't charged 200 days of buy-and-hold it could never have held.
     """
     if not symbols:
         raise ValueError("compute_benchmark_curve requires at least one symbol")
@@ -149,7 +203,9 @@ def compute_benchmark_curve(
 
     contributions: list[pl.DataFrame] = []
     for symbol in symbols:
-        bars = pit.as_of(as_of_cutoff).filter(pl.col("symbol") == symbol).sort("available_at")
+        bars = pit.as_of(window_end).filter(pl.col("symbol") == symbol).sort("available_at")
+        if window_start is not None:
+            bars = bars.filter(pl.col("available_at") >= window_start)
         if bars.height == 0:
             continue
         entry_price = bars["close"][0]
@@ -161,7 +217,12 @@ def compute_benchmark_curve(
         )
 
     if not contributions:
-        return BenchmarkResult(equity_curve=[], max_drawdown_pct=0.0, final_value=STARTING_CAPITAL)
+        return BenchmarkResult(
+            equity_curve=[],
+            max_drawdown_pct=0.0,
+            final_value=STARTING_CAPITAL,
+            universe=tuple(symbols),
+        )
 
     combined = contributions[0]
     for other in contributions[1:]:
@@ -186,13 +247,21 @@ def compute_benchmark_curve(
         equity_curve=curve,
         max_drawdown_pct=max_drawdown * 100,
         final_value=curve[-1][1],
+        universe=tuple(symbols),
+        window_start=curve[0][0],
+        window_end=curve[-1][0],
     )
 
 
-async def record_benchmark_curve(session: AsyncSession, curve: list[tuple[date, float]]) -> None:
+async def record_benchmark_curve(session: AsyncSession, benchmark: BenchmarkResult) -> None:
     """Upsert, not append-only: benchmark_equity is a recomputed curve, not
     an event log (see core/db.py's BenchmarkEquity docstring) -- rerunning
     against the same window legitimately replaces a date's value rather
-    than accumulating duplicate rows for it."""
-    for day, equity in curve:
-        await session.execute(_UPSERT_BENCHMARK_EQUITY, {"date": day, "equity": equity})
+    than accumulating duplicate rows for it. Keyed per universe (migration
+    0018): previously keyed on date alone, so every spec's curve
+    overwrote every other universe's for the same date."""
+    key = universe_key(benchmark.universe)
+    for day, equity in benchmark.equity_curve:
+        await session.execute(
+            _UPSERT_BENCHMARK_EQUITY, {"universe_key": key, "date": day, "equity": equity}
+        )
