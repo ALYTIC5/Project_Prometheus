@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -527,7 +528,15 @@ async def _run_research() -> list[str]:
             priority=0, expected_information_value=0.0, estimated_cost=0.0, max_attempts=3,
         )
 
-    ran = await drain_queue()
+    # Half the research interval for backtests, leaving the rest for
+    # validation/evolution/LLM so the cycle actually completes and
+    # mark_run fires -- an operational budget (same class of choice as
+    # _GRID_LOOKBACK_DAYS), not a statistical threshold. See
+    # drain_queue's `deadline` docstring for the incident behind it.
+    phase_started = time.monotonic()
+    ran = await drain_queue(deadline=phase_started + _RESEARCH_INTERVAL_SECONDS * 0.5)
+    print(f"research: drained {len(ran)} job(s) in {time.monotonic() - phase_started:.0f}s")
+    phase_started = time.monotonic()
 
     # The Oracle (PROMPTS.md PROMPT 5): re-scores every symbol's grid
     # against real PBO/DSR/decay/regime evidence and writes
@@ -567,6 +576,7 @@ async def _run_research() -> list[str]:
     # "one symbol's grid runs once" bounding rather than growing this
     # cycle's work by however many children get produced.
     async with get_session() as session:
+        print(f"research: validated {len(validated)} in {time.monotonic() - phase_started:.0f}s")
         evolved_job_ids = await _run_evolution_step(session)
         await session.commit()
 

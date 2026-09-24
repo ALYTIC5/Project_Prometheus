@@ -1052,16 +1052,30 @@ async def _run_job(job: Job) -> str:
         )
 
 
-async def drain_queue(*, worker_id: str | None = None, max_jobs: int | None = None) -> list[str]:
-    """Claims and runs jobs until the queue has none runnable or max_jobs
-    is reached (None = drain fully -- the scheduled-worker cron use case,
-    PROMPTS.md PROMPT 7 adds the schedule that calls this). Each claim is
-    committed in its own transaction before _run_job does any work, per
-    queue.claim's documented rule."""
+async def drain_queue(
+    *,
+    worker_id: str | None = None,
+    max_jobs: int | None = None,
+    deadline: float | None = None,
+) -> list[str]:
+    """Claims and runs jobs until the queue has none runnable, max_jobs is
+    reached, or time.monotonic() passes `deadline` (None = no limit). Each
+    claim is committed in its own transaction before _run_job does any
+    work, per queue.claim's documented rule.
+
+    `deadline` exists because an unbounded drain (thousands of pending
+    jobs, several hundred of them ML walk-forward fits at ~10s each) ran
+    longer than the research concern's own 30-minute slot: validation,
+    evolution and mark_run all sit AFTER the drain, so the cycle never
+    completed and research's last_run_at froze for hours (2026-09-24).
+    Jobs left unclaimed simply stay pending for the next cycle."""
     resolved_worker_id = worker_id or f"runner-{uuid.uuid4().hex[:12]}"
     experiment_ids: list[str] = []
     ran = 0
     while max_jobs is None or ran < max_jobs:
+        if deadline is not None and time.monotonic() >= deadline:
+            print(f"drain_queue: time budget reached after {ran} job(s); rest stay pending")
+            break
         async with get_session() as session:
             job = await claim(session, worker_id=resolved_worker_id)
             await session.commit()
