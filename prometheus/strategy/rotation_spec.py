@@ -25,6 +25,13 @@ ROTATION_FAMILY_RELATIVE_STRENGTH_TOP3 = "RELATIVE_STRENGTH_TOP3"
 ROTATION_FAMILY_SECTOR_MEAN_REVERSION = "SECTOR_MEAN_REVERSION"
 ROTATION_FAMILY_GTAA_SMA = "GTAA_SMA_TIMING"
 ROTATION_FAMILY_EQUAL_WEIGHT = "EQUAL_WEIGHT_BASELINE"
+ROTATION_FAMILY_DAA = "DEFENSIVE_ASSET_ALLOCATION"
+ROTATION_FAMILY_PAA = "PROTECTIVE_ASSET_ALLOCATION"
+ROTATION_FAMILY_ACCELERATING_DUAL_MOMENTUM = "ACCELERATING_DUAL_MOMENTUM"
+ROTATION_FAMILY_RISK_PARITY = "RISK_PARITY_INVERSE_VOL"
+ROTATION_FAMILY_MIN_VARIANCE = "MINIMUM_VARIANCE"
+ROTATION_FAMILY_FIFTY_TWO_WEEK_HIGH = "FIFTY_TWO_WEEK_HIGH"
+ROTATION_FAMILY_RESIDUAL_MOMENTUM = "RESIDUAL_MOMENTUM"
 
 ROTATION_FAMILIES = (
     ROTATION_FAMILY_SECTOR_MOMENTUM,
@@ -33,6 +40,13 @@ ROTATION_FAMILIES = (
     ROTATION_FAMILY_SECTOR_MEAN_REVERSION,
     ROTATION_FAMILY_GTAA_SMA,
     ROTATION_FAMILY_EQUAL_WEIGHT,
+    ROTATION_FAMILY_DAA,
+    ROTATION_FAMILY_PAA,
+    ROTATION_FAMILY_ACCELERATING_DUAL_MOMENTUM,
+    ROTATION_FAMILY_RISK_PARITY,
+    ROTATION_FAMILY_MIN_VARIANCE,
+    ROTATION_FAMILY_FIFTY_TWO_WEEK_HIGH,
+    ROTATION_FAMILY_RESIDUAL_MOMENTUM,
 )
 
 # Which optional fields each family actually reads -- a model_validator
@@ -45,8 +59,27 @@ _FAMILY_PARAMS: dict[str, tuple[str, ...]] = {
     ROTATION_FAMILY_SECTOR_MEAN_REVERSION: ("lookback_days", "top_n"),
     ROTATION_FAMILY_GTAA_SMA: ("lookback_days",),
     ROTATION_FAMILY_EQUAL_WEIGHT: (),
+    # DAA (Keller & Keuning 2016): universe = (canary_1, canary_2,
+    # offensive_1, ..., offensive_N, defensive). top_n is the "breadth"
+    # B parameter; the 13612W momentum sub-lookbacks (1/3/6/12 months)
+    # are fixed by the construction's own definition, not swept.
+    ROTATION_FAMILY_DAA: ("top_n",),
+    # PAA (Keller & Keuning 2017): universe = (offensive_1, ...,
+    # offensive_N, defensive). protection_factor is the paper's own
+    # explicitly-varied "a" parameter; lookback_days is the SMA window.
+    ROTATION_FAMILY_PAA: ("lookback_days", "top_n", "protection_factor"),
+    # Accelerating Dual Momentum (Ludlow & Hanly 2018): universe =
+    # (equity_leg_1, ..., equity_leg_N, defensive_leg), same convention
+    # as DUAL_MOMENTUM_GEM. The 1/3/6-month sub-lookbacks are fixed by
+    # the construction's own definition, not swept.
+    ROTATION_FAMILY_ACCELERATING_DUAL_MOMENTUM: (),
+    ROTATION_FAMILY_RISK_PARITY: ("lookback_days",),
+    ROTATION_FAMILY_MIN_VARIANCE: ("lookback_days",),
+    ROTATION_FAMILY_FIFTY_TWO_WEEK_HIGH: ("lookback_days", "top_n"),
+    # RESIDUAL_MOMENTUM: universe = (benchmark_symbol, pool_1, ..., pool_N).
+    ROTATION_FAMILY_RESIDUAL_MOMENTUM: ("lookback_days", "top_n"),
 }
-_ALL_PARAM_FIELDS = ("lookback_days", "top_n")
+_ALL_PARAM_FIELDS = ("lookback_days", "top_n", "protection_factor")
 
 # config_hash()'s identity fields -- everything that changes this spec's
 # actual backtested BEHAVIOR. parent_id/description/source are
@@ -54,7 +87,7 @@ _ALL_PARAM_FIELDS = ("lookback_days", "top_n")
 # already makes.
 _IDENTITY_FIELDS = (
     "family", "universe", "timeframe", "lookback_days", "top_n",
-    "rebalance_frequency_days", "expected_horizon",
+    "protection_factor", "rebalance_frequency_days", "expected_horizon",
 )
 
 
@@ -66,6 +99,10 @@ class RotationSpec(BaseModel):
     timeframe: str
     lookback_days: int | None = None
     top_n: int | None = None
+    # PAA's own "protection factor" (a): Keller & Keuning's paper
+    # explicitly varies this itself (a=0..2), so sweeping it is not an
+    # invented threshold -- it's the cited source's own design axis.
+    protection_factor: float | None = None
     rebalance_frequency_days: int
     expected_horizon: int
 
@@ -95,6 +132,8 @@ class RotationSpec(BaseModel):
             raise ValueError("lookback_days must be positive")
         if self.top_n is not None and not (0 < self.top_n <= len(self.universe)):
             raise ValueError("top_n must be in (0, len(universe)]")
+        if self.protection_factor is not None and self.protection_factor <= 0.0:
+            raise ValueError("protection_factor must be positive")
         return self
 
     def config_hash(self) -> str:
