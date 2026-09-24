@@ -44,6 +44,7 @@ from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config
 from prometheus.backtest.engine import run_backtest
 from prometheus.backtest.portfolio_engine import run_portfolio_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, ValidationResult, get_session
+from prometheus.core.health import record_failure
 from prometheus.core.ids import next_experiment_id, next_strategy_id
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed
@@ -407,7 +408,11 @@ async def validate_specs(
         try:
             validation_metrics = compute_metrics(result.equity_curve, result.turnover, bars, spec)
         except Exception as exc:
-            print(f"validate_grid: metrics failed for {spec.config_hash()}: {exc!r}")
+            record_failure(
+                "research",
+                exc,
+                context=f"validate_grid family={spec.family} hash={spec.config_hash()}",
+            )
             continue
         validated_specs.append((spec, result, validation_metrics))
         if validation_metrics.risk is not None and validation_metrics.risk.sharpe is not None:
@@ -429,7 +434,28 @@ async def validate_specs(
         if row is None:
             continue  # run_one hasn't recorded this spec yet -- next cycle
         experiment_id, strategy_id = row.id, row.strategy_id
-        decay_profile = compute_decay(bars, spec)
+        decay_metric_failure: str | None = None
+        try:
+            decay_profile = compute_decay(bars, spec)
+        except Exception as exc:
+            # Same independence rule compute_metrics already applies:
+            # decay failing must not drop a spec that already has real
+            # risk/turnover/IC evidence -- fall back to an honestly-empty
+            # DecayProfile and record the failure, rather than letting it
+            # propagate into the `except Exception: continue` below and
+            # silently discard everything computed so far for this spec.
+            decay_metric_failure = repr(exc)
+            decay_profile = DecayProfile(
+                ic_by_horizon={},
+                claimed_horizon=spec.expected_horizon,
+                claimed_horizon_ic=None,
+                claimed_horizon_p_value=None,
+                has_power_at_claimed_horizon=None,
+            )
+
+        metric_failures = dict(validation_metrics.metric_failures)
+        if decay_metric_failure is not None:
+            metric_failures["decay"] = decay_metric_failure
 
         try:
             await _validate_one_spec(
@@ -438,6 +464,7 @@ async def validate_specs(
                 result=result,
                 validation_metrics=validation_metrics,
                 decay_profile=decay_profile,
+                metric_failures=metric_failures,
                 experiment_id=experiment_id,
                 strategy_id=strategy_id,
                 pbo_value=pbo_value,
@@ -453,7 +480,11 @@ async def validate_specs(
             # worker's own drain_queue applies the identical isolation
             # rule per job via fail(), this is the same principle applied
             # per spec inside one validation pass.
-            print(f"validate_grid: skipping {spec.config_hash()}: {exc!r}")
+            record_failure(
+                "research",
+                exc,
+                context=f"validate_grid family={spec.family} hash={spec.config_hash()}",
+            )
             continue
         experiment_ids.append(experiment_id)
 
@@ -623,9 +654,12 @@ async def validate_rotation_specs(
                 # instrument classify_current_regime could read.
                 current_regime="UNKNOWN",
                 cluster_info=cluster_info_by_hash.get(spec.config_hash()),
+                metric_failures=validation_metrics.metric_failures,
             )
         except Exception as exc:
-            print(f"validate_rotation_specs: skipping {spec.config_hash()}: {exc!r}")
+            record_failure(
+                "research", exc, context=f"validate_rotation_specs hash={spec.config_hash()}"
+            )
             continue
         experiment_ids.append(experiment_id)
 
@@ -648,6 +682,7 @@ async def _validate_one_spec(
     n_trials_for_deflation: int,
     current_regime: str,
     cluster_info: dict[str, Any] | None,
+    metric_failures: dict[str, str],
 ) -> None:
     strategy_equity_values = [equity for _, equity in result.equity_curve]
 
@@ -687,6 +722,7 @@ async def _validate_one_spec(
         turnover=result.turnover,
         consistent_across_regimes=consistent_across_regimes,
         previous_verdict=prior.verdict if prior is not None else None,
+        metric_failures=tuple(metric_failures),
     )
     decision_result = decide(evidence)
 
@@ -714,6 +750,12 @@ async def _validate_one_spec(
         # return variance) -- an honest "not clustered", not a fabricated
         # singleton.
         "cluster": cluster_info,
+        # Which named metrics failed to compute and why, never silently
+        # absorbed -- see validation/metrics.py's ValidationMetrics.
+        # metric_failures docstring. Empty for the overwhelming majority
+        # of specs; non-empty is a real signal something needs attention,
+        # surfaced verbatim rather than guessed away.
+        "metric_failures": metric_failures,
     }
 
     session.add(

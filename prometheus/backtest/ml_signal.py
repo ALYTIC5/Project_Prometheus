@@ -81,6 +81,7 @@ def _walk_forward_signal(
     labels = frame["label"].to_numpy()
 
     raw = [0.0] * n
+    strength = [0.0] * n
     for checkpoint in range(train_window, n, retrain_interval):
         train_start = checkpoint - train_window
         train_features = features[train_start:checkpoint]
@@ -130,10 +131,19 @@ def _walk_forward_signal(
         probabilities = model.predict_proba(scoreable_features)
         finite_offsets = np.flatnonzero(finite_rows)
         for offset, prob_row in zip(finite_offsets, probabilities, strict=True):
-            raw[checkpoint + offset] = 1.0 if prob_row[up_index] >= predict_threshold else 0.0
+            predicted_up_probability = prob_row[up_index]
+            raw[checkpoint + offset] = 1.0 if predicted_up_probability >= predict_threshold else 0.0
+            # Centered on 0: the continuous confidence the model's fit at
+            # THIS checkpoint assigned to "up", same predict_proba() call
+            # the binary position already thresholds -- not a second,
+            # separately-fit estimate.
+            strength[checkpoint + offset] = predicted_up_probability - 0.5
 
     raw_series = pl.Series("_raw_prediction", raw)
-    return frame.with_columns(raw_series.shift(1).fill_null(0.0).alias("position"))
+    return frame.with_columns(
+        raw_series.shift(1).fill_null(0.0).alias("position"),
+        pl.Series("_signal_strength", strength),
+    )
 
 
 # RANDOM_FOREST -- a small, shallow forest: cheap and hard to overfit on

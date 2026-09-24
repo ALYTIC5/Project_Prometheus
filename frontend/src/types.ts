@@ -330,8 +330,32 @@ export interface PipelineConcern {
   is_due: boolean;
 }
 
+/** One (concern, exception_type) tally from core/health.py's
+ * worker_health table, over the route's own recent window. */
+export interface PipelineRecentFailure {
+  concern: string;
+  exception_type: string;
+  failure_count: number;
+  sample_message: string | null;
+  last_seen_at: string;
+}
+
+/** Real job outcomes from `jobs`/`jobs_dead_letter` over the route's own
+ * recent window -- failure_rate is null on zero completed jobs (nothing
+ * ran, not "nothing failed"). unhealthy is the >20%-in-window banner
+ * trigger. */
+export interface PipelineJobHealth {
+  window_hours: number;
+  succeeded: number;
+  dead_lettered: number;
+  failure_rate: number | null;
+  unhealthy: boolean;
+}
+
 export interface PipelineStatusResponse {
   concerns: PipelineConcern[];
+  recent_failures: PipelineRecentFailure[];
+  job_health: PipelineJobHealth;
 }
 
 /** GET /research-papers/'s shape -- PROMPT 9's daily arXiv ingestion. */

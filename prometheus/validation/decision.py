@@ -52,6 +52,15 @@ class Evidence:
     # of them until this module has run at least twice against the same
     # fingerprint). RETIRE is only reachable once something WAS promoted.
     previous_verdict: str | None = None
+    # Names of any metric that failed to compute for this spec (see
+    # validation/metrics.py's ValidationMetrics.metric_failures) --
+    # non-empty means the evidence behind this decision is incomplete,
+    # not just imperfect. Never invented as a reason to reject outright
+    # (WORSE_THAN_HOLDING/REJECT/DORMANT/QUARANTINE/REGIME_SPECIALIST
+    # don't depend on IC/ICIR being trustworthy in the "good news"
+    # direction, so those verdicts stand on their own); only PROMOTE is
+    # gated, below.
+    metric_failures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,8 +101,16 @@ def decide(evidence: Evidence) -> DecisionResult:
         )
 
     # 5. Survives deflation and clears PBO -- the strongest evidence
-    #    this pipeline can currently produce.
+    #    this pipeline can currently produce. Incomplete evidence must
+    #    never look like complete evidence: a metric that failed to
+    #    compute (not merely absent-by-design) holds this at
+    #    CONTINUE_RESEARCH rather than reaching VALIDATED/CHAMPION-
+    #    eligible status on a partial read.
     if dsr is not None and dsr > 0 and (pbo is None or pbo <= _PBO_OVERFIT_CUTOFF):
+        if evidence.metric_failures:
+            return DecisionResult(
+                Verdict.CONTINUE_RESEARCH, score_result.score, ["INCOMPLETE_EVIDENCE"]
+            )
         return DecisionResult(Verdict.PROMOTE, score_result.score, [])
 
     # 6. DSR computed but non-positive -- doesn't survive multiple-testing

@@ -71,6 +71,11 @@ from prometheus.core.cadence import (
     RESEARCH_INTERVAL_SECONDS as _RESEARCH_INTERVAL_SECONDS,
 )
 from prometheus.core.db import get_session
+from prometheus.core.health import (
+    alert_discord_for_threshold_breaches,
+    flush_cycle,
+    record_failure,
+)
 from prometheus.core.provenance import code_sha
 from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingest_etf import backfill_etf
@@ -386,7 +391,7 @@ async def _run_ingest() -> None:
     try:
         await backfill_etf(_INGEST_CATCHUP_DAYS)
     except Exception as exc:
-        print(f"worker: ETF ingest failed (crypto ingest unaffected): {exc!r}")
+        record_failure("ingest", exc, context="etf")
 
 
 async def _run_llm_ingestion() -> list[str]:
@@ -445,7 +450,7 @@ async def _run_ablation() -> list[str]:
                 result = await register_fn(session)
             verdicts.append(f"{name}={result.verdict}")
         except Exception as exc:
-            print(f"worker: ablation component {name!r} failed: {exc!r}")
+            record_failure("ablation", exc, context=f"component={name!r}")
 
     await _register(
         "evolution",
@@ -587,7 +592,7 @@ async def _run_research() -> list[str]:
             if llm_job_id is not None:
                 print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
         except Exception as exc:
-            print(f"worker: LLM hypothesis step failed: {exc!r}")
+            record_failure("research", exc, context="llm_hypothesis_step")
     if evolved_job_ids:
         print(f"worker: enqueued {len(evolved_job_ids)} evolved candidate(s): {evolved_job_ids}")
 
@@ -843,7 +848,7 @@ async def _run_paper() -> None:
                         as_of_cutoff=as_of_cutoff,
                     )
         except Exception as exc:
-            print(f"worker: paper concern failed for strategy {row.id}: {exc!r}")
+            record_failure("paper", exc, context=f"strategy_id={row.id}")
             continue
 
 
@@ -865,7 +870,9 @@ async def run_once() -> list[str]:
         if reaped:
             print(f"worker: reclaimed {len(reaped)} stale claim(s): {reaped}")
     except Exception as exc:  # I9: one concern's failure must not sink the tick
-        print(f"worker: reap_stale_claims failed: {exc!r}")
+        record_failure("reap_stale_claims", exc)
+
+    cycle_started_at = datetime.now(UTC)
 
     ran: list[str] = []
     async with get_session() as session:
@@ -897,7 +904,7 @@ async def run_once() -> list[str]:
             async with get_session() as session:
                 await mark_run(session, concern="ingest")
         except Exception as exc:
-            print(f"worker: ingest concern failed: {exc!r}")
+            record_failure("ingest", exc)
 
     if research_due:
         try:
@@ -905,7 +912,7 @@ async def run_once() -> list[str]:
             async with get_session() as session:
                 await mark_run(session, concern="research")
         except Exception as exc:
-            print(f"worker: research concern failed: {exc!r}")
+            record_failure("research", exc)
 
     if paper_due:
         try:
@@ -913,7 +920,7 @@ async def run_once() -> list[str]:
             async with get_session() as session:
                 await mark_run(session, concern="paper")
         except Exception as exc:
-            print(f"worker: paper concern failed: {exc!r}")
+            record_failure("paper", exc)
 
     if llm_ingestion_due:
         try:
@@ -923,7 +930,7 @@ async def run_once() -> list[str]:
             if ingested:
                 print(f"worker: ingested {len(ingested)} paper(s): {ingested}")
         except Exception as exc:
-            print(f"worker: llm_ingestion concern failed: {exc!r}")
+            record_failure("llm_ingestion", exc)
 
     if ablation_due:
         try:
@@ -933,7 +940,20 @@ async def run_once() -> list[str]:
             if verdicts:
                 print(f"worker: ablation verdicts: {verdicts}")
         except Exception as exc:
-            print(f"worker: ablation concern failed: {exc!r}")
+            record_failure("ablation", exc)
+
+    # Step 4's minimal monitoring: persist this cycle's failure tally
+    # (empty -> no rows, no-op) and alert on any exception type that
+    # crossed the threshold -- unconditional, so a cycle that failed
+    # entirely (e.g. every concern's is_due check itself raised) still
+    # gets whatever was recorded flushed rather than losing it silently.
+    try:
+        async with get_session() as session:
+            flushed = await flush_cycle(session, cycle_started_at=cycle_started_at)
+            await session.commit()
+        alert_discord_for_threshold_breaches(flushed)
+    except Exception as exc:
+        print(f"worker: flush_cycle failed (failure tally lost this cycle): {exc!r}")
 
     return ran
 

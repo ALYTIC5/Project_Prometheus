@@ -99,6 +99,27 @@ def test_non_positive_dsr_is_quarantined_not_rejected() -> None:
     assert "DSR_NOT_POSITIVE" in result.reason_codes
 
 
+def test_metric_failure_blocks_promote_even_with_full_positive_evidence() -> None:
+    """Found 2026-09-24: a metric that failed to compute (a real bug, not
+    a declared absence) must never let a spec reach PROMOTE/VALIDATED on
+    partial evidence -- otherwise a family whose IC computation silently
+    broke would still get promoted on Sharpe/PBO/DSR alone, looking
+    exactly like a fully-evidenced PROMOTE from the outside."""
+    evidence = _evidence(metric_failures=("information_coefficient",))
+    result = decide(evidence)
+    assert result.verdict == Verdict.CONTINUE_RESEARCH
+    assert "INCOMPLETE_EVIDENCE" in result.reason_codes
+
+
+def test_no_metric_failures_still_promotes() -> None:
+    """The gate only fires on a non-empty metric_failures -- the default
+    empty tuple must not regress test_promotes_on_full_positive_evidence's
+    own guarantee."""
+    evidence = _evidence(metric_failures=())
+    result = decide(evidence)
+    assert result.verdict == Verdict.PROMOTE
+
+
 def test_retire_only_reachable_from_a_prior_promote() -> None:
     fresh = decide(
         _evidence(

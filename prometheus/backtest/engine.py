@@ -122,11 +122,12 @@ def _sma_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFrame:
         pl.col("close").rolling_mean(fast).alias("_fast"),
         pl.col("close").rolling_mean(slow).alias("_slow"),
     ).with_columns(
+        (pl.col("_fast") - pl.col("_slow")).alias("_signal_strength"),
         (pl.col("_fast") > pl.col("_slow"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -145,11 +146,18 @@ def _bollinger_signal(bars: pl.DataFrame, lookback: int, band_multiplier: float)
     ).with_columns(
         (pl.col("_mid") - band_multiplier * pl.col("_std")).alias("_lower")
     ).with_columns(
+        # Distance below the mean in std units, sign-flipped so "more
+        # oversold" (lower close, further below the lower band) reads as a
+        # HIGHER signal strength -- the same direction the mean-reversion
+        # condition itself acts on. -_std guarded against 0 the same way
+        # the position condition already tolerates it (comparison against
+        # a NaN/inf band is simply never favorable).
+        ((pl.col("_mid") - pl.col("close")) / pl.col("_std")).alias("_signal_strength"),
         (pl.col("close") < pl.col("_lower"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -236,11 +244,16 @@ def _rsi_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFr
             (100.0 - 100.0 / (1.0 + pl.col("_avg_gain") / pl.col("_avg_loss"))).alias("_rsi")
         )
         .with_columns(
+            # 50 is RSI's own published centerline (Wilder's own neutral
+            # point) -- sign-flipped (50 - rsi) so LOWER RSI (more
+            # oversold, closer to a long entry) reads as a HIGHER signal
+            # strength, matching every other oversold-style family here.
+            (50.0 - pl.col("_rsi")).alias("_signal_strength"),
             (pl.col("_rsi") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -263,11 +276,15 @@ def _macd_signal(bars: pl.DataFrame, fast: int, slow: int, signal: int) -> pl.Da
         .with_columns((pl.col("_ema_fast") - pl.col("_ema_slow")).alias("_macd"))
         .with_columns(pl.col("_macd").ewm_mean(span=signal, adjust=False).alias("_signal_line"))
         .with_columns(
+            # The MACD histogram (MACD line minus its own signal line) --
+            # Gerald Appel's own construction, the standard continuous
+            # reading of "how strongly is MACD confirming."
+            (pl.col("_macd") - pl.col("_signal_line")).alias("_signal_strength"),
             (pl.col("_macd") > pl.col("_signal_line"))
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -298,11 +315,12 @@ def _stochastic_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl
             ).alias("_pct_k")
         )
         .with_columns(
+            (50.0 - pl.col("_pct_k")).alias("_signal_strength"),
             (pl.col("_pct_k") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -327,16 +345,22 @@ def _parabolic_sar_signal(
     position, same discipline every other family's signal ends with."""
     highs = bars["high"].to_numpy()
     lows = bars["low"].to_numpy()
+    closes = bars["close"].to_numpy()
     n = len(highs)
     raw = [0.0] * n
+    sar_values = [float("nan")] * n
     if n < 2:
-        return bars.with_columns(pl.Series("position", raw))
+        return bars.with_columns(
+            pl.Series("position", raw),
+            pl.Series("_signal_strength", [0.0] * n),
+        )
 
     uptrend = True
     sar = float(lows[0])
     ep = float(highs[0])
     af = af_start
     raw[0] = 1.0
+    sar_values[0] = sar
 
     for i in range(1, n):
         sar = sar + af * (ep - sar)
@@ -363,9 +387,17 @@ def _parabolic_sar_signal(
                 ep = float(lows[i])
                 af = min(af + af_increment, af_max)
         raw[i] = 1.0 if uptrend else 0.0
+        sar_values[i] = sar
 
     raw_series = pl.Series("_raw_trend", raw)
-    return bars.with_columns(raw_series.shift(1).fill_null(0.0).alias("position"))
+    # close - sar: positive/growing the further price has pulled away from
+    # its own stop-and-reverse level in the trend's favor -- the natural
+    # continuous reading of "how strong is this SAR trend right now,"
+    # signed the same direction as the uptrend=long position convention.
+    strength = pl.Series("_signal_strength", (closes - np.array(sar_values)).tolist())
+    return bars.with_columns(
+        raw_series.shift(1).fill_null(0.0).alias("position"), strength
+    )
 
 
 def _keltner_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.DataFrame:
@@ -400,7 +432,10 @@ def _keltner_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> pl.
             .when(pl.col("close") < pl.col("_mid"))
             .then(0.0)
             .otherwise(None)
-            .alias("_raw_signal")
+            .alias("_raw_signal"),
+            # ATR-normalized distance above the midline -- how far price has
+            # broken out relative to this family's own volatility band.
+            ((pl.col("close") - pl.col("_mid")) / pl.col("_atr")).alias("_signal_strength"),
         )
         .with_columns(
             pl.col("_raw_signal")
@@ -433,11 +468,14 @@ def _williams_r_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl
             ).alias("_pct_r")
         )
         .with_columns(
+            # %R already sits in (-100, 0); -50 recenters it around 0 the
+            # same way RSI/%K are recentered around their own midpoints.
+            (-50.0 - pl.col("_pct_r")).alias("_signal_strength"),
             (pl.col("_pct_r") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -472,11 +510,12 @@ def _cci_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFr
             ).alias("_cci")
         )
         .with_columns(
+            (-pl.col("_cci")).alias("_signal_strength"),
             (pl.col("_cci") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -497,11 +536,12 @@ def _awesome_oscillator_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.D
         )
         .with_columns((pl.col("_ao_fast") - pl.col("_ao_slow")).alias("_ao"))
         .with_columns(
+            pl.col("_ao").alias("_signal_strength"),
             (pl.col("_ao") > 0.0)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -526,7 +566,9 @@ def _supertrend_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> 
     discipline every other family's signal ends with."""
     n = bars.height
     if n < lookback + 1:
-        return bars.with_columns(pl.Series("position", [0.0] * n))
+        return bars.with_columns(
+            pl.Series("position", [0.0] * n), pl.Series("_signal_strength", [0.0] * n)
+        )
 
     prev_close = pl.col("close").shift(1)
     true_range = pl.max_horizontal(
@@ -543,6 +585,7 @@ def _supertrend_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> 
     closes = frame["close"].to_numpy()
 
     raw = [0.0] * n
+    strength = [0.0] * n
     final_upper = float("nan")
     final_lower = float("nan")
     uptrend = True
@@ -570,9 +613,19 @@ def _supertrend_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -> 
         elif closes[i] > final_upper:
             uptrend = True
         raw[i] = 1.0 if uptrend else 0.0
+        # ATR-normalized distance from the currently ACTIVE line (lower
+        # band while uptrend, upper band while downtrend) -- the same
+        # "how far has price pulled away from its own stop" reading
+        # _parabolic_sar_signal exposes, continuous and signed in the
+        # position's own direction.
+        active_line = final_lower if uptrend else final_upper
+        strength[i] = (closes[i] - active_line) / atrs[i] if atrs[i] != 0.0 else 0.0
 
     raw_series = pl.Series("_raw_trend", raw)
-    return frame.with_columns(raw_series.shift(1).fill_null(0.0).alias("position"))
+    return frame.with_columns(
+        raw_series.shift(1).fill_null(0.0).alias("position"),
+        pl.Series("_signal_strength", strength),
+    )
 
 
 def _trix_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
@@ -592,11 +645,12 @@ def _trix_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
             ).alias("_trix")
         )
         .with_columns(
+            pl.col("_trix").alias("_signal_strength"),
             (pl.col("_trix") > 0.0)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -621,11 +675,12 @@ def _keltner_reversion_signal(bars: pl.DataFrame, lookback: int, multiplier: flo
         )
         .with_columns((pl.col("_mid") - multiplier * pl.col("_atr")).alias("_lower"))
         .with_columns(
+            ((pl.col("_lower") - pl.col("close")) / pl.col("_atr")).alias("_signal_strength"),
             (pl.col("close") < pl.col("_lower"))
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -655,11 +710,12 @@ def _bollinger_pctb_signal(
             .alias("_pctb")
         )
         .with_columns(
+            (0.5 - pl.col("_pctb")).alias("_signal_strength"),
             (pl.col("_pctb") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -679,11 +735,12 @@ def _zscore_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.Dat
         )
         .with_columns(((pl.col("close") - pl.col("_mean")) / pl.col("_std")).alias("_zscore"))
         .with_columns(
+            (-pl.col("_zscore")).alias("_signal_strength"),
             (pl.col("_zscore") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -698,7 +755,8 @@ def _ibs_signal(bars: pl.DataFrame, oversold: float) -> pl.DataFrame:
     return bars.with_columns(
         ((pl.col("close") - pl.col("low")) / (pl.col("high") - pl.col("low"))).alias("_ibs")
     ).with_columns(
-        (pl.col("_ibs") < oversold).cast(pl.Float64).shift(1).fill_null(0.0).alias("position")
+        (0.5 - pl.col("_ibs")).alias("_signal_strength"),
+        (pl.col("_ibs") < oversold).cast(pl.Float64).shift(1).fill_null(0.0).alias("position"),
     )
 
 
@@ -708,13 +766,21 @@ def _n_day_low_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     -- a fresh low is a fresh low the day it happens). Stateless per-bar
     condition, same shape as every other mean-reversion family here."""
     return bars.with_columns(
-        pl.col("close").rolling_min(lookback).alias("_rolling_low")
+        pl.col("close").rolling_min(lookback).alias("_rolling_low"),
+        pl.col("close").rolling_mean(lookback).alias("_rolling_mean"),
     ).with_columns(
+        # How far below the window's own recent average close sits --
+        # rolling_low itself is always <= close by construction (it's the
+        # min OF the window close belongs to), so it can't measure
+        # "how oversold"; the rolling mean can.
+        ((pl.col("_rolling_mean") - pl.col("close")) / pl.col("_rolling_mean")).alias(
+            "_signal_strength"
+        ),
         (pl.col("close") <= pl.col("_rolling_low"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -728,11 +794,12 @@ def _consecutive_down_signal(bars: pl.DataFrame, run_length: int) -> pl.DataFram
     return bars.with_columns(is_down.alias("_down")).with_columns(
         pl.col("_down").rolling_sum(run_length).alias("_down_run")
     ).with_columns(
+        pl.col("_down_run").cast(pl.Float64).alias("_signal_strength"),
         (pl.col("_down_run") >= run_length)
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -746,11 +813,12 @@ def _sma_distance_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> 
     return bars.with_columns(
         pl.col("close").rolling_mean(lookback).alias("_sma")
     ).with_columns(
+        ((pl.col("_sma") - pl.col("close")) / pl.col("_sma")).alias("_signal_strength"),
         (((pl.col("_sma") - pl.col("close")) / pl.col("_sma")) > oversold)
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -784,7 +852,8 @@ def _ultimate_oscillator_signal(
             (4.0 * pl.col(avgs[short]) + 2.0 * pl.col(avgs[mid]) + pl.col(avgs[long])) / 7.0 * 100.0
         ).alias("_uo")
     ).with_columns(
-        (pl.col("_uo") < oversold).cast(pl.Float64).shift(1).fill_null(0.0).alias("position")
+        (50.0 - pl.col("_uo")).alias("_signal_strength"),
+        (pl.col("_uo") < oversold).cast(pl.Float64).shift(1).fill_null(0.0).alias("position"),
     )
 
 
@@ -813,11 +882,12 @@ def _mfi_signal(bars: pl.DataFrame, lookback: int, oversold: float) -> pl.DataFr
             (100.0 - 100.0 / (1.0 + pl.col("_pos_sum") / pl.col("_neg_sum"))).alias("_mfi")
         )
         .with_columns(
+            (50.0 - pl.col("_mfi")).alias("_signal_strength"),
             (pl.col("_mfi") < oversold)
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -833,11 +903,12 @@ def _gap_fade_signal(bars: pl.DataFrame, threshold: float) -> pl.DataFrame:
     prev_close = pl.col("close").shift(1)
     gap = (pl.col("open") - prev_close) / prev_close
     return bars.with_columns(gap.alias("_gap")).with_columns(
+        (-pl.col("_gap")).alias("_signal_strength"),
         (pl.col("_gap") < -threshold)
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -851,11 +922,12 @@ def _ema_crossover_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataFr
         pl.col("close").ewm_mean(span=fast, adjust=False).alias("_fast"),
         pl.col("close").ewm_mean(span=slow, adjust=False).alias("_slow"),
     ).with_columns(
+        (pl.col("_fast") - pl.col("_slow")).alias("_signal_strength"),
         (pl.col("_fast") > pl.col("_slow"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -871,11 +943,15 @@ def _triple_ma_alignment_signal(
         pl.col("close").rolling_mean(mid).alias("_mid"),
         pl.col("close").rolling_mean(slow).alias("_slow"),
     ).with_columns(
+        # fast-slow spread carries the alignment's own overall direction/
+        # strength; the mid tier is what the position condition uses to
+        # confirm ordering, not a second independent magnitude.
+        (pl.col("_fast") - pl.col("_slow")).alias("_signal_strength"),
         ((pl.col("_fast") > pl.col("_mid")) & (pl.col("_mid") > pl.col("_slow")))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -891,11 +967,12 @@ def _dema_crossover_signal(bars: pl.DataFrame, fast: int, slow: int) -> pl.DataF
     return bars.with_columns(
         _dema(fast).alias("_fast"), _dema(slow).alias("_slow")
     ).with_columns(
+        (pl.col("_fast") - pl.col("_slow")).alias("_signal_strength"),
         (pl.col("_fast") > pl.col("_slow"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -926,11 +1003,12 @@ def _hull_ma_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
         .with_columns((2.0 * pl.col("_wma_half") - pl.col("_wma_full")).alias("_raw_hma_input"))
         .with_columns(_wma(pl.col("_raw_hma_input"), sqrt_n).alias("_hma"))
         .with_columns(
+            (pl.col("_hma") - pl.col("_hma").shift(1)).alias("_signal_strength"),
             (pl.col("_hma") > pl.col("_hma").shift(1))
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -950,7 +1028,9 @@ def _kama_signal(bars: pl.DataFrame, lookback: int, fast_sc: int, slow_sc: int) 
     n = len(closes)
     kama = [0.0] * n
     if n <= lookback:
-        return bars.with_columns(pl.Series("position", [0.0] * n))
+        return bars.with_columns(
+            pl.Series("position", [0.0] * n), pl.Series("_signal_strength", [0.0] * n)
+        )
 
     fast_alpha = 2.0 / (fast_sc + 1.0)
     slow_alpha = 2.0 / (slow_sc + 1.0)
@@ -964,11 +1044,12 @@ def _kama_signal(bars: pl.DataFrame, lookback: int, fast_sc: int, slow_sc: int) 
 
     kama_series = pl.Series("_kama", kama)
     return bars.with_columns(kama_series).with_columns(
+        (pl.col("_kama") - pl.col("_kama").shift(1)).alias("_signal_strength"),
         (pl.col("_kama") > pl.col("_kama").shift(1))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -985,11 +1066,12 @@ def _tsmom_signal(bars: pl.DataFrame, lookback_days: int, skip_days: int) -> pl.
     lookback_close = pl.col("close").shift(lookback_days)
     trailing_return = (anchor_close - lookback_close) / lookback_close
     return bars.with_columns(trailing_return.alias("_tsmom_return")).with_columns(
+        pl.col("_tsmom_return").alias("_signal_strength"),
         (pl.col("_tsmom_return") > 0.0)
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -1039,11 +1121,12 @@ def _adx_di_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
         )
         .with_columns(pl.col("_dx").ewm_mean(alpha=alpha, adjust=False).alias("_adx"))
         .with_columns(
+            (pl.col("_plus_di") - pl.col("_minus_di")).alias("_signal_strength"),
             ((pl.col("_plus_di") > pl.col("_minus_di")) & (pl.col("_adx") > 25.0))
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -1072,11 +1155,12 @@ def _aroon_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
         * 100.0
     )
     return bars.with_columns(aroon_up.alias("_aroon_up"), aroon_down.alias("_aroon_down")).with_columns(
+        (pl.col("_aroon_up") - pl.col("_aroon_down")).alias("_signal_strength"),
         (pl.col("_aroon_up") > pl.col("_aroon_down"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -1104,11 +1188,12 @@ def _ichimoku_signal(
     ).shift(base)
     cloud_top = pl.max_horizontal(span_a, span_b_line)
     return bars.with_columns(cloud_top.alias("_cloud_top")).with_columns(
+        (pl.col("close") - pl.col("_cloud_top")).alias("_signal_strength"),
         (pl.col("close") > pl.col("_cloud_top"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -1141,11 +1226,12 @@ def _vortex_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
             (pl.col("_minus_vm_sum") / pl.col("_tr_sum")).alias("_minus_vi"),
         )
         .with_columns(
+            (pl.col("_plus_vi") - pl.col("_minus_vi")).alias("_signal_strength"),
             (pl.col("_plus_vi") > pl.col("_minus_vi"))
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -1170,7 +1256,8 @@ def _linreg_slope_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     return bars.with_columns(
         pl.col("close").rolling_map(_ols_slope, lookback).alias("_slope")
     ).with_columns(
-        (pl.col("_slope") > 0.0).cast(pl.Float64).shift(1).fill_null(0.0).alias("position")
+        pl.col("_slope").alias("_signal_strength"),
+        (pl.col("_slope") > 0.0).cast(pl.Float64).shift(1).fill_null(0.0).alias("position"),
     )
 
 
@@ -1198,11 +1285,12 @@ def _chandelier_exit_signal(bars: pl.DataFrame, lookback: int, multiplier: float
             (pl.col("_highest_high") - multiplier * pl.col("_atr")).alias("_stop")
         )
         .with_columns(
+            ((pl.col("close") - pl.col("_stop")) / pl.col("_atr")).alias("_signal_strength"),
             (pl.col("close") > pl.col("_stop"))
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -1216,11 +1304,12 @@ def _sma200_filter_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     return bars.with_columns(
         pl.col("close").rolling_mean(lookback).alias("_sma")
     ).with_columns(
+        ((pl.col("close") - pl.col("_sma")) / pl.col("_sma")).alias("_signal_strength"),
         (pl.col("close") > pl.col("_sma"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
@@ -1240,6 +1329,7 @@ def _ma_ribbon_signal(bars: pl.DataFrame, short: int, mid: int, long: int) -> pl
         )
         .with_columns((pl.col("_short") - pl.col("_long")).alias("_spread"))
         .with_columns(
+            pl.col("_spread").alias("_signal_strength"),
             (
                 (pl.col("_short") > pl.col("_mid"))
                 & (pl.col("_mid") > pl.col("_long"))
@@ -1248,7 +1338,7 @@ def _ma_ribbon_signal(bars: pl.DataFrame, short: int, mid: int, long: int) -> pl
             .cast(pl.Float64)
             .shift(1)
             .fill_null(0.0)
-            .alias("position")
+            .alias("position"),
         )
     )
 
@@ -1317,11 +1407,12 @@ def _atr_breakout_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -
     return bars.with_columns(
         prev_close.alias("_prev_close"), atr.alias("_atr")
     ).with_columns(
+        ((pl.col("close") - pl.col("_prev_close")) / pl.col("_atr")).alias("_signal_strength"),
         (pl.col("close") > pl.col("_prev_close") + multiplier * pl.col("_atr"))
         .cast(pl.Float64)
         .shift(1)
         .fill_null(0.0)
-        .alias("position")
+        .alias("position"),
     )
 
 
