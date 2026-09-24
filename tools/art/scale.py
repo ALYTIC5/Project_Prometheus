@@ -86,8 +86,34 @@ def _prop_max_width(key: str, rule: dict[str, Any]) -> int:
     return int(overrides.get(key, rule["max_width_px"]))
 
 
-def preflight(key: str, canvas: int) -> ScaleResult:
-    """Call before queueing a PixelLab job for `key` at square `canvas` px."""
+def _prop_canvas_height(key: str, rule: dict[str, Any]) -> int:
+    overrides: dict[str, int] = rule.get("canvas_height_overrides", {})
+    return int(overrides.get(key, rule.get("canvas_height", rule["canvas"])))
+
+
+def prop_canvas(key: str) -> tuple[int, int]:
+    """(width, height) to request for a `props` key. Upright props (trees,
+    bushes) get a taller canvas via `canvas_height_overrides` -- a square
+    canvas crops their crown (R2 pilot: olive_tree clipped top+bottom at
+    32x32). Width stays fixed at `scale.categories.props.canvas`."""
+    category = _category(key)
+    if category != "props":
+        raise ValueError(f"{key!r} is category {category!r}, not props")
+    rule, err = _category_rule(category, key)
+    if rule is None:
+        raise KeyError(err)
+    return int(rule["canvas"]), _prop_canvas_height(key, rule)
+
+
+def _normalize(canvas: int | tuple[int, int]) -> tuple[int, int]:
+    return canvas if isinstance(canvas, tuple) else (canvas, canvas)
+
+
+def preflight(key: str, canvas: int | tuple[int, int]) -> ScaleResult:
+    """Call before queueing a PixelLab job for `key`. `canvas` is a square
+    side length, or a (width, height) pair -- required for props via
+    `prop_canvas(key)`, since upright props need canvas_height > canvas."""
+    width, height = _normalize(canvas)
     category = _category(key)
     rule, err = _category_rule(category, key)
     if rule is None:
@@ -103,20 +129,21 @@ def preflight(key: str, canvas: int) -> ScaleResult:
             return ScaleResult(False, key, category, [str(exc)])
         margin = int(rule.get("canvas_margin_px", 0))
         expected = f"content width ~{target}px (backend footprint)"
-        if canvas < target + margin:
+        if width < target + margin:
             errors.append(
-                f"canvas {canvas}px cannot hold a {target}px-wide building "
+                f"canvas {width}px cannot hold a {target}px-wide building "
                 f"(+{margin}px margin); need >= {target + margin}"
             )
     elif kind == "tile":
         expected = f"tile width {tile_px}px"
-        if canvas != tile_px:
-            errors.append(f"tile canvas must be {tile_px}px, got {canvas}")
+        if width != tile_px:
+            errors.append(f"tile canvas must be {tile_px}px, got {width}")
     elif kind == "max_width":
-        want_canvas = int(rule["canvas"])
-        expected = f"canvas {want_canvas}px, content <= {_prop_max_width(key, rule)}px wide"
-        if canvas != want_canvas:
-            errors.append(f"{category} canvas must be {want_canvas}px, got {canvas}")
+        want_w = int(rule["canvas"])
+        want_h = _prop_canvas_height(key, rule)
+        expected = f"canvas {want_w}x{want_h}, content <= {_prop_max_width(key, rule)}px wide"
+        if (width, height) != (want_w, want_h):
+            errors.append(f"{key} canvas must be {want_w}x{want_h}, got {width}x{height}")
     else:
         errors.append(f"unknown scale rule {kind!r} for category {category!r}")
     return ScaleResult(not errors, key, category, errors, expected=expected)

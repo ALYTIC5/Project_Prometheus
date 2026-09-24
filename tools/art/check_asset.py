@@ -27,7 +27,7 @@ from PIL import Image
 class AssetCheckResult:
     ok: bool
     actual_size: tuple[int, int]
-    requested_size: int | None
+    requested_size: int | tuple[int, int] | None
     size_matches: bool
     has_alpha: bool
     is_empty: bool
@@ -37,12 +37,14 @@ class AssetCheckResult:
 
 def check_asset(
     path: Path,
-    requested_size: int | None = None,
+    requested_size: int | tuple[int, int] | None = None,
     edge_tolerance: int = 1,
     allow_edge_contact: bool = False,
 ) -> AssetCheckResult:
     """`allow_edge_contact`: set for tiles -- a ground tile is supposed to fill
-    its canvas edge to edge, so edge contact there is correct, not clipping."""
+    its canvas edge to edge, so edge contact there is correct, not clipping.
+    `requested_size` is a square side length, or a (width, height) pair for
+    non-square canvases (e.g. upright props needing extra height)."""
     img = Image.open(path).convert("RGBA")
     arr = np.array(img)
     width, height = img.size
@@ -54,12 +56,12 @@ def check_asset(
 
     size_matches = True
     if requested_size is not None:
-        size_matches = width == requested_size and height == requested_size
+        want_w, want_h = (
+            requested_size if isinstance(requested_size, tuple) else (requested_size,) * 2
+        )
+        size_matches = width == want_w and height == want_h
         if not size_matches:
-            errors.append(
-                f"size mismatch: requested {requested_size}x{requested_size}, "
-                f"got {width}x{height}"
-            )
+            errors.append(f"size mismatch: requested {want_w}x{want_h}, got {width}x{height}")
 
     if is_empty:
         errors.append("image is fully transparent (empty)")
@@ -107,7 +109,9 @@ if __name__ == "__main__":
         raise SystemExit(1)
     key = argv[argv.index("--key") + 1]
     args = [a for i, a in enumerate(argv) if a != "--key" and (i == 0 or argv[i - 1] != "--key")]
-    requested = int(args[1]) if len(args) > 1 else None
+    requested: int | tuple[int, int] | None = None
+    if len(args) > 1:
+        requested = tuple(int(x) for x in args[1].split("x")) if "x" in args[1] else int(args[1])  # type: ignore[assignment]
     is_tile = compose_prompt._find_entry(key)[0] == "tiles"
     result = check_asset(Path(args[0]), requested_size=requested, allow_edge_contact=is_tile)
     scale = check_scale(Path(args[0]), key)

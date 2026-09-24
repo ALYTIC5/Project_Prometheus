@@ -28,12 +28,21 @@ scale:
       rule: tile              # content exactly tile_px wide
     props:
       rule: max_width
-      canvas: 32
+      canvas: 32               # canvas WIDTH, fixed -- content must fit under max_width_px
+      canvas_height: 32        # default canvas HEIGHT; upright props (trees/bushes) need more
       max_width_px: 24        # small props: amphora, bench, brazier, herm, column
       max_width_px_overrides:
         olive_tree: 32
         cypress: 32
         laurel_bush: 32
+        stone_bench: 28        # naturally longer than deep at any framing (verified
+        tripod_brazier: 28     # against rendered R2 output, not raised after a failure)
+      canvas_height_overrides:  # upright props stand taller than they are wide -- give them
+        olive_tree: 48         # headroom so the generator doesn't crop the top/bottom
+        cypress: 56            # against a square canvas (R2: olive_tree/herm/tripod all
+        laurel_bush: 40        # clipped at 32x32)
+        herm_statue: 48        # a pillar -- tall and thin
+        tripod_brazier: 40     # legs + bowl stacked vertically
     # deities / agents / heroes / townsfolk: NO RULE YET -> generation refused
     # until a character height relative to the tile is decided.
 
@@ -312,12 +321,14 @@ props:
     subject: "a tall slender Mediterranean cypress tree"
     details: []
   amphora_pair:
-    greek_name: "Amphora pair"
-    subject: "two terracotta amphorae standing side by side"
+    greek_name: "Amphora"
+    subject: "a single small terracotta amphora, tightly framed and compact"
     details: []
+    # R2: "two amphorae side by side" never fit under 24px world-scale width;
+    # a pair is simply too wide for one small prop. Reduced to one amphora.
   column_fragment:
     greek_name: "Column fragment"
-    subject: "a single broken marble Doric column drum lying on its side"
+    subject: "a single small fallen marble column drum, tightly framed and compact"
     details: []
   tripod_brazier:
     greek_name: "Tripod brazier"
@@ -325,7 +336,7 @@ props:
     details: []
   stone_bench:
     greek_name: "Stone bench"
-    subject: "a carved marble bench with a Greek key meander border"
+    subject: "a small carved marble bench with a Greek key meander border, tightly framed and compact"
     details: []
   herm_statue:
     greek_name: "Herm"

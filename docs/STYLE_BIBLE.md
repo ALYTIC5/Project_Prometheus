@@ -49,11 +49,34 @@ later, R2 (style anchor) should be re-run with `style_images` added to its
   BUILDING_LOCATIONS): 1×1 = 64, 2×2 = 128, 3×3 = 192 (allowed 85–105%).
   theme.yaml's own `footprint` fields disagree with the backend (library,
   oracle, watchtower) and are NOT used for sizing. A 3×3 building does not
-  fit a 168 canvas: use 256. Props: 32 px canvas, ≤24 px wide (trees and
-  bushes ≤32). Characters: no rule yet → generation refused until decided.
-- R2 scale results: treasury anchor 122 px wide on a 3×3 (192 px) footprint
-  → **FAILS** (an earlier note here wrongly called it correct against a 2×2).
-  All 6 kept props FAIL (34–60 px wide). Road and grass tiles pass.
+  fit a 168 canvas: use 256 -- but see the finding below before assuming
+  that works. Props: 32 px canvas WIDTH is fixed; canvas HEIGHT must be
+  taller than width for upright props (trees/bushes/pillars) via
+  `scale.prop_canvas(key)` -- a square canvas crops their top/bottom.
+  Content ≤24 px wide by default; two deliberate per-key overrides exist
+  (stone_bench, tripod_brazier → 28 px) because their natural shape is
+  wider than tall, verified against the rendered result, not raised to
+  dodge a failure. Characters: no rule yet → generation refused until
+  decided.
+- **`create_1_direction_object`'s canvas-to-content fill ratio is NOT
+  linear or predictable.** R2 measured: 168 px canvas → 122 px content
+  (73% fill); 256 px canvas → 239 px content (93% fill, now TOO WIDE for
+  the 192 px 3×3 footprint). Two points don't determine the curve --
+  do not pick a third canvas size by interpolating. Use
+  `create_object_pro_flash` instead for buildings needing a specific
+  content width: it accepts a custom canvas AND a `style_image` (lock the
+  Gate-1-approved look via `treasury_anchor_c0` or whichever variation was
+  picked) and its cost is a flat, quotable tier (`get_pro_flash_capabilities`
+  is a free lookup) rather than create_1_direction_object's 20–40 guess --
+  180 and 192 px canvases both quoted 6 generations; 96 px quoted 5 but is
+  too small for a 3×3 footprint's ~192 px target. Iterate canvas size
+  against `check_asset --key treasury` within a small budget.
+- R2 scale results: treasury anchor v1 (168 canvas) 122 px wide, v2 (256
+  canvas, `create_1_direction_object`) 239 px wide -- both **FAIL** the
+  163–202 px window for a 3×3 footprint (an earlier note here wrongly
+  called v1 correct against a 2×2). All 8 props now PASS after two rounds
+  of correction (canvas height for upright props, tighter framing/deliberate
+  width overrides for the rest). Road, grass and plaza tiles pass.
 
 ## Camera and light
 

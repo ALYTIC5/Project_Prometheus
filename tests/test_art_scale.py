@@ -57,8 +57,27 @@ def test_preflight_refuses_building_without_backend_footprint():
 
 
 def test_preflight_props_must_use_32px_canvas():
-    assert not scale.preflight("olive_tree", 64).ok
-    assert scale.preflight("olive_tree", 32).ok
+    assert not scale.preflight("stone_bench", 64).ok
+    assert scale.preflight("stone_bench", 32).ok
+
+
+def test_prop_canvas_gives_extra_height_to_upright_props():
+    # R2 pilot: olive_tree clipped top+bottom on a square 32x32 canvas.
+    assert scale.prop_canvas("stone_bench") == (32, 32)
+    width, height = scale.prop_canvas("olive_tree")
+    assert width == 32
+    assert height > 32
+
+
+def test_prop_canvas_refuses_non_prop_key():
+    with pytest.raises(ValueError):
+        scale.prop_canvas("treasury")
+
+
+def test_preflight_tall_prop_requires_its_taller_canvas():
+    canvas = scale.prop_canvas("olive_tree")
+    assert not scale.preflight("olive_tree", 32).ok  # square canvas: too short
+    assert scale.preflight("olive_tree", canvas).ok
 
 
 def test_preflight_tiles_must_be_tile_width():

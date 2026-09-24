@@ -1,48 +1,81 @@
 # RESUME — Greek Rebuild
 
-**Prompt pack:** Greek Rebuild R0–R12. **Current step:** R2 (style anchor), stopped at
-**HUMAN GATE 1** (T4). Nothing past R2 may start until the user replies "approved"
-with a chosen treasury variation.
+**Prompt pack:** Greek Rebuild R0–R12. **Current step:** R2 (style anchor).
+**HUMAN GATE 1: cleared** — user approved treasury variation 0 (clean white
+marble, terracotta roof, gold pediment).
 
-**Account state:** PixelLab trial account #4 is exhausted (40/40 spent, reconciled
-against `art/registry.json`). No jobs are queued or running. Every job ID is in the
-registry, tagged `trial_account_4`.
+**Account state:** PixelLab trial account #5 nearly exhausted (35/40 spent,
+reconciled against `art/registry.json`; 5 remain, deliberately not spent —
+see "Treasury" below). No jobs queued or running.
 
-## Done (all downloaded to disk; `art/raw/` and `artifacts/` are gitignored)
+## Done this account, all pass `check_asset --key <key>` (law W11)
 
-| Asset | File | Status |
+| Asset | Canvas | File |
 |---|---|---|
-| Treasury anchor ×4 (168px) | `art/raw/buildings/treasury_anchor_c0..c3.png` | awaiting Gate 1 pick (recommended: c0) |
-| Grass tile, block | `art/raw/tiles/grass_calibration.png` | top face 64×36 |
-| Grass tile, thin | `art/raw/tiles/grass_thin.png` | top face 64×28 |
-| Grass tile, thick | `art/raw/tiles/grass_thick.png` | top face 64×38 |
-| Road tile | `art/raw/tiles/road.png` | good, 64×36 → squash |
-| Props ×6 (64px, pixflux, palette-forced) | `art/raw/props/{olive_tree,cypress,tripod_brazier,stone_bench,herm_statue,laurel_bush}.png` | check_asset OK |
-| Rejected | `art/raw/props/*_rejected.png`, `amphora_pair.png`, `column_fragment.png`, `art/raw/tiles/plaza_rejected.png` | kept for reference |
-| Gate boards | `artifacts/gates/gate1_{temple_candidates,style_board,props,rerolls}.png` | |
+| olive_tree | 32×48 | `art/raw/props/olive_tree.png` |
+| cypress | 32×56 | `art/raw/props/cypress.png` |
+| laurel_bush | 32×40 | `art/raw/props/laurel_bush.png` |
+| herm_statue | 32×48 | `art/raw/props/herm_statue.png` |
+| amphora_pair (now single amphora) | 32×32 | `art/raw/props/amphora_pair.png` |
+| column_fragment | 32×32 | `art/raw/props/column_fragment.png` |
+| stone_bench | 32×32 | `art/raw/props/stone_bench.png` |
+| tripod_brazier | 32×40 | `art/raw/props/tripod_brazier.png` |
+| plaza tile | 64×64 | `art/raw/tiles/plaza.png` (top face 64×41 → squash) |
 
-## Remaining for R2 (estimated 3–6 generations on the next account)
+All 8 props are done. R2's prop list is complete.
 
-1. ~~Props-specific style suffix~~ DONE: `style_suffix_prop` (no roof tiles/water/
-   scenery, "no ground, no plinth"); prop subjects no longer mention marble bases.
-2. Re-run `amphora_pair` and `column_fragment` via `create_image_pixflux`
-   (1 gen each, 64px, isometric, forced palette from chosen anchor + grass).
-3. Re-run `plaza` tile (`create_isometric_tile`, 1 gen).
-4. Implement the ingest squash (top face → 64×32) for tiles.
-5. Palette-lock after the Gate 1 pick; if the pick is not c0, remap props locally.
-6. **Scale (law W11 — run `preflight` before every job, `check_asset --key` after):**
-   - All 8 props: regenerate on a 32 px canvas (~8 gens, pixflux).
-   - Treasury anchor FAILS scale (122 px vs 192 px for its backend 3×3
-     footprint). Gate 1 is a STYLE gate, so the user can still pick a look,
-     but the shipped treasury must be regenerated on a 256 canvas
-     (`create_1_direction_object` size 256 = 1 candidate, ~20–40 gens).
-   - Characters have no scale rule: ask the user to decide the character
-     height (in tiles) before R3.
-   Total remaining for R2: ~10–12 gens + the treasury re-render.
+**Known imperfection (not a scale failure, not blocking):** most props still
+carry a small square base/plinth despite `style_suffix_prop` asking for "no
+ground, no plinth" — see `artifacts/gates/r2_props_scaled.png`. The instruction
+reduces it but doesn't eliminate it. Acceptable for now; revisit if it looks
+wrong once placed in the actual world (a plinth may even read fine sitting on
+a tile). Not worth spending generations chasing before the treasury blocker
+is resolved.
+
+## NOT done: treasury final render
+
+Two attempts both **FAIL** scale (need 163–202px content for the 3×3 backend
+footprint):
+- v1 (Gate 1 candidates, `art/raw/buildings/treasury_anchor_c0..c3.png`, 168
+  canvas): 122px content.
+- v2 (`art/raw/buildings/treasury_anchor_256.png`, 256 canvas via
+  `create_1_direction_object`, 20 gens): 239px content — overshot.
+
+**Finding:** `create_1_direction_object`'s canvas→content fill ratio is not
+linear (73% fill at 168, 93% at 256) — do not guess a third canvas size.
+
+**Next attempt: use `create_object_pro_flash` instead**, not
+`create_1_direction_object`:
+- Pass `style_image` = the approved `treasury_anchor_c0.png` (or its
+  Backblaze URL if still valid) to lock the Gate-1 look.
+- Try a custom canvas around 190–200px (`get_pro_flash_capabilities` is a
+  FREE lookup — use it first; 180 and 192 both quoted 6 generations last
+  session, 96 quoted 5 but is too small).
+- Check with `python -m tools.art.check_asset <png> <canvas> --key treasury`
+  after every attempt; budget 2–3 attempts (~12–18 gens) since the exact
+  canvas-to-content relationship for this tool is still unverified.
+
+## After treasury passes scale
+
+1. Palette-lock `art/prompts.yaml`/pipeline to the final treasury (already
+   using its palette + grass for all R2 props).
+2. Implement the tile ingest squash (top face → 64×32) for grass/road/plaza —
+   not built yet, doesn't block generation.
+3. Build `artifacts/gates/gate1_style_board.png` v2 with the passing assets,
+   confirm nothing else needs Gate 1 sign-off (style already approved; scale
+   was a build-quality gate, not part of Gate 1 itself).
+4. Move to R3. Before generating ANY character: character canvas/height has
+   NO scale rule in `art/theme.yaml` yet (law W11 refuses it) — ask the user
+   to decide character height in tiles first.
 
 ## On resume
-- `get_balance` first; confirm it is a NEW account (account #4 shows 0 remaining).
-- Static art (tiles/props/buildings) can live on any account; characters must be
-  created and animated on the same account.
-- Download URLs: pixflux `https://api.pixellab.ai/mcp/images/{job_id}/download`,
-  iso tile `https://api.pixellab.ai/mcp/isometric-tile/{id}/download` (use `curl -f`).
+- `get_balance` first; confirm a NEW account (0 used, not continuing #5's 35).
+- Static art (tiles/props/buildings) can live on any account; characters must
+  be created AND animated on the same account.
+- Download URLs: pixflux `.../mcp/images/{job_id}/download`, iso tile
+  `.../mcp/isometric-tile/{id}/download`, 1-direction object
+  `.../mcp/objects/{id}/download` (pro-flash objects: check its own response
+  for the download field). Always `curl -f -A "curl/8.0"`.
+- Every job — including rejected/failed-scale ones — is logged in
+  `art/registry.json` with `generations_spent`; the running total must equal
+  `get_balance`'s `generations_used` after every batch.
