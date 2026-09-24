@@ -11,6 +11,32 @@
 # hall_of_legends, machine_temple) do not exist in registry.ts yet; wiring them
 # in is R4/R6 work, not R1's.
 
+# World scale (law W11) -- enforced by tools/art/scale.py BEFORE every PixelLab
+# job (preflight) and on every downloaded asset (check_asset --key). A category
+# missing here cannot be generated: decide its size first.
+# Buildings are sized from the BACKEND footprint (construction.py
+# BUILDING_LOCATIONS), not the `footprint` fields below.
+scale:
+  tile_px: 64                 # projection.ts TILE_WIDTH; top face 64x32
+  categories:
+    buildings:
+      rule: footprint         # content width ~= (w + h) * tile_px / 2
+      min_ratio: 0.85
+      max_ratio: 1.05
+      canvas_margin_px: 8
+    tiles:
+      rule: tile              # content exactly tile_px wide
+    props:
+      rule: max_width
+      canvas: 32
+      max_width_px: 24        # small props: amphora, bench, brazier, herm, column
+      max_width_px_overrides:
+        olive_tree: 32
+        cypress: 32
+        laurel_bush: 32
+    # deities / agents / heroes / townsfolk: NO RULE YET -> generation refused
+    # until a character height relative to the tile is decided.
+
 buildings:
   library:
     greek_name: "The Mouseion"

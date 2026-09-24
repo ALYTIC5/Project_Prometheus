@@ -30,9 +30,15 @@ registry, tagged `trial_account_4`.
 3. Re-run `plaza` tile (`create_isometric_tile`, 1 gen).
 4. Implement the ingest squash (top face → 64×32) for tiles.
 5. Palette-lock after the Gate 1 pick; if the pick is not c0, remap props locally.
-6. **Scale:** the 6 good props are ~2× too large for the world (see STYLE_BIBLE
-   "World scale"). Regenerate all 8 props on a 32 px canvas (~8 gens) rather
-   than downscaling. Total remaining for R2 is then ~10–12 gens, not 3–6.
+6. **Scale (law W11 — run `preflight` before every job, `check_asset --key` after):**
+   - All 8 props: regenerate on a 32 px canvas (~8 gens, pixflux).
+   - Treasury anchor FAILS scale (122 px vs 192 px for its backend 3×3
+     footprint). Gate 1 is a STYLE gate, so the user can still pick a look,
+     but the shipped treasury must be regenerated on a 256 canvas
+     (`create_1_direction_object` size 256 = 1 candidate, ~20–40 gens).
+   - Characters have no scale rule: ask the user to decide the character
+     height (in tiles) before R3.
+   Total remaining for R2: ~10–12 gens + the treasury re-render.
 
 ## On resume
 - `get_balance` first; confirm it is a NEW account (account #4 shows 0 remaining).

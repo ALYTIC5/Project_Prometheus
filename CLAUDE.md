@@ -168,3 +168,13 @@ W9. The PixelLab token never appears in any repo file, log, registry row, commit
 W10. Quantitative values are never rendered in decorative fonts or replaced by
      game scores. Hero stats always expose the underlying metric on hover and
      show "UNMAPPED" when no source exists.
+W11. WORLD SCALE IS ENFORCED, NEVER ASSUMED. Before queueing ANY PixelLab job,
+     `tools.art.scale.preflight(key, canvas)` must pass. Every downloaded asset
+     must pass `python -m tools.art.check_asset <png> <size> --key <key>` (which
+     measures content size against world scale). Buildings are sized from the
+     backend footprint (construction.py BUILDING_LOCATIONS), never from
+     theme.yaml's `footprint`. A category with no rule in theme.yaml `scale:`
+     may not be generated until its size is decided. An asset that fails scale
+     never ships and is never "fixed later" -- regenerate at the right canvas.
+     Report scale results to the user for every generated asset. Tests:
+     tests/test_art_scale.py (may not be weakened or skipped).

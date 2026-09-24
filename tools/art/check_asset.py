@@ -94,20 +94,30 @@ def check_asset(
 if __name__ == "__main__":
     import sys
 
-    args = [a for a in sys.argv[1:] if a != "--tile"]
-    if not args:
+    from tools.art import compose_prompt
+    from tools.art.scale import check_scale
+
+    argv = sys.argv[1:]
+    if "--key" not in argv or argv.index("--key") + 1 >= len(argv):
         print(
-            "usage: python -m tools.art.check_asset <path.png> [requested_size] [--tile]",
+            "usage: python -m tools.art.check_asset <path.png> [requested_size] --key <theme key>\n"
+            "--key is mandatory: every asset is scale-checked (law W11).",
             file=sys.stderr,
         )
         raise SystemExit(1)
+    key = argv[argv.index("--key") + 1]
+    args = [a for i, a in enumerate(argv) if a != "--key" and (i == 0 or argv[i - 1] != "--key")]
     requested = int(args[1]) if len(args) > 1 else None
-    result = check_asset(
-        Path(args[0]), requested_size=requested, allow_edge_contact="--tile" in sys.argv
-    )
-    if result.ok:
-        print(f"OK: {result.actual_size[0]}x{result.actual_size[1]}")
+    is_tile = compose_prompt._find_entry(key)[0] == "tiles"
+    result = check_asset(Path(args[0]), requested_size=requested, allow_edge_contact=is_tile)
+    scale = check_scale(Path(args[0]), key)
+    errors = result.errors + [f"scale: {e}" for e in scale.errors]
+    if not errors:
+        print(
+            f"OK: {result.actual_size[0]}x{result.actual_size[1]}, "
+            f"content {scale.content_size}, scale {scale.expected}"
+        )
     else:
-        for error in result.errors:
+        for error in errors:
             print(f"FAIL: {error}", file=sys.stderr)
         raise SystemExit(1)
