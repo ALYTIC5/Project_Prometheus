@@ -192,6 +192,13 @@ def test_check_asset_detects_edge_clipping(tmp_path: Path):
     assert "left" in result.clipped_edges
 
 
+def test_check_asset_tile_edge_contact_is_allowed(tmp_path: Path):
+    path = _make_png(tmp_path, (64, 64), opaque_box=(0, 20, 64, 64))
+    assert not check_asset_mod.check_asset(path, requested_size=64).ok
+    result = check_asset_mod.check_asset(path, requested_size=64, allow_edge_contact=True)
+    assert result.ok, result.errors
+
+
 def test_check_asset_flags_empty_image(tmp_path: Path):
     path = _make_png(tmp_path, (68, 68), opaque_box=None)
     result = check_asset_mod.check_asset(path, requested_size=68)

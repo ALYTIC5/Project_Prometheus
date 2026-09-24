@@ -39,7 +39,10 @@ def check_asset(
     path: Path,
     requested_size: int | None = None,
     edge_tolerance: int = 1,
+    allow_edge_contact: bool = False,
 ) -> AssetCheckResult:
+    """`allow_edge_contact`: set for tiles -- a ground tile is supposed to fill
+    its canvas edge to edge, so edge contact there is correct, not clipping."""
     img = Image.open(path).convert("RGBA")
     arr = np.array(img)
     width, height = img.size
@@ -62,7 +65,7 @@ def check_asset(
         errors.append("image is fully transparent (empty)")
 
     clipped_edges: list[str] = []
-    if not is_empty:
+    if not is_empty and not allow_edge_contact:
         opaque = alpha > 0
         ys, xs = np.nonzero(opaque)
         if ys.min() <= edge_tolerance:
@@ -91,11 +94,17 @@ def check_asset(
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 2:
-        print("usage: python -m tools.art.check_asset <path.png> [requested_size]", file=sys.stderr)
+    args = [a for a in sys.argv[1:] if a != "--tile"]
+    if not args:
+        print(
+            "usage: python -m tools.art.check_asset <path.png> [requested_size] [--tile]",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
-    requested = int(sys.argv[2]) if len(sys.argv) > 2 else None
-    result = check_asset(Path(sys.argv[1]), requested_size=requested)
+    requested = int(args[1]) if len(args) > 1 else None
+    result = check_asset(
+        Path(args[0]), requested_size=requested, allow_edge_contact="--tile" in sys.argv
+    )
     if result.ok:
         print(f"OK: {result.actual_size[0]}x{result.actual_size[1]}")
     else:

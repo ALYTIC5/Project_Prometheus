@@ -27,6 +27,22 @@ later, R2 (style anchor) should be re-run with `style_images` added to its
   `art/theme.yaml`'s own `footprint: [w, h]` field is in TILE units (for
   world-layout purposes, R6) — the two are different unit systems for
   different consumers, not a conflict.
+- Tile calibration (R2, `create_isometric_tile`, trial account, 1 gen,
+  job `86311d90`): requested 64 → canvas 64×64, measured top face **64×36**
+  (target 64×32). The trial-available tile tool has no view-angle
+  parameter (`create_tiles_pro` needs a paid Tier 1 plan). Fix is local:
+  nearest-neighbour vertical squash of the top face 36→32 at ingest, never
+  a re-generation. Tiles are checked with `check_asset --tile` (edge contact
+  is expected for a full-width tile, not clipping).
+- `tile_shape` does NOT control top-face height (measured, same prompt, 64px):
+  block 64×36, thin 64×28, thick 64×38. The ingest squash (to 32) is
+  therefore the fix for every tile, whatever shape is requested.
+- Props (R2): `create_image_pixflux` (1 gen, isometric, forced palette =
+  anchor + grass colours) gives on-style props, drawn on small plinth/
+  ground bases. Prompts that mention marble surfaces (amphora_pair,
+  column_fragment) come back as whole scenes or buildings: the world
+  style suffix's "terracotta roof tiles" pulls them there. Props need their
+  own style suffix without roof tiles before those two are re-run.
 
 ## Camera and light
 
