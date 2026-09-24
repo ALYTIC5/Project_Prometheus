@@ -27,7 +27,7 @@ function isNearEdge(gx: number, gy: number): boolean {
   return gx < EDGE_MARGIN || gx >= GRID_SIZE - EDGE_MARGIN || gy < EDGE_MARGIN || gy >= GRID_SIZE - EDGE_MARGIN;
 }
 
-function underworldCentre(buildings: Building[]): { x: number; y: number } | null {
+export function underworldCentre(buildings: Building[]): { x: number; y: number } | null {
   const underworld = buildings.find((b) => b.kind === 'underworld');
   if (!underworld) return null;
   return {
@@ -36,7 +36,7 @@ function underworldCentre(buildings: Building[]): { x: number; y: number } | nul
   };
 }
 
-function isUnderworldZone(gx: number, gy: number, centre: { x: number; y: number } | null): boolean {
+export function isUnderworldZone(gx: number, gy: number, centre: { x: number; y: number } | null): boolean {
   if (!centre) return false;
   return Math.hypot(gx - centre.x, gy - centre.y) <= UNDERWORLD_RADIUS;
 }
@@ -44,7 +44,7 @@ function isUnderworldZone(gx: number, gy: number, centre: { x: number; y: number
 /** Deterministic hash of (gx, gy) -> whether/what grows here, and which of
  * a small set of look variants -- same source as ground.ts's terrainHash.
  * No runtime randomness anywhere: the world stays a pure function of state. */
-function vegetationAt(gx: number, gy: number, dead: boolean): { kind: Kind; variant: number } | null {
+export function vegetationAt(gx: number, gy: number, dead: boolean): { kind: Kind; variant: number } | null {
   const h = hashString(`veg:${gx},${gy}`);
   const nearEdge = isNearEdge(gx, gy);
 
@@ -94,7 +94,7 @@ function drawProceduralBush(variant: number): PIXI.Graphics {
  * drawAtlasTile is -- or null on any miss (no manifest, wrong SPRITE_SET,
  * atlas not loaded yet), in which case the caller falls back to the
  * procedural draw exactly as before this real art existed. */
-function atlasSprite(name: string, variant: number): PIXI.Sprite | null {
+export function atlasSprite(name: string, variant: number): PIXI.Sprite | null {
   if (!isProduction()) return null;
   const spec = resolvePropSprite(name, variant);
   if (!spec) return null;
