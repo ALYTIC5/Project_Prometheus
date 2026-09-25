@@ -11,6 +11,7 @@ import { createBuilders, type BuildersHandle } from './render/builders';
 import { createGods } from './render/gods';
 import { drawGround } from './render/ground';
 import { createVegetation } from './render/vegetation';
+import { createDecor } from './render/decor';
 import { updateLabels, type LabelCandidate } from './render/labels';
 import { createMonument, type MonumentHandle } from './render/monument';
 import { drawHoverOutline, drawSelectionOutline, pickBuilding } from './render/selection';
@@ -344,6 +345,11 @@ export default function WorldView() {
     // lives in the shared sortable layer (Layer.PROP) so it occludes and is
     // occluded correctly against buildings and agents at the same tile.
     for (const root of createVegetation(nonMonument)) layer.addChild(root);
+
+    // Static decor (amphorae, a fallen column, a brazier, a bench, a herm)
+    // -- same layer/occlusion treatment as vegetation; a no-op in
+    // placeholder mode (see decor.ts's DECOR_NAMES docstring).
+    for (const root of createDecor(nonMonument)) layer.addChild(root);
   }, [pixiReady, buildings]);
 
   // Debug overlay (press D): per-object grid coords + depth value.
