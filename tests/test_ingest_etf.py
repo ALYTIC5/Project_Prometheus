@@ -34,6 +34,8 @@ class _FakeProvider(MarketDataProvider):
     bar per calendar day (no gaps at all) would pass regardless of
     whether that override actually worked -- this one wouldn't."""
 
+    SOURCE = "alpaca"  # stands in for the Alpaca path these assertions name
+
     def capabilities(self) -> ProviderCapabilities:
         return {
             "asset_classes": ["etf"],

@@ -30,7 +30,7 @@ class FakeBroker:
         self.submitted = []
         self.orders = {}
 
-    def submit_order(self, *, symbol, side, qty, client_order_id):
+    def submit_order(self, *, symbol, side, qty, client_order_id, reference_price=None):
         self.submitted.append((symbol, side, qty, client_order_id))
         self.orders[client_order_id] = {"id": f"exch-{client_order_id}", "status": "open"}
         return self.orders[client_order_id]

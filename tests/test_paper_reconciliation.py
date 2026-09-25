@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import text
 
+from prometheus.backtest.costs import load_cost_config
 from prometheus.data.models import OhlcvBar as OhlcvBarModel
 from prometheus.paper.reconciliation import (
     check_worse_than_holding,
@@ -161,18 +162,21 @@ async def test_compute_paper_equity_curve_from_real_fills(db_session):
         db_session, strategy_id="MOMENTUM-013", current_price=52000.0
     )
     assert len(curve) == 3  # one point per fill, plus the final mark-to-market point
+    # Each fill also pays the taker fee on its notional (same cost model
+    # as the backtest engine): 500 notional on fill 1, 255 on fill 2.
+    fee = load_cost_config()[0].taker_fee_bps / 10_000.0
 
-    # After fill 1 (buy 0.01 @ 50000): cash = 1000 - 500 = 500, position = 0.01
-    # equity = 500 + 0.01 * 50000 = 1000
-    assert curve[0][1] == pytest.approx(1000.0, abs=1e-6)
+    # After fill 1 (buy 0.01 @ 50000): cash = 1000 - 500 - 500*fee, position = 0.01
+    # equity = cash + 0.01 * 50000 = 1000 - 500*fee
+    assert curve[0][1] == pytest.approx(1000.0 - 500 * fee, abs=1e-6)
 
-    # After fill 2 (sell 0.005 @ 51000): cash = 500 + 255 = 755, position = 0.005
-    # equity = 755 + 0.005 * 51000 = 1010
-    assert curve[1][1] == pytest.approx(1010.0, abs=1e-6)
+    # After fill 2 (sell 0.005 @ 51000): cash += 255 - 255*fee, position = 0.005
+    # equity = 755 + 0.005 * 51000 - 755*fee = 1010 - 755*fee
+    assert curve[1][1] == pytest.approx(1010.0 - 755 * fee, abs=1e-6)
 
     # Final point marked at current_price=52000, not the last fill's price:
-    # equity = 755 + 0.005 * 52000 = 1015
-    assert curve[2][1] == pytest.approx(1015.0, abs=1e-6)
+    # equity = 755 + 0.005 * 52000 - 755*fee = 1015 - 755*fee
+    assert curve[2][1] == pytest.approx(1015.0 - 755 * fee, abs=1e-6)
 
 
 async def test_compute_paper_equity_curve_empty_with_no_fills(db_session):
