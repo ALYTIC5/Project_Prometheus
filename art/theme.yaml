@@ -50,7 +50,11 @@ buildings:
   library:
     greek_name: "The Mouseion"
     footprint: [3, 3]
-    subject: "a grand library with an Ionic colonnade"
+    # R4: create_object_pro_flash filled ~98-100% of the canvas and cropped
+    # the roof on all 3 attempts (145px @148, 135px @136, 148px @148 with
+    # "small") -- the wording made no difference. See art/RESUME.md for the
+    # next approach (create_1_direction_object @168).
+    subject: "a small library with an Ionic colonnade"
     details: ["Ionic colonnade", "papyrus scroll racks visible inside", "marble facade", "terracotta roof tiles"]
   forge:
     greek_name: "Forge of Prometheus"

@@ -3,8 +3,29 @@
 **Prompt pack:** Greek Rebuild R0–R12. **R2 (style anchor) is DONE.**
 **HUMAN GATE 1: cleared** — user approved treasury variation 0.
 
-**Account state:** PixelLab trial account #6, 15/40 spent, 25 remaining.
-No jobs queued or running.
+**Account state:** PixelLab trial account #6 exhausted (40/40). Registry
+reconciles to 120 generations across all accounts. No jobs queued.
+
+## R2b ground tiles (done, live)
+
+7 new tiles (grass + wildflowers/dry/pebbles/thyme variants, agora plaza,
+cobblestone road), `create_isometric_tile` block + flat shading, uniform
+edge-to-edge prompts. `squash_tile` now extracts only the top-face diamond
+(the old one squashed the dirt side faces into the ground); the 4 variants
+are colour-matched to the base grass at ingest; roads use the real tile.
+
+## R4 buildings: next is the library — NOT done
+
+Library failed 3x on `create_object_pro_flash` (18 generations): it fills
+~98–100% of the canvas for this subject and crops the roof, at 148 and 136,
+with "grand" or "small" in the prompt. Treasury only filled 82–90%, so the
+fill ratio is per-subject and this tool can't reliably hit a 2×2's
+109–134px window.
+
+**Next try:** `create_1_direction_object` at size 168 (4 candidates, ~25
+gens). Its measured fill on the treasury at 168 was 122px — squarely in a
+2×2's 109–134px window — and 4 candidates give a choice. Needs ≥25 on the
+account (the tool pre-checks 25 available).
 
 ## R2 complete — everything below is live in production
 
@@ -17,7 +38,7 @@ https://projectprometheus-production.up.railway.app with
 | Category | What's real | Where it renders |
 |---|---|---|
 | Buildings | treasury (active phase only) | `render/building.ts` — first real building art |
-| Tiles | grass, plaza | `render/ground.ts` |
+| Tiles | 5 grass variants, plaza, road | `render/ground.ts` |
 | Vegetation | olive_tree ×2, cypress ×2, laurel_bush ×2 | `render/vegetation.ts` |
 | Static decor | amphora_pair, column_fragment, tripod_brazier, stone_bench, herm_statue | `render/decor.ts`, sparse (1-in-40 tiles) |
 
@@ -45,17 +66,20 @@ exists. Ask the user: how tall should a character be, relative to the
 64px tile? Then add a `scale.categories` entry for each character category
 before spending any generations on R3.
 
-## Deploy gotcha (hit and fixed this session)
+## Deploy gotcha: deploy the WORKTREE explicitly
 
-Railway's `Project_Prometheus` service is connected to GitHub and
-**auto-deploys on every push to `main`**, independent of `railway up`.
-Every `git push origin HEAD:main` triggers its own build, racing the
-manual `railway up` deploy. If an OLDER push's auto-deploy is slow and
-finishes AFTER a newer manual deploy, it silently overwrites it with
-stale content — this happened here: the treasury atlas deployed fine,
-then got silently replaced by a delayed auto-deploy of an earlier commit
-that predated it, serving the old 512×1024 medieval `buildings_atlas.png`
-for several minutes despite `railway status` showing "Online" throughout.
+The Railway CLI link is registered for the MAIN checkout
+(`...\Project_Prometheus`). Plain `railway up` from inside this worktree
+walks up, finds that link, and uploads the **main checkout's files** —
+not the worktree's. Deploys then silently ship whatever is on disk in the
+main checkout: "SUCCESS", "Online", and stale art. (An earlier version of
+this note blamed a race with GitHub auto-deploy — wrong: a push to main
+triggered no deploy at all when checked.) Always deploy with:
+```
+railway up . --path-as-root --service Project_Prometheus --detach
+```
+A stale deploy also shows as a suspiciously fast build (just "scheduling
+build" in `railway logs --build <id>`).
 
 **After every deploy that matters, verify the actual served file**, not
 just deployment status:
