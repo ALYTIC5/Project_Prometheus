@@ -45,6 +45,29 @@ exists. Ask the user: how tall should a character be, relative to the
 64px tile? Then add a `scale.categories` entry for each character category
 before spending any generations on R3.
 
+## Deploy gotcha (hit and fixed this session)
+
+Railway's `Project_Prometheus` service is connected to GitHub and
+**auto-deploys on every push to `main`**, independent of `railway up`.
+Every `git push origin HEAD:main` triggers its own build, racing the
+manual `railway up` deploy. If an OLDER push's auto-deploy is slow and
+finishes AFTER a newer manual deploy, it silently overwrites it with
+stale content — this happened here: the treasury atlas deployed fine,
+then got silently replaced by a delayed auto-deploy of an earlier commit
+that predated it, serving the old 512×1024 medieval `buildings_atlas.png`
+for several minutes despite `railway status` showing "Online" throughout.
+
+**After every deploy that matters, verify the actual served file**, not
+just deployment status:
+```
+curl -s <url>/sprites/<atlas>.png -o /tmp/check.png
+python -c "from PIL import Image; print(Image.open('/tmp/check.png').size)"
+```
+compare against the local file's real dimensions. If it doesn't match,
+check `railway deployment list --service Project_Prometheus` for a newer
+deployment that landed after yours, and redeploy once no other deploy is
+in flight.
+
 ## On resume
 - `get_balance` first.
 - Static art (tiles/props/buildings) can live on any account; characters
