@@ -3,6 +3,13 @@ separated (migration 0010's `holdout` Postgres schema), every read is
 audited (`holdout_access_log`), and a strategy may touch it exactly once --
 a second attempt is a hard error, not a warning.
 
+Paper-trading reads (2026-09-25, user decision): holdout_start is
+forward-looking, so EVERY bar since it is holdout -- paper trading cannot
+see a current price without reading the vault. `access_holdout_for_paper`
+is that path: every read is logged (detail.kind = "PAPER"), and PAPER rows
+do not consume the one validation access. Paper results never feed
+validation or promotion; their only effect is quarantine on divergence.
+
 Two sessions are involved on purpose, and the distinction matters:
 
 - `session` -- the caller's normal (app-role) session. Used ONLY to
@@ -68,8 +75,15 @@ class HoldoutAccessDenied(Exception):
     REJECT, no exceptions." There is no retry, no override."""
 
 
+_PAPER_ACCESS_KIND = "PAPER"
+
 _SELECT_PRIOR_GRANTED_ACCESS = text(
-    "SELECT 1 FROM holdout_access_log WHERE strategy_fingerprint = :fp AND granted = true LIMIT 1"
+    """
+    SELECT 1 FROM holdout_access_log
+     WHERE strategy_fingerprint = :fp AND granted = true
+       AND COALESCE(detail->>'kind', '') <> 'PAPER'
+     LIMIT 1
+    """
 )
 
 _INSERT_ACCESS_LOG = text(
@@ -138,6 +152,30 @@ async def access_holdout(
         },
     )
 
+    return await _read_holdout_bars(spec)
+
+
+async def access_holdout_for_paper(
+    session: AsyncSession,
+    spec: StrategySpec,
+    strategy_id: str,
+) -> PointInTimeFrame:
+    """Paper trading's read of the holdout -- logged on every call, never
+    denied, and never counted as the strategy's one validation access (see
+    module docstring). Must never be used for validation or selection."""
+    await session.execute(
+        _INSERT_ACCESS_LOG,
+        {
+            "experiment_id": None,
+            "strategy_fingerprint": spec.config_hash(),
+            "granted": True,
+            "detail": {"kind": _PAPER_ACCESS_KIND, "strategy_id": strategy_id},
+        },
+    )
+    return await _read_holdout_bars(spec)
+
+
+async def _read_holdout_bars(spec: StrategySpec) -> PointInTimeFrame:
     from prometheus.core.db import get_holdout_session
 
     async with get_holdout_session() as holdout_session:

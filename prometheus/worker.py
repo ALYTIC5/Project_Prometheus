@@ -50,6 +50,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import polars as pl
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -142,6 +143,7 @@ from prometheus.research.rotation_generate import ROTATION_GRID_GENERATORS
 from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.rotation_spec import ROTATION_FAMILIES
 from prometheus.strategy.spec import FAMILIES, StrategySpec
+from prometheus.validation.holdout import access_holdout_for_paper
 
 
 def _anthropic_client() -> _AnthropicClientProtocol:
@@ -874,7 +876,16 @@ async def _run_paper() -> None:
                     as_of_cutoff - timedelta(days=_GRID_LOOKBACK_DAYS),
                     as_of_cutoff,
                 )
-                bars = pit.as_of(as_of_cutoff)
+                # Every bar since holdout_start lives in the holdout vault;
+                # without it paper trading decides on prices frozen at that
+                # date. Logged read, not a validation access (user decision
+                # 2026-09-25, docs/DECISIONS.md).
+                forward = await access_holdout_for_paper(session, spec, row.id)
+                await session.commit()
+                # Disjoint by construction: ingestion splits on event_time.
+                bars = pl.concat(
+                    [pit.as_of(as_of_cutoff), forward.as_of(as_of_cutoff)]
+                ).sort("event_time")
                 if bars.height == 0:
                     continue
 

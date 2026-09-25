@@ -121,3 +121,21 @@ real 84,411.53). The fix:
 - `as_of` returns the latest revision visible at the cutoff.
 
 Test: `tests/laws/test_bar_revisions_point_in_time.py`.
+
+## Paper trading reads the holdout, logged, outside the one-touch rule (2026-09-25)
+
+**User decision.** `config/holdout.yaml` defines the holdout as forward-looking:
+every bar at or after 2026-09-16 goes into the vault. Paper trading read only
+`ohlcv_bars`, so it decided on prices frozen at that date. The first simulated
+TRX order was priced at 0.3354 when the latest close was 0.3403.
+
+The fix is `validation.holdout.access_holdout_for_paper`, which:
+- logs every read to `holdout_access_log` with `detail.kind = "PAPER"`;
+- is never denied;
+- is excluded from the one-validation-access check, so a strategy's single
+  validation read is still enforced exactly as before
+  (`tests/laws/test_holdout_paper_reads.py`).
+
+Paper results never feed validation or promotion. Their only effect is
+quarantine on divergence. The cost is roughly one log row per champion per
+worker tick.
