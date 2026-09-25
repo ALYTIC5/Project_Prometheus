@@ -45,15 +45,56 @@ _UNKNOWN_FAMILY_RESPONSE_JSON = json.dumps(
 
 
 def _mock_client(
-    response_text: str, *, input_tokens: int = 500, output_tokens: int = 200
+    response_text: str,
+    *,
+    input_tokens: int = 500,
+    output_tokens: int = 200,
+    leading_blocks: list[MagicMock] | None = None,
+    stop_reason: str = "end_turn",
 ) -> MagicMock:
     client = MagicMock()
     message = MagicMock()
-    message.content = [MagicMock(text=response_text)]
+    message.content = [*(leading_blocks or []), MagicMock(type="text", text=response_text)]
+    message.stop_reason = stop_reason
     message.usage.input_tokens = input_tokens
     message.usage.output_tokens = output_tokens
     client.messages.create.return_value = message
     return client
+
+
+async def test_generate_hypothesis_reads_the_text_block_after_a_thinking_block() -> None:
+    """Production 2026-09-25: claude-sonnet-5 returned a ThinkingBlock as
+    content[0]; reading content[0].text raised AttributeError and every
+    hypothesis was discarded after being billed."""
+    thinking = MagicMock(spec=["type", "thinking"], type="thinking", thinking="")
+    client = _mock_client(_VALID_RESPONSE_JSON, leading_blocks=[thinking])
+    result = await generate_hypothesis(
+        client, "claude-sonnet-5", "BTC/USDT", "1d",
+        [PaperContext(paper_id=1, key_sections="momentum literature review")],
+    )
+    assert result.spec.family == "MOMENTUM"
+
+
+async def test_generate_hypothesis_disables_thinking() -> None:
+    client = _mock_client(_VALID_RESPONSE_JSON)
+    await generate_hypothesis(
+        client, "claude-sonnet-5", "BTC/USDT", "1d",
+        [PaperContext(paper_id=1, key_sections="x")],
+    )
+    assert client.messages.create.call_args.kwargs["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.parametrize("stop_reason", ["max_tokens", "refusal"])
+async def test_generate_hypothesis_rejects_truncated_or_refused_responses(
+    stop_reason: str,
+) -> None:
+    client = _mock_client(_VALID_RESPONSE_JSON, stop_reason=stop_reason, output_tokens=1024)
+    with pytest.raises(LLMResponseError) as excinfo:
+        await generate_hypothesis(
+            client, "claude-sonnet-5", "BTC/USDT", "1d",
+            [PaperContext(paper_id=1, key_sections="x")],
+        )
+    assert excinfo.value.output_tokens == 1024
 
 
 async def test_generate_hypothesis_produces_valid_spec() -> None:

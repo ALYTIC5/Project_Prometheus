@@ -154,6 +154,18 @@ def _build_user_prompt(symbol: str, timeframe: str, paper_context: list[PaperCon
     )
 
 
+def response_text(message: Any) -> str:
+    """The first text block of a Messages API response. Raises ValueError
+    when the response was cut off or refused -- a truncated JSON answer
+    must fail loudly, not parse as a shorter one."""
+    if message.stop_reason in ("max_tokens", "refusal"):
+        raise ValueError(f"response ended with stop_reason={message.stop_reason!r}")
+    for block in message.content:
+        if block.type == "text":
+            return str(block.text)
+    raise ValueError("response contained no text block")
+
+
 async def generate_hypothesis(
     client: _AnthropicClientProtocol,
     model: str,
@@ -164,6 +176,12 @@ async def generate_hypothesis(
     message = client.messages.create(
         model=model,
         max_tokens=1024,
+        # claude-sonnet-5 runs adaptive thinking when `thinking` is omitted;
+        # thinking tokens share max_tokens with the JSON answer and arrive as
+        # a leading ThinkingBlock. This is a fixed-schema extraction, so
+        # thinking stays off (the pre-Sonnet-5 behaviour this prompt was
+        # written for).
+        thinking={"type": "disabled"},
         system=_SYSTEM_PROMPT,
         messages=[
             {
@@ -186,7 +204,7 @@ async def generate_hypothesis(
     # ValueError subclass, so a caller catching ValueError is unaffected,
     # but now carrying the token usage the caller needs to log the spend.
     try:
-        raw_text = message.content[0].text
+        raw_text = response_text(message)
         parsed = json.loads(raw_text)
         family = parsed["family"]
         # NOTE: this family->fields mapping is duplicated from
