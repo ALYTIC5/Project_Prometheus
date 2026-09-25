@@ -77,6 +77,16 @@ later, R2 (style anchor) should be re-run with `style_images` added to its
   called v1 correct against a 2×2). All 8 props now PASS after two rounds
   of correction (canvas height for upright props, tighter framing/deliberate
   width overrides for the rest). Road, grass and plaza tiles pass.
+- **Treasury v3 (`create_object_pro_flash`, no style_image) PASSES**: 192
+  canvas → 157 px content (81.8% fill, too small); 220 canvas → 198 px
+  content (**inside 163-202**, shipped). `style_image` was attempted first
+  but the inline base64 payload was silently truncated in transit (a known
+  MCP/LLM-client limit on large tool arguments -- prefer a hosted URL over
+  inline base64 for anything much above icon-sized, when one is available).
+  Dropped it and relied on the text prompt alone, which had already
+  reproduced the same approved look twice (v1, v2) with zero style
+  reference -- this tool's fill ratio (81.8% at 192) is its own curve,
+  not comparable to `create_1_direction_object`'s (73%/93%).
 
 ## Camera and light
 

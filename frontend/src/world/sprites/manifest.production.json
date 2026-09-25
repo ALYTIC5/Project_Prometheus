@@ -232,5 +232,23 @@
     "litWindows": false,
     "outline": "none",
     "outlineColor": 0
+  },
+  "treasury_active": {
+    "anchor": {
+      "x": 110,
+      "y": 203
+    },
+    "atlas": "buildings_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 220,
+      "width": 220,
+      "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": true,
+    "outline": "glow",
+    "outlineColor": 16766720
   }
 }

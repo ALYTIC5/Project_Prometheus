@@ -28,6 +28,7 @@ from tools.art.common import (
     PUBLIC_SPRITES_DIR,
     SPRITES_DIR,
     alpha_mask,
+    anchor_building,
     anchor_prop,
     bbox_of,
     json_dump,
@@ -55,6 +56,28 @@ PROPS: list[tuple[str, list[Path]]] = [
     ("stone_bench", [Path("art/raw/props/stone_bench.png")]),
     ("herm_statue", [Path("art/raw/props/herm_statue.png")]),
 ]
+
+# (kind, construction phase, source file) -- manifest key becomes
+# {kind}_{phase}, matching registry.ts's resolveSprite() lookup exactly.
+# Only 'active' exists for treasury so far: every other phase (planned,
+# scaffolding, foundation, damaged, sealed, overgrown) has no manifest
+# entry and stays procedural, same graceful-null precedent as everything
+# else here. This OVERWRITES the old stale medieval buildings_atlas.png
+# (orphaned since R0 deleted manifest.production.json) with real Greek art.
+BUILDINGS: list[tuple[str, str, Path]] = [
+    ("treasury", "active", Path("art/raw/buildings/treasury_final_220.png")),
+]
+
+# Mirrors registry.ts's MANIFEST[phase] exactly -- resolveSprite() spreads
+# these over the atlas spec regardless, so this is for manifest-file
+# self-consistency (and any future reviewer), not functional. Extend this
+# dict, not a single hardcoded value, if BUILDINGS grows more phases.
+PROCEDURAL_BY_PHASE = {
+    "planned": {"hasVolume": False, "outline": "dashed-stakes", "outlineColor": 0x888888,
+                "litWindows": False, "desaturate": 0.6},
+    "active": {"hasVolume": True, "outline": "glow", "outlineColor": 0xFFD700,
+               "litWindows": True, "desaturate": 0},
+}
 
 
 def squash_tile(rgba: np.ndarray, target: tuple[int, int] = TILE_TARGET) -> np.ndarray:
@@ -98,6 +121,16 @@ def _load_prop_sprites() -> list[Sprite]:
     return sprites
 
 
+def _load_building_sprites() -> list[Sprite]:
+    sprites = []
+    for kind, phase, path in BUILDINGS:
+        rgba = np.array(Image.open(path).convert("RGBA"))
+        mask = alpha_mask(rgba)
+        ax, ay = anchor_building(mask)
+        sprites.append(Sprite(f"{kind}_{phase}", rgba, (round(ax), round(ay)), None, 1))
+    return sprites
+
+
 def _write_atlas(sprites: list[Sprite], atlas_filename: str) -> dict[str, dict]:
     atlas, placements = _pack(sprites)
     PUBLIC_SPRITES_DIR.mkdir(parents=True, exist_ok=True)
@@ -121,16 +154,21 @@ def _write_atlas(sprites: list[Sprite], atlas_filename: str) -> dict[str, dict]:
 def main() -> int:
     tile_sprites = _load_tile_sprites()
     prop_sprites = _load_prop_sprites()
+    building_sprites = _load_building_sprites()
 
     manifest: dict[str, dict] = {}
     manifest.update(_write_atlas(tile_sprites, "terrain_atlas.png"))
     manifest.update(_write_atlas(prop_sprites, "props_atlas.png"))
+    manifest.update(_write_atlas(building_sprites, "buildings_atlas.png"))
+    for kind, phase, _path in BUILDINGS:
+        manifest[f"{kind}_{phase}"].update(PROCEDURAL_BY_PHASE[phase])
 
     manifest_path = SPRITES_DIR / "manifest.production.json"
     json_dump(manifest, manifest_path)
     print(f"Wrote {manifest_path}: {len(manifest)} keys")
     print(f"  tiles: {[s.name for s in tile_sprites]}")
     print(f"  props: {[s.name for s in prop_sprites]}")
+    print(f"  buildings: {[s.name for s in building_sprites]}")
     return 0
 
 

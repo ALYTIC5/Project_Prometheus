@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from tools.art.build_r2_manifest import PROPS, TILE_TARGET, TILES, squash_tile
+from tools.art.build_r2_manifest import BUILDINGS, PROPS, TILE_TARGET, TILES, squash_tile
 from tools.art.common import PUBLIC_SPRITES_DIR, SPRITES_DIR
 
 
@@ -77,6 +77,7 @@ def atlases(manifest: dict) -> dict[str, np.ndarray]:
 def test_manifest_has_every_expected_key(manifest: dict):
     expected = {name for name, _ in TILES}
     expected |= {f"prop_{base}_{i}" for base, paths in PROPS for i in range(len(paths))}
+    expected |= {f"{kind}_{phase}" for kind, phase, _path in BUILDINGS}
     assert expected <= manifest.keys()
 
 
