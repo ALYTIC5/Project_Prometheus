@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
@@ -27,6 +28,93 @@ from prometheus.validation.holdout import load_holdout_config
 
 _TIMEFRAMES = ("1d", "4h")
 _INGESTION_LAG = timedelta(minutes=5)
+_BAR_DURATION = {"1h": timedelta(hours=1), "4h": timedelta(hours=4), "1d": timedelta(days=1)}
+# Prices/volume are NUMERIC(20|28, 8) -- compared at the column's own
+# scale so a stored-vs-fetched difference is a real change, never a float
+# representation artefact that would mint a phantom revision every hour.
+_STORAGE_DECIMALS = 8
+
+
+def bar_available_at(event_time: datetime, timeframe: str) -> datetime:
+    """A bar is knowable once its candle has CLOSED, plus serving lag.
+    event_time is the candle's open (ccxt, and the ETF providers' own
+    convention); the close is event_time + the bar's duration. Before
+    2026-09-25 this was open + lag, i.e. a daily close looked available
+    ~24h before it existed -- see tests/laws/test_bar_revisions_point_in_time.py."""
+    return event_time + _BAR_DURATION[timeframe] + _INGESTION_LAG
+
+
+def _values(bar: Mapping[str, Any]) -> tuple[float, ...]:
+    return tuple(
+        round(float(bar[k]), _STORAGE_DECIMALS) for k in ("open", "high", "low", "close", "volume")
+    )
+
+
+def plan_bar_writes(
+    bars: list[dict[str, Any]],
+    *,
+    existing: dict[datetime, tuple[int, tuple[float, ...]]],
+    now: datetime,
+    timeframe: str,
+) -> list[dict[str, Any]]:
+    """Which fetched bars to write, and as which revision.
+
+    - A candle that hasn't closed yet (event_time + duration > now) is
+      never stored: storing it froze a partial candle forever under the
+      old ON CONFLICT DO NOTHING (BTC 2026-09-24: stored close 84,430.46,
+      real 84,411.53).
+    - A closed candle not yet stored -> revision 1, available at its
+      close + lag.
+    - A closed candle that differs from the latest stored revision ->
+      revision+1, available from NOW (when the correction became known),
+      so point-in-time reads before now still see the original.
+    - Identical to what's stored -> nothing.
+    `existing` maps event_time -> (latest revision, stored values)."""
+    writes: list[dict[str, Any]] = []
+    for bar in bars:
+        event_time = bar["event_time"]
+        if event_time + _BAR_DURATION[timeframe] > now:
+            continue
+        prior = existing.get(event_time)
+        if prior is None:
+            writes.append(
+                bar | {"revision": 1, "available_at": bar_available_at(event_time, timeframe)}
+            )
+        elif prior[1] != _values(bar):
+            writes.append(
+                bar
+                | {
+                    "revision": prior[0] + 1,
+                    "available_at": max(bar_available_at(event_time, timeframe), now),
+                }
+            )
+    return writes
+
+
+_SELECT_LATEST_REVISIONS = {
+    table: text(
+        f"""
+        SELECT DISTINCT ON (event_time) event_time, revision, open, high, low, close, volume
+          FROM {table}
+         WHERE symbol = :symbol AND timeframe = :timeframe AND event_time >= :since
+         ORDER BY event_time, revision DESC
+        """
+    )
+    for table in ("ohlcv_bars", "holdout.ohlcv_bars")
+}
+
+
+async def latest_stored_revisions(
+    session: AsyncSession, symbol: str, timeframe: str, since: datetime
+) -> dict[datetime, tuple[int, tuple[float, ...]]]:
+    """Latest stored revision per event_time across the main and holdout
+    tables (a bar lives in exactly one of them, by event_time)."""
+    stored: dict[datetime, tuple[int, tuple[float, ...]]] = {}
+    params = {"symbol": symbol, "timeframe": timeframe, "since": since}
+    for query in _SELECT_LATEST_REVISIONS.values():
+        for r in (await session.execute(query, params)).all():
+            stored[r.event_time] = (r.revision, _values(r._asdict()))
+    return stored
 
 # Loaded once at import: the holdout freeze date does not change mid-process,
 # and every other versioned-config load in this repo (costs.py's apply_cost,
@@ -122,7 +210,7 @@ def ccxt_rows_to_bars(
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "event_time": event_time,
-                "available_at": event_time + _INGESTION_LAG,
+                "available_at": bar_available_at(event_time, timeframe),
                 "source": source,
                 "revision": 1,
                 "open": o,
@@ -176,8 +264,10 @@ async def ingest_symbol(
         await session.commit()
         return
 
+    stored = await latest_stored_revisions(session, symbol, timeframe, since)
+    writes = plan_bar_writes(bars, existing=stored, now=datetime.now(UTC), timeframe=timeframe)
     holdout_cutoff = datetime.combine(_HOLDOUT_CONFIG.holdout_start, datetime.min.time(), UTC)
-    for bar in bars:
+    for bar in writes:
         if bar["event_time"] >= holdout_cutoff:
             await session.execute(_INSERT_HOLDOUT_BAR, bar)
         else:

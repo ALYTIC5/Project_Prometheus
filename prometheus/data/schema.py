@@ -67,8 +67,15 @@ class PointInTimeFrame:
         self._lf = frame.lazy()
 
     def as_of(self, cutoff: datetime) -> pl.DataFrame:
+        """Per bar (symbol, timeframe, event_time), the LATEST revision
+        visible at `cutoff` -- a correction ingested later (a new revision
+        with a later available_at, see data.ingestion.plan_bar_writes) is
+        invisible to any earlier cutoff, and never shows up as a duplicate
+        bar alongside the revision it supersedes."""
         return (
             self._lf.filter(pl.col("available_at") <= cutoff)
+            .sort("available_at")
+            .unique(subset=["symbol", "timeframe", "event_time"], keep="last")
             .select(list(_POINT_IN_TIME_COLUMNS))
             .sort(["symbol", "available_at"])
             .collect()
