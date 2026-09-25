@@ -12,7 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.benchmark import compute_benchmark_curve
-from prometheus.backtest.costs import apply_cost
+from prometheus.backtest.costs import apply_cost, load_cost_config
 from prometheus.backtest.engine import STARTING_CAPITAL
 from prometheus.core.db import PaperFinding
 from prometheus.data.loaders import load_point_in_time
@@ -102,6 +102,11 @@ async def compute_paper_equity_curve(
     if not rows:
         return []
 
+    # Law 8: the same cost model as the backtest and its benchmark. The
+    # fill price already carries slippage; the taker fee is charged here on
+    # each fill's notional (previously zero -- docs/DEFERRED.md I6).
+    cost_config, _ = load_cost_config()
+    fee_fraction = cost_config.taker_fee_bps / 10_000.0
     cash = STARTING_CAPITAL
     position_qty = 0.0
     curve: list[tuple[date, float]] = []
@@ -111,6 +116,7 @@ async def compute_paper_equity_curve(
             continue
         signed_qty = float(row.filled_qty) if row.side == "buy" else -float(row.filled_qty)
         cash -= signed_qty * float(row.avg_fill_price)
+        cash -= abs(signed_qty) * float(row.avg_fill_price) * fee_fraction
         position_qty += signed_qty
         curve.append((row.filled_at.date(), cash + position_qty * float(row.avg_fill_price)))
         last_valid_row = row

@@ -145,8 +145,17 @@ class PaperBroker:
         raise last_error
 
     def submit_order(
-        self, *, symbol: str, side: str, qty: float, client_order_id: str
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        client_order_id: str,
+        reference_price: float | None = None,
     ) -> dict[str, Any]:
+        """reference_price is accepted for interface parity with
+        paper.sim_broker.SimBroker and ignored: a testnet market order
+        fills at whatever the testnet book gives it."""
         return self._with_retry(
             lambda: self.exchange.create_order(
                 symbol, "market", side, qty, params={"newClientOrderId": client_order_id}

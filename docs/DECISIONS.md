@@ -88,3 +88,36 @@ result-less insufficient-data rejects from the retry churn). It did find:
 - Backfill: a one-time worker step (marker `bench_fix_0924`) re-queues every
   already-succeeded backtest job once; re-runs append superseding
   experiment/result rows (Law 6), spread over cycles by the drain budget.
+
+## Keyless ETF data, internal paper broker, bar revisions (2026-09-25)
+
+**ETF data: Yahoo v8 chart endpoint** (`prometheus/data/providers/yahoo.py`),
+chosen because the user asked for free, keyless data instead of an Alpaca
+signup. Stooq is keyless but serves only dividend+split-*adjusted* history
+(adjustments use future corporate actions: a Law 1 leak). Alpha Vantage,
+Tiingo, EODHD and Finnhub all need a key. Yahoo's OHLC is split-adjusted in
+place, so the adapter reverses splits using Yahoo's own split events and
+stores raw traded prices. Limits: it's an unofficial endpoint (it can
+rate-limit or change shape), and it isn't survivorship-safe. That's
+acceptable because the ETF universe is a fixed list whose Law 2 listing
+dates come from `config/universe_etf.yaml`.
+
+**Paper trading: internal SimBroker** (`prometheus/paper/sim_broker.py`),
+used whenever `PAPER_API_KEY`/`PAPER_API_SECRET` are unset. It makes no
+network calls, so Law 5 holds by construction. It fills at the decision
+close ± `slippage_bps`, and reconciliation charges `taker_fee_bps` per fill.
+That's the same cost model as the backtest engine. It is an honest forward
+test on unseen data, not a test of exchange execution: backtest-vs-paper
+divergence reads ~zero by construction.
+
+**Bar availability and revisions (Law 1 fix).** `event_time` is a candle's
+OPEN, but `available_at` was open + 5 min. A daily close was therefore
+labelled knowable ~24h early. Ingestion also stored the still-open candle,
+and `ON CONFLICT DO NOTHING` froze it (BTC 2026-09-24: stored 84,430.46 vs
+real 84,411.53). The fix:
+- `available_at` = close + 5 min (migration 0021 relabels existing rows).
+- Unclosed candles are never stored.
+- A changed closed candle becomes a new `revision` with `available_at = now`.
+- `as_of` returns the latest revision visible at the cutoff.
+
+Test: `tests/laws/test_bar_revisions_point_in_time.py`.

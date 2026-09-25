@@ -35,6 +35,7 @@ adopted from one strategy's proposal.
 """
 from __future__ import annotations
 
+import math
 import statistics
 
 from sqlalchemy import text
@@ -64,7 +65,10 @@ def _is_material(deltas_pct: list[float], *, assumed_baseline_pct: float) -> boo
     mean = statistics.mean(deltas_pct)
     stdev = statistics.stdev(deltas_pct)
     if stdev == 0:
-        return mean != assumed_baseline_pct
+        # isclose, not !=: the deltas are computed floats, and a fill at
+        # exactly the modelled slippage (paper/sim_broker.py) must not read
+        # as material because of the last bit of float representation.
+        return not math.isclose(mean, assumed_baseline_pct, rel_tol=1e-9, abs_tol=1e-12)
     n = len(deltas_pct)
     margin = _Z_95 * stdev / (n**0.5)
     return not (mean - margin <= assumed_baseline_pct <= mean + margin)

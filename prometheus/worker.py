@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -114,6 +115,7 @@ from prometheus.paper.reconciliation import (
     compute_paper_equity_curve,
     reconcile_order,
 )
+from prometheus.paper.sim_broker import SimBroker
 from prometheus.research.crossover import crossover
 from prometheus.research.llm.budget import current_tier, estimate_cost, model_for_tier
 from prometheus.research.llm.hypothesis import (
@@ -853,7 +855,14 @@ async def _run_paper() -> None:
     if not champions:
         return
 
-    broker = PaperBroker()
+    # Binance testnet when its credentials are configured; otherwise the
+    # internal simulated broker (paper/sim_broker.py) -- paper trading must
+    # not sit idle just because no exchange sandbox account exists.
+    broker: PaperBroker | SimBroker = (
+        PaperBroker()
+        if os.environ.get("PAPER_API_KEY") and os.environ.get("PAPER_API_SECRET")
+        else SimBroker()
+    )
     for row in champions:
         try:
             spec = StrategySpec.model_validate(row.spec)

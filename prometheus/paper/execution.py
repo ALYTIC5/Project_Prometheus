@@ -156,7 +156,11 @@ async def decide_and_submit(
         return str(existing_id)
 
     result = broker.submit_order(
-        symbol=spec.symbol, side=side, qty=abs(delta), client_order_id=client_order_id
+        symbol=spec.symbol,
+        side=side,
+        qty=abs(delta),
+        client_order_id=client_order_id,
+        reference_price=price,
     )
     order_id = await next_paper_order_id()
     await session.execute(
