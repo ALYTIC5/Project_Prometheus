@@ -296,7 +296,7 @@ class AblationTrial(Base):
 
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     component: Mapped[str] = mapped_column(sa.String(64))
-    version: Mapped[str] = mapped_column(sa.String(32))
+    version: Mapped[str] = mapped_column(sa.String(64))  # full git SHA, migration 0019
     symbol: Mapped[str] = mapped_column(sa.String(32))
     config_hash: Mapped[str] = mapped_column(sa.String(64))
     seed: Mapped[int] = mapped_column(sa.BigInteger)
@@ -325,7 +325,7 @@ class ComponentRegistry(Base):
 
     id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
     component: Mapped[str] = mapped_column(sa.String(64))
-    version: Mapped[str] = mapped_column(sa.String(32))
+    version: Mapped[str] = mapped_column(sa.String(64))  # full git SHA, migration 0019
     families_affected: Mapped[list[str]] = mapped_column(JSONB, default=list)
     n_experiments: Mapped[int] = mapped_column(sa.Integer, default=0)
     mean_oos_improvement: Mapped[float | None] = mapped_column(sa.Float, nullable=True)

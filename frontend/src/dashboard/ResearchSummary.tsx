@@ -44,9 +44,20 @@ const STATUS_STYLE: Record<string, string> = {
  * Everything here is derived from data StrategiesSection/QueueSection
  * already fetch (useStrategiesQuery/useQueueQuery) -- no new endpoint. */
 export function ResearchSummary() {
-  const { data: strategyData, isLoading: strategiesLoading } = useStrategiesQuery(DASHBOARD_POLL_MS);
-  const { data: queueData, isLoading: queueLoading } = useQueueQuery(DASHBOARD_POLL_MS);
+  const strategiesQuery = useStrategiesQuery(DASHBOARD_POLL_MS);
+  const queueQuery = useQueueQuery(DASHBOARD_POLL_MS);
+  const { data: strategyData, isLoading: strategiesLoading } = strategiesQuery;
+  const { data: queueData, isLoading: queueLoading } = queueQuery;
   const strategies = strategyData?.strategies ?? [];
+
+  const failed = [strategiesQuery, queueQuery].find((q) => q.isError);
+  if (failed) {
+    return (
+      <div className="border-b border-border px-4 py-3 font-mono text-xs text-red-400">
+        Research summary unavailable: {String(failed.error)}
+      </div>
+    );
+  }
 
   if (strategiesLoading || queueLoading) {
     return (

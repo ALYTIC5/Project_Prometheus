@@ -44,12 +44,17 @@ _SELECT_ONE = text("SELECT id, family, spec, status, created_at FROM strategies 
 # Same join path as research/population.py's _LATEST_FINGERPRINT_CTE --
 # see that module's own comment for why this is the real join (fingerprint,
 # not strategies.id) and not a shortcut.
+# Scoped to the rows actually being returned (:ids). Unscoped, this ran
+# the DISTINCT ON + LATERAL over every strategy ever created (~441k after
+# the 2026-09-24 retry churn) to decorate at most 500 rows, and
+# GET /strategies/ timed out -- every dashboard section waiting on it sat
+# at "Loading..." forever.
 _SELECT_LATEST_VALIDATION = text(
     """
     WITH latest_experiment AS (
         SELECT DISTINCT ON (strategy_id) strategy_id, config_hash, change_set
           FROM experiments
-         WHERE strategy_id IS NOT NULL
+         WHERE strategy_id IN :ids
          ORDER BY strategy_id, created_at DESC
     )
     SELECT le.strategy_id, le.change_set, vr.verdict, vr.score, vr.pbo, vr.deflated_sharpe,
@@ -62,7 +67,7 @@ _SELECT_LATEST_VALIDATION = text(
            ORDER BY created_at DESC LIMIT 1
       ) vr ON true
     """
-)
+).bindparams(bindparam("ids", expanding=True))
 
 # expanding=True lets SQLAlchemy safely bind a Python tuple/list against
 # an IN clause -- same fix ingestion.py's _SELECT_BARS_FOR_VERSIONING
@@ -175,7 +180,9 @@ async def _enrich(rows: Sequence[Row[Any]], session: Any) -> list[dict[str, Any]
     specs_by_id = {r.id: spec_for_row(r.family, r.spec) for r in rows}
     lineage = _resolve_lineage(specs_by_id)
 
-    validation_rows = (await session.execute(_SELECT_LATEST_VALIDATION)).fetchall()
+    validation_rows = (
+        await session.execute(_SELECT_LATEST_VALIDATION, {"ids": [r.id for r in rows]})
+    ).fetchall() if rows else []
     validation_by_strategy_id = {v.strategy_id: v for v in validation_rows}
 
     # asset_class lives on universe_membership (per-symbol), not on the
