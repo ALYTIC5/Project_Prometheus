@@ -84,6 +84,7 @@ from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingest_etf import backfill_etf
 from prometheus.data.ingestion import backfill, load_universe_symbols
 from prometheus.data.loaders import load_point_in_time
+from prometheus.data.schema import PointInTimeFrame
 from prometheus.experiments.ablation import (
     register_evolution_component,
     register_gradient_boosting_component,
@@ -799,6 +800,17 @@ _SELECT_STRATEGY_FILLED_ORDER_IDS = text(
 )
 
 
+def paper_decision_bars(
+    history: PointInTimeFrame, forward: PointInTimeFrame, cutoff: datetime
+) -> pl.DataFrame:
+    """Pre-holdout history plus the holdout-period bars paper trading reads
+    via access_holdout_for_paper, as one frame in as_of()'s own order.
+    Disjoint by construction: ingestion splits the two on event_time."""
+    return pl.concat([history.as_of(cutoff), forward.as_of(cutoff)]).sort(
+        ["symbol", "available_at"]
+    )
+
+
 async def _run_paper() -> None:
     """Every champion, every tick: poll fills, reconcile, check
     divergence. Trading decisions (decide_and_submit) only actually
@@ -882,10 +894,7 @@ async def _run_paper() -> None:
                 # 2026-09-25, docs/DECISIONS.md).
                 forward = await access_holdout_for_paper(session, spec, row.id)
                 await session.commit()
-                # Disjoint by construction: ingestion splits on event_time.
-                bars = pl.concat(
-                    [pit.as_of(as_of_cutoff), forward.as_of(as_of_cutoff)]
-                ).sort("event_time")
+                bars = paper_decision_bars(pit, forward, as_of_cutoff)
                 if bars.height == 0:
                     continue
 
