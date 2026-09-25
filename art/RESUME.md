@@ -57,14 +57,14 @@ dropped it, the text prompt alone reproduced the approved look on its own
 - Treasury has only the `active` construction phase; every other phase
   (planned/scaffolding/foundation/damaged/sealed/overgrown) stays procedural.
 
-## Next: R3 (characters) — needs a decision, not just generations
+## R3 (characters) — UNBLOCKED, ready for generations
 
-Before generating ANY character: character canvas/height has **no scale
-rule** in `art/theme.yaml` yet, and `tools/art/scale.py`'s `preflight()`
-refuses generation for `deities`/`agents`/`heroes`/`townsfolk` until one
-exists. Ask the user: how tall should a character be, relative to the
-64px tile? Then add a `scale.categories` entry for each character category
-before spending any generations on R3.
+User decision 2026-09-25: a standing mortal is **~40px tall on a 48px
+canvas** (~2/3 of a 64px tile). Encoded in `art/theme.yaml` `scale:` as a
+`character` rule measured on content HEIGHT: agents/heroes/townsfolk
+48px canvas, 34–44px tall; deities 64px canvas, 46–60px tall. All 30
+character keys pass `preflight`. Remember: characters must be created AND
+animated on the same account — budget a whole account per batch.
 
 ## Deploy gotcha: deploy the WORKTREE explicitly
 

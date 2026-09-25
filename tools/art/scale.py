@@ -144,6 +144,13 @@ def preflight(key: str, canvas: int | tuple[int, int]) -> ScaleResult:
         expected = f"canvas {want_w}x{want_h}, content <= {_prop_max_width(key, rule)}px wide"
         if (width, height) != (want_w, want_h):
             errors.append(f"{key} canvas must be {want_w}x{want_h}, got {width}x{height}")
+    elif kind == "character":
+        want = int(rule["canvas"])
+        expected = (
+            f"canvas {want}x{want}, content {rule['min_height_px']}-{rule['max_height_px']}px tall"
+        )
+        if (width, height) != (want, want):
+            errors.append(f"{category} canvas must be {want}x{want}, got {width}x{height}")
     else:
         errors.append(f"unknown scale rule {kind!r} for category {category!r}")
     return ScaleResult(not errors, key, category, errors, expected=expected)
@@ -182,6 +189,12 @@ def check_scale(path: Path, key: str) -> ScaleResult:
         expected = f"<= {max_w}px wide"
         if width > max_w:
             errors.append(f"content {width}px wide, max {max_w}px ({category} at world scale)")
+    elif kind == "character":
+        lo, hi = int(rule["min_height_px"]), int(rule["max_height_px"])
+        content_h = bbox[1]
+        expected = f"{lo}-{hi}px tall"
+        if not lo <= content_h <= hi:
+            errors.append(f"content {content_h}px tall, expected {expected} ({category})")
     else:
         errors.append(f"unknown scale rule {kind!r} for category {category!r}")
     return ScaleResult(not errors, key, category, errors, bbox, expected)

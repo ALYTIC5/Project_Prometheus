@@ -43,8 +43,31 @@ scale:
         laurel_bush: 40        # clipped at 32x32)
         herm_statue: 48        # a pillar -- tall and thin
         tripod_brazier: 40     # legs + bowl stacked vertically
-    # deities / agents / heroes / townsfolk: NO RULE YET -> generation refused
-    # until a character height relative to the tile is decided.
+    # Characters: user decision 2026-09-25 -- a standing mortal is ~40px tall
+    # on a 48px canvas (~2/3 of a 64px tile), so buildings read monumental.
+    # Measured on content HEIGHT (a figure's width varies with pose/props).
+    agents:
+      rule: character
+      canvas: 48
+      min_height_px: 34
+      max_height_px: 44
+    heroes:
+      rule: character
+      canvas: 48
+      min_height_px: 34
+      max_height_px: 44
+    townsfolk:
+      rule: character
+      canvas: 48
+      min_height_px: 34
+      max_height_px: 44
+    # Gods stand larger than mortals, on theme.yaml's existing 64px deity
+    # canvas: same ~5/6-of-canvas proportion as the mortals' 40/48.
+    deities:
+      rule: character
+      canvas: 64
+      min_height_px: 46
+      max_height_px: 60
 
 buildings:
   library:

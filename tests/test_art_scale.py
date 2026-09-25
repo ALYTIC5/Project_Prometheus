@@ -85,12 +85,34 @@ def test_preflight_tiles_must_be_tile_width():
     assert not scale.preflight("grass", 32).ok
 
 
-@pytest.mark.parametrize("category", ["deities", "agents", "heroes", "townsfolk"])
-def test_preflight_refuses_categories_without_a_scale_rule(category):
+@pytest.mark.parametrize(
+    ("category", "canvas"),
+    [("agents", 48), ("heroes", 48), ("townsfolk", 48), ("deities", 64)],
+)
+def test_preflight_characters_require_their_canvas(category, canvas):
+    # User decision 2026-09-25: a mortal is ~40px tall on a 48px canvas;
+    # gods use the larger 64px deity canvas.
     key = next(iter(compose_prompt._load_theme()[category]))
+    assert scale.preflight(key, canvas).ok
+    assert not scale.preflight(key, canvas + 16).ok
+
+
+def test_preflight_still_fails_closed_for_a_category_with_no_rule(monkeypatch):
+    rules = scale._rules()
+    categories = {k: v for k, v in rules["categories"].items() if k != "agents"}
+    trimmed = {**rules, "categories": categories}
+    monkeypatch.setattr(scale, "_rules", lambda: trimmed)
+    key = next(iter(compose_prompt._load_theme()["agents"]))
     result = scale.preflight(key, 48)
     assert not result.ok
     assert "no scale rule" in result.errors[0]
+
+
+def test_check_scale_character_height_window(tmp_path: Path):
+    agent = next(iter(compose_prompt._load_theme()["agents"]))
+    assert scale.check_scale(_png(tmp_path, 48, 20, 40), agent).ok  # ~40px tall
+    assert not scale.check_scale(_png(tmp_path, 48, 20, 28), agent).ok  # too short
+    assert not scale.check_scale(_png(tmp_path, 48, 20, 47), agent).ok  # too tall
 
 
 def test_every_generatable_category_is_either_ruled_or_refused():
