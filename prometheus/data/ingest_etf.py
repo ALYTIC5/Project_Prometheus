@@ -1,4 +1,5 @@
-"""ETF/index daily-bar ingestion via AlpacaProvider -- PROMPT 2's
+"""ETF/index daily-bar ingestion (default provider: keyless YahooChartProvider
+since 2026-09-25; AlpacaProvider remains usable by passing it in) -- PROMPT 2's
 "honest equity path". Deliberately isolated from ingestion.py's
 crypto/ccxt path (this sub-project's design doc, Approach B): reuses
 the *existing* quality-check, holdout-split, and versioning machinery
@@ -23,9 +24,12 @@ from prometheus.data.ingestion import (
     _INSERT_HOLDOUT_BAR,
     _INSERT_RAW,
     _UPDATE_RAW_STATUS,
+    bar_available_at,
+    latest_stored_revisions,
+    plan_bar_writes,
 )
-from prometheus.data.providers.alpaca import AlpacaProvider
 from prometheus.data.providers.base import MarketDataProvider
+from prometheus.data.providers.yahoo import YahooChartProvider
 from prometheus.data.quality import run_quality_checks
 from prometheus.data.universe import load_universe_symbols_for_asset_class, sync_from_yaml
 from prometheus.data.versioning import record_data_version
@@ -34,8 +38,6 @@ from prometheus.validation.holdout import load_holdout_config
 
 _UNIVERSE_ETF_YAML = "config/universe_etf.yaml"
 _TIMEFRAME = "1d"
-_INGESTION_LAG = timedelta(minutes=5)
-_SOURCE = "alpaca"
 
 _HOLDOUT_CONFIG, _ = load_holdout_config()
 
@@ -50,7 +52,8 @@ async def backfill_etf(
     window instead of always reaching up to the live holdout boundary
     (config/holdout.yaml's holdout_start), which would otherwise write
     fake test bars into the shared Law-3-protected holdout schema."""
-    provider = provider or AlpacaProvider()
+    provider = provider or YahooChartProvider()
+    source = getattr(provider, "SOURCE", type(provider).__name__.lower())
     now = end or datetime.now(UTC)
     since = now - timedelta(days=days)
     holdout_cutoff = datetime.combine(_HOLDOUT_CONFIG.holdout_start, datetime.min.time(), UTC)
@@ -71,7 +74,7 @@ async def backfill_etf(
                 await session.execute(
                     _INSERT_RAW,
                     {
-                        "source": _SOURCE,
+                        "source": source,
                         "symbol": symbol,
                         "timeframe": _TIMEFRAME,
                         "payload": {"rows": raw_rows},
@@ -92,8 +95,8 @@ async def backfill_etf(
                     "symbol": b.symbol,
                     "timeframe": _TIMEFRAME,
                     "event_time": b.event_time,
-                    "available_at": b.event_time + _INGESTION_LAG,
-                    "source": _SOURCE,
+                    "available_at": bar_available_at(b.event_time, _TIMEFRAME),
+                    "source": source,
                     "revision": 1,
                     "open": b.open,
                     "high": b.high,
@@ -121,7 +124,11 @@ async def backfill_etf(
                 await session.commit()
                 continue
 
-            for bar in bars:
+            stored = await latest_stored_revisions(session, symbol, _TIMEFRAME, since)
+            writes = plan_bar_writes(
+                bars, existing=stored, now=datetime.now(UTC), timeframe=_TIMEFRAME
+            )
+            for bar in writes:
                 if bar["event_time"] >= holdout_cutoff:
                     await session.execute(_INSERT_HOLDOUT_BAR, bar)
                 else:
@@ -138,7 +145,7 @@ async def backfill_etf(
                 date_range_start=since.date(),
                 date_range_end=now.date(),
                 source_versions={
-                    _SOURCE: {
+                    source: {
                         "version": "v2",
                         # Discoverable/auditable in data_versions: which
                         # feed tier (e.g. Alpaca's free-tier "iex") the
@@ -153,7 +160,9 @@ async def backfill_etf(
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Backfill ETF/index daily bars via Alpaca.")
+    parser = argparse.ArgumentParser(
+        description="Backfill ETF/index daily bars (keyless Yahoo chart API)."
+    )
     parser.add_argument("--days", type=int, default=2000)
     return parser.parse_args(argv)
 
