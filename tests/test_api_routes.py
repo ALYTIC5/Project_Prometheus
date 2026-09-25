@@ -76,7 +76,9 @@ def test_experiments_response_carries_lineage_fields() -> None:
         # path (a Decision with no Result), an honest gap not an error.
         assert "total_return_pct" in experiment
         assert "benchmark_return_pct" in experiment
-        assert experiment["total_return_pct"] is None or isinstance(experiment["total_return_pct"], int | float)
+        assert experiment["total_return_pct"] is None or isinstance(
+            experiment["total_return_pct"], int | float
+        )
 
 
 def test_queue_status_shape() -> None:
@@ -236,7 +238,14 @@ def test_paper_trading_response_shape() -> None:
     # strategy so far is REJECT) -- an empty list is the honest, expected
     # state today, not a bug. Shape asserted for whenever one exists.
     for champion in body["champions"]:
-        for field in ("strategy_id", "family", "symbol", "equity_curve", "recent_orders", "recent_findings"):
+        for field in (
+            "strategy_id",
+            "family",
+            "symbol",
+            "equity_curve",
+            "recent_orders",
+            "recent_findings",
+        ):
             assert field in champion
         for point in champion["equity_curve"]:
             assert "date" in point
@@ -257,5 +266,12 @@ def test_clusters_response_shape() -> None:
         assert "mean_pairwise_correlation" in cluster
         assert len(cluster["members"]) > 1
         for member in cluster["members"]:
-            for field in ("strategy_id", "family", "config_hash", "is_representative", "score", "verdict"):
+            for field in (
+                "strategy_id",
+                "family",
+                "config_hash",
+                "is_representative",
+                "score",
+                "verdict",
+            ):
                 assert field in member

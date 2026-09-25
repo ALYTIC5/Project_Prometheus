@@ -72,7 +72,9 @@ def _stochastic_spec(lookback: int = 14, oversold: float = 20.0) -> StrategySpec
     )
 
 
-def _sar_spec(af_start: float = 0.02, af_increment: float = 0.02, af_max: float = 0.2) -> StrategySpec:
+def _sar_spec(
+    af_start: float = 0.02, af_increment: float = 0.02, af_max: float = 0.2
+) -> StrategySpec:
     return StrategySpec(
         family="PARABOLIC_SAR",
         symbol=_SYMBOL,

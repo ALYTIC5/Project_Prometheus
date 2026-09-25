@@ -33,7 +33,7 @@ _SELECT_BARS = text(
 # prometheus.validation is mypy-strict and this dict is defined in a
 # non-strict module -- an untyped/widened inference here would surface
 # as a spurious error only at the strict import site, not here.
-POINT_IN_TIME_FRAME_SCHEMA: dict[str, pl.PolarsDataType] = {
+POINT_IN_TIME_FRAME_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     "symbol": pl.Utf8,
     "timeframe": pl.Utf8,
     "event_time": pl.Datetime("us", "UTC"),

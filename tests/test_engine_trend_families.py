@@ -208,7 +208,7 @@ def test_chandelier_exit_long_while_price_holds_above_the_stop() -> None:
 
 
 def test_chandelier_exit_flat_after_a_sharp_drop_below_the_stop() -> None:
-    closes = _uptrend(40) + [50.0, 50.0]
+    closes = [*_uptrend(40), 50.0, 50.0]
     bars = _bars(closes)
     result = _chandelier_exit_signal(bars, lookback=22, multiplier=3.0)
     assert result["position"].to_list()[-1] == 0.0

@@ -3,10 +3,9 @@ streams. Pure functions, no DB, real synthetic equity curves."""
 from __future__ import annotations
 
 from prometheus.research.clustering import (
-    Cluster,
-    cluster_by_correlation,
     _pearson_correlation,
     _returns_from_equity_curve,
+    cluster_by_correlation,
 )
 from prometheus.strategy.spec import StrategySpec
 

@@ -52,7 +52,11 @@ def _lagged_days(start: datetime, count: int) -> list[datetime]:
 
 def test_weights_for_equal_weight_splits_evenly() -> None:
     weights = weights_for_equal_weight(["A", "B", "C"])
-    assert weights == {"A": pytest.approx(1 / 3), "B": pytest.approx(1 / 3), "C": pytest.approx(1 / 3)}
+    assert weights == {
+        "A": pytest.approx(1 / 3),
+        "B": pytest.approx(1 / 3),
+        "C": pytest.approx(1 / 3),
+    }
 
 
 def test_weights_for_equal_weight_empty_universe_is_empty() -> None:

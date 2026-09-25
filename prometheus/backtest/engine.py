@@ -69,8 +69,8 @@ from prometheus.strategy.spec import (
     FAMILY_KELTNER_REVERSION,
     FAMILY_LINREG_SLOPE,
     FAMILY_LOGISTIC_REGRESSION,
-    FAMILY_MACD,
     FAMILY_MA_RIBBON,
+    FAMILY_MACD,
     FAMILY_MFI,
     FAMILY_MOMENTUM,
     FAMILY_N_DAY_LOW,
@@ -997,7 +997,8 @@ def _hull_ma_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
         weights = list(range(1, window + 1))
         total = float(sum(weights))
         return expr.rolling_map(
-            lambda s: sum(w * v for w, v in zip(weights, s)) / total, window_size=window
+            lambda s: sum(w * v for w, v in zip(weights, s, strict=False)) / total,
+            window_size=window,
         )
 
     return (
@@ -1072,11 +1073,7 @@ def _tsmom_signal(bars: pl.DataFrame, lookback_days: int, skip_days: int) -> pl.
     trailing_return = (anchor_close - lookback_close) / lookback_close
     return bars.with_columns(trailing_return.alias("_tsmom_return")).with_columns(
         pl.col("_tsmom_return").alias("_signal_strength"),
-        (pl.col("_tsmom_return") > 0.0)
-        .cast(pl.Float64)
-        .shift(1)
-        .fill_null(0.0)
-        .alias("position"),
+        (pl.col("_tsmom_return") > 0.0).cast(pl.Float64).shift(1).fill_null(0.0).alias("position"),
     )
 
 
@@ -1144,6 +1141,7 @@ def _aroon_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     "no vectorized primitive exists, compute it directly" stance
     _cci_signal/_hull_ma_signal already take). Long when Aroon-Up
     crosses above Aroon-Down."""
+
     def _bars_since_extreme(s: pl.Series, find_max: bool) -> float:
         values = s.to_list()
         idx = values.index(max(values) if find_max else min(values))
@@ -1159,7 +1157,9 @@ def _aroon_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
         / lookback
         * 100.0
     )
-    return bars.with_columns(aroon_up.alias("_aroon_up"), aroon_down.alias("_aroon_down")).with_columns(
+    return bars.with_columns(
+        aroon_up.alias("_aroon_up"), aroon_down.alias("_aroon_down")
+    ).with_columns(
         (pl.col("_aroon_up") - pl.col("_aroon_down")).alias("_signal_strength"),
         (pl.col("_aroon_up") > pl.col("_aroon_down"))
         .cast(pl.Float64)
@@ -1169,9 +1169,7 @@ def _aroon_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     )
 
 
-def _ichimoku_signal(
-    bars: pl.DataFrame, conversion: int, base: int, span_b: int
-) -> pl.DataFrame:
+def _ichimoku_signal(bars: pl.DataFrame, conversion: int, base: int, span_b: int) -> pl.DataFrame:
     """Goichi Hosoda's own construction, his own published 9/26/52
     default periods. Conversion/base lines are the midpoint of the
     highest-high/lowest-low over their own windows; leading span A/B are
@@ -1249,6 +1247,7 @@ def _linreg_slope_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     the closed-form OLS slope (cov(x, y) / var(x), x = 0..window-1),
     the same "no vectorized primitive exists, compute it directly"
     stance CCI/Hull/Aroon already take here."""
+
     def _ols_slope(s: pl.Series) -> float:
         y = s.to_list()
         n = len(y)
@@ -1286,9 +1285,7 @@ def _chandelier_exit_signal(bars: pl.DataFrame, lookback: int, multiplier: float
         bars.with_columns(true_range.alias("_tr"))
         .with_columns(pl.col("_tr").ewm_mean(span=lookback, adjust=False).alias("_atr"))
         .with_columns(pl.col("high").rolling_max(lookback).alias("_highest_high"))
-        .with_columns(
-            (pl.col("_highest_high") - multiplier * pl.col("_atr")).alias("_stop")
-        )
+        .with_columns((pl.col("_highest_high") - multiplier * pl.col("_atr")).alias("_stop"))
         .with_columns(
             ((pl.col("close") - pl.col("_stop")) / pl.col("_atr")).alias("_signal_strength"),
             (pl.col("close") > pl.col("_stop"))
@@ -1306,9 +1303,7 @@ def _sma200_filter_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
     flat otherwise -- deliberately simpler than MOMENTUM's own two-MA
     crossover (one moving average, one condition, no second window to
     overfit)."""
-    return bars.with_columns(
-        pl.col("close").rolling_mean(lookback).alias("_sma")
-    ).with_columns(
+    return bars.with_columns(pl.col("close").rolling_mean(lookback).alias("_sma")).with_columns(
         ((pl.col("close") - pl.col("_sma")) / pl.col("_sma")).alias("_signal_strength"),
         (pl.col("close") > pl.col("_sma"))
         .cast(pl.Float64)
@@ -1379,8 +1374,10 @@ def _squeeze_breakout_signal(bars: pl.DataFrame, lookback: int) -> pl.DataFrame:
             (basis - _SQUEEZE_KC_MULTIPLIER * atr).alias("_kc_lower"),
         )
         .with_columns(
-            ((pl.col("_bb_upper") < pl.col("_kc_upper")) & (pl.col("_bb_lower") > pl.col("_kc_lower")))
-            .alias("_squeeze_on")
+            (
+                (pl.col("_bb_upper") < pl.col("_kc_upper"))
+                & (pl.col("_bb_lower") > pl.col("_kc_lower"))
+            ).alias("_squeeze_on")
         )
         .with_columns(
             (
@@ -1409,9 +1406,7 @@ def _atr_breakout_signal(bars: pl.DataFrame, lookback: int, multiplier: float) -
         (pl.col("low") - prev_close).abs(),
     )
     atr = true_range.ewm_mean(span=lookback, adjust=False)
-    return bars.with_columns(
-        prev_close.alias("_prev_close"), atr.alias("_atr")
-    ).with_columns(
+    return bars.with_columns(prev_close.alias("_prev_close"), atr.alias("_atr")).with_columns(
         ((pl.col("close") - pl.col("_prev_close")) / pl.col("_atr")).alias("_signal_strength"),
         (pl.col("close") > pl.col("_prev_close") + multiplier * pl.col("_atr"))
         .cast(pl.Float64)
@@ -1598,7 +1593,9 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
             and spec.sar_af_increment is not None
             and spec.sar_af_max is not None
         )
-        return _parabolic_sar_signal(bars, spec.sar_af_start, spec.sar_af_increment, spec.sar_af_max)
+        return _parabolic_sar_signal(
+            bars, spec.sar_af_start, spec.sar_af_increment, spec.sar_af_max
+        )
     if spec.family == FAMILY_KELTNER:
         assert spec.keltner_lookback is not None and spec.keltner_multiplier is not None
         return _keltner_signal(bars, spec.keltner_lookback, spec.keltner_multiplier)
@@ -1618,9 +1615,7 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
         assert spec.trix_lookback is not None
         return _trix_signal(bars, spec.trix_lookback)
     if spec.family == FAMILY_KELTNER_REVERSION:
-        assert (
-            spec.keltner_rev_lookback is not None and spec.keltner_rev_multiplier is not None
-        )
+        assert spec.keltner_rev_lookback is not None and spec.keltner_rev_multiplier is not None
         return _keltner_reversion_signal(
             bars, spec.keltner_rev_lookback, spec.keltner_rev_multiplier
         )
@@ -1753,7 +1748,9 @@ def signal_for(bars: pl.DataFrame, spec: StrategySpec) -> pl.DataFrame:
             and spec.vov_window is not None
             and spec.vov_lookback is not None
         )
-        return _vol_of_vol_filter_signal(bars, spec.vov_vol_window, spec.vov_window, spec.vov_lookback)
+        return _vol_of_vol_filter_signal(
+            bars, spec.vov_vol_window, spec.vov_window, spec.vov_lookback
+        )
     raise ValueError(f"no signal generator for family {spec.family!r}")
 
 
@@ -1927,12 +1924,12 @@ class _RawBacktest:
     total_costs: float
 
 
-
 def min_bars_for(spec: StrategySpec) -> int:
     """Public name for _min_bars_for -- experiments/runner.py's
     enqueue-time history check needs the exact same warm-up rule
     run_backtest enforces, not a second copy of it."""
     return _min_bars_for(spec)
+
 
 def _run_accounting(
     bars: pl.DataFrame, positions: list[float], cost_model: CostModel
