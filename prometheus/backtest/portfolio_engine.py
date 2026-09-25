@@ -18,9 +18,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, time
 
-import polars as pl
-
 import numpy as np
+import polars as pl
 
 from prometheus.backtest.benchmark import (
     BenchmarkResult,
@@ -504,7 +503,9 @@ def weights_for_min_variance(
     total = clipped.sum()
     if total <= 0:
         return weights_for_risk_parity(eligible, bars_by_symbol, as_of, lookback_days)
-    return {symbol: float(w) / float(total) for symbol, w in zip(usable, clipped) if w > 0}
+    return {
+        symbol: float(w) / float(total) for symbol, w in zip(usable, clipped, strict=False) if w > 0
+    }
 
 
 def weights_for_fifty_two_week_high(
@@ -565,7 +566,7 @@ def weights_for_residual_momentum(
     bench_closes = _closes_as_of(bars_by_symbol[benchmark_symbol], as_of)
     if len(bench_closes) <= lookback_days:
         return {}
-    bench_window = bench_closes[-(lookback_days + 1):]
+    bench_window = bench_closes[-(lookback_days + 1) :]
     bench_returns = [
         (bench_window[i] - bench_window[i - 1]) / bench_window[i - 1]
         for i in range(1, len(bench_window))
@@ -583,7 +584,7 @@ def weights_for_residual_momentum(
         closes = _closes_as_of(bars_by_symbol[symbol], as_of)
         if len(closes) <= lookback_days:
             continue
-        window = closes[-(lookback_days + 1):]
+        window = closes[-(lookback_days + 1) :]
         asset_returns = [
             (window[i] - window[i - 1]) / window[i - 1]
             for i in range(1, len(window))
@@ -593,10 +594,13 @@ def weights_for_residual_momentum(
             continue
         asset_mean = sum(asset_returns) / len(asset_returns)
         cov = sum(
-            (a - asset_mean) * (b - bench_mean) for a, b in zip(asset_returns, bench_returns)
+            (a - asset_mean) * (b - bench_mean)
+            for a, b in zip(asset_returns, bench_returns, strict=False)
         )
         beta = cov / bench_var
-        residual_returns = [a - beta * b for a, b in zip(asset_returns, bench_returns)]
+        residual_returns = [
+            a - beta * b for a, b in zip(asset_returns, bench_returns, strict=False)
+        ]
         residual_cumulative = sum(residual_returns)
         scored.append((symbol, residual_cumulative))
 
@@ -647,7 +651,12 @@ def _weights_for(
         if lookback_days is None or top_n is None:
             raise ValueError(f"family {spec.family!r} requires lookback_days and top_n")
         return weights_for_top_n_momentum(
-            eligible, bars_by_symbol, as_of, lookback_days, top_n, worst=True,
+            eligible,
+            bars_by_symbol,
+            as_of,
+            lookback_days,
+            top_n,
+            worst=True,
         )
     if spec.family == ROTATION_FAMILY_DUAL_MOMENTUM_GEM:
         lookback_days = spec.lookback_days
@@ -680,7 +689,9 @@ def _weights_for(
         top_n = spec.top_n
         protection_factor = spec.protection_factor
         if lookback_days is None or top_n is None or protection_factor is None:
-            raise ValueError(f"family {spec.family!r} requires lookback_days, top_n, protection_factor")
+            raise ValueError(
+                f"family {spec.family!r} requires lookback_days, top_n, protection_factor"
+            )
         return weights_for_paa(
             eligible, bars_by_symbol, as_of, spec.universe, lookback_days, top_n, protection_factor
         )
@@ -705,7 +716,9 @@ def _weights_for(
         top_n = spec.top_n
         if lookback_days is None or top_n is None:
             raise ValueError(f"family {spec.family!r} requires lookback_days and top_n")
-        return weights_for_fifty_two_week_high(eligible, bars_by_symbol, as_of, lookback_days, top_n)
+        return weights_for_fifty_two_week_high(
+            eligible, bars_by_symbol, as_of, lookback_days, top_n
+        )
     if spec.family == ROTATION_FAMILY_RESIDUAL_MOMENTUM:
         lookback_days = spec.lookback_days
         top_n = spec.top_n
@@ -774,7 +787,9 @@ def run_portfolio_backtest(
     benchmark_result: BenchmarkResult | None = None,
 ) -> BacktestResult:
     frame = pit.as_of(as_of_cutoff).filter(pl.col("symbol").is_in(list(spec.universe)))
-    all_dates: list[date] = sorted({row["available_at"].date() for row in frame.iter_rows(named=True)})
+    all_dates: list[date] = sorted(
+        {row["available_at"].date() for row in frame.iter_rows(named=True)}
+    )
     if not all_dates:
         raise ValueError(f"no bars for universe {spec.universe} as of {as_of_cutoff}")
 
@@ -829,9 +844,7 @@ def run_portfolio_backtest(
             if idx > first_idx:
                 prev_date = all_dates[idx - 1]
                 cash += _drift(dollar_alloc, close_by_symbol_date, prev_date, as_of)
-                gross_cash += _drift(
-                    gross_dollar_alloc, close_by_symbol_date, prev_date, as_of
-                )
+                gross_cash += _drift(gross_dollar_alloc, close_by_symbol_date, prev_date, as_of)
 
             if idx in rebalance_indices:
                 # Promoted-minor #3: membership eligibility (Law 2) is

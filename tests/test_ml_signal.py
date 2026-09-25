@@ -32,7 +32,9 @@ _ML_FAMILIES = (
 )
 
 
-def _rf_spec(train_window: int = 40, retrain_interval: int = 10, threshold: float = 0.5) -> StrategySpec:
+def _rf_spec(
+    train_window: int = 40, retrain_interval: int = 10, threshold: float = 0.5
+) -> StrategySpec:
     return StrategySpec(
         family="RANDOM_FOREST", symbol=_SYMBOL, timeframe="1d",
         rf_train_window=train_window, rf_retrain_interval=retrain_interval,
@@ -41,7 +43,11 @@ def _rf_spec(train_window: int = 40, retrain_interval: int = 10, threshold: floa
 
 
 def _ml_spec(
-    family: str, prefix: str, train_window: int = 40, retrain_interval: int = 10, threshold: float = 0.5
+    family: str,
+    prefix: str,
+    train_window: int = 40,
+    retrain_interval: int = 10,
+    threshold: float = 0.5,
 ) -> StrategySpec:
     return StrategySpec(
         family=family, symbol=_SYMBOL, timeframe="1d", expected_horizon=1,
@@ -97,8 +103,12 @@ def test_no_lookahead_planted_future_spike_is_unreachable() -> None:
 
     baseline_rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(baseline_prices)]
     spiked_rows = [_bar_row(_SYMBOL, i, p) for i, p in enumerate(spiked_prices)]
-    baseline_signaled = signal_for(pl.DataFrame(baseline_rows), _rf_spec(train_window=40, retrain_interval=10))
-    spiked_signaled = signal_for(pl.DataFrame(spiked_rows), _rf_spec(train_window=40, retrain_interval=10))
+    baseline_signaled = signal_for(
+        pl.DataFrame(baseline_rows), _rf_spec(train_window=40, retrain_interval=10)
+    )
+    spiked_signaled = signal_for(
+        pl.DataFrame(spiked_rows), _rf_spec(train_window=40, retrain_interval=10)
+    )
     positions_before_plant = spiked_signaled["position"].to_list()[:-1]
     baseline_positions_before_plant = baseline_signaled["position"].to_list()[:-1]
     assert positions_before_plant == baseline_positions_before_plant
@@ -203,7 +213,9 @@ def test_produces_real_trades_once_trained_every_model(family, prefix, signal_fn
 
 
 @pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
-def test_no_lookahead_planted_future_spike_is_unreachable_every_model(family, prefix, signal_fn) -> None:
+def test_no_lookahead_planted_future_spike_is_unreachable_every_model(
+    family, prefix, signal_fn
+) -> None:
     n = 90
     baseline_prices = []
     price = 100.0
@@ -233,7 +245,9 @@ def test_engine_dispatches_to_the_right_signal_function(family, prefix, signal_f
 
 
 @pytest.mark.parametrize("family,prefix,signal_fn", _ML_FAMILIES)
-def test_single_class_training_window_falls_back_to_flat_not_crash(family, prefix, signal_fn) -> None:
+def test_single_class_training_window_falls_back_to_flat_not_crash(
+    family, prefix, signal_fn
+) -> None:
     """A training window with only one real class present must not
     crash, for every model -- LogisticRegression and
     CalibratedClassifierCV(SVC) both raise ValueError on a single-class

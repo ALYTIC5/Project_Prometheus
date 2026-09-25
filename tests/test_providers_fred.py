@@ -16,15 +16,35 @@ from prometheus.data.providers.fred import FREDProvider
 
 _TWO_OBSERVATIONS_RESPONSE = {
     "observations": [
-        {"realtime_start": "2024-01-02", "realtime_end": "2024-01-02", "date": "2024-01-02", "value": "13.20"},
-        {"realtime_start": "2024-01-03", "realtime_end": "2024-01-03", "date": "2024-01-03", "value": "13.35"},
+        {
+            "realtime_start": "2024-01-02",
+            "realtime_end": "2024-01-02",
+            "date": "2024-01-02",
+            "value": "13.20",
+        },
+        {
+            "realtime_start": "2024-01-03",
+            "realtime_end": "2024-01-03",
+            "date": "2024-01-03",
+            "value": "13.35",
+        },
     ]
 }
 
 _WITH_MISSING_OBSERVATION_RESPONSE = {
     "observations": [
-        {"realtime_start": "2024-01-01", "realtime_end": "2024-01-01", "date": "2024-01-01", "value": "."},
-        {"realtime_start": "2024-01-02", "realtime_end": "2024-01-02", "date": "2024-01-02", "value": "13.20"},
+        {
+            "realtime_start": "2024-01-01",
+            "realtime_end": "2024-01-01",
+            "date": "2024-01-01",
+            "value": ".",
+        },
+        {
+            "realtime_start": "2024-01-02",
+            "realtime_end": "2024-01-02",
+            "date": "2024-01-02",
+            "value": "13.20",
+        },
     ]
 }
 

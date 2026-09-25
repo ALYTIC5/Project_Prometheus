@@ -42,21 +42,24 @@ def factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 async def test_membership_windows_returns_listed_and_delisted_dates(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    # Test-only symbols: the shared CI database may already hold the real
+    # XLC/XLK rows (committed by the ETF-ingest tests), and a duplicate
+    # (symbol, exchange, listed_at) insert fails the unique constraint.
     async with factory() as session:
         session.add_all([
             UniverseMembership(
-                symbol="XLC", exchange="alpaca", asset_class="etf",
+                symbol="TEST_XLC", exchange="alpaca", asset_class="etf",
                 listed_at=date(2018, 6, 18), delisted_at=None,
             ),
             UniverseMembership(
-                symbol="XLK", exchange="alpaca", asset_class="etf",
+                symbol="TEST_XLK", exchange="alpaca", asset_class="etf",
                 listed_at=date(1998, 12, 16), delisted_at=None,
             ),
         ])
         await session.flush()
 
-        windows = await membership_windows(session, "etf", ["XLC", "XLK", "GLD"])
+        windows = await membership_windows(session, "etf", ["TEST_XLC", "TEST_XLK", "TEST_GLD"])
 
-        assert windows["XLC"] == (date(2018, 6, 18), None)
-        assert windows["XLK"] == (date(1998, 12, 16), None)
-        assert "GLD" not in windows  # never registered under "etf" in this test
+        assert windows["TEST_XLC"] == (date(2018, 6, 18), None)
+        assert windows["TEST_XLK"] == (date(1998, 12, 16), None)
+        assert "TEST_GLD" not in windows  # never registered under "etf" in this test

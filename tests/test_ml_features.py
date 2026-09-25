@@ -54,12 +54,12 @@ def test_features_have_no_lookahead_planted_future_spike_is_unreachable() -> Non
         baseline_values = baseline_frame[column].to_list()[:-1]
         spiked_values = spiked_frame[column].to_list()[:-1]
         # Compare element-wise, handling NaN properly (NaN == NaN should be True)
-        for i, (b, s) in enumerate(zip(baseline_values, spiked_values)):
+        for i, (b, s) in enumerate(zip(baseline_values, spiked_values, strict=False)):
             b_nan = isinstance(b, float) and math.isnan(b)
             s_nan = isinstance(s, float) and math.isnan(s)
             if b_nan and s_nan:
                 continue
             elif b_nan or s_nan:
-                assert False, f"{column}[{i}] leaked the future spike"
+                raise AssertionError(f"{column}[{i}] leaked the future spike")
             else:
                 assert b == s, f"{column}[{i}] leaked the future spike"
