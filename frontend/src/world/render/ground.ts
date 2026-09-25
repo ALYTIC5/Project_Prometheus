@@ -25,12 +25,16 @@ const PLAZA_COLOR = PALETTE['stone.light'];
 const ROAD_BASE = PALETTE['stone.mid'];
 const ROAD_LINE = PALETTE['stone.highlight'];
 
-// Real atlas keys for the default tile fill -- no water or road art exists,
-// so only these two roles (default ground, plaza) have a production path.
+// Real atlas keys for the default tile fill (tools/art/build_r2_manifest.py).
+// Plain meadow grass is listed three times so it dominates and the four
+// accent variants read as occasional texture, not a patchwork. All five are
+// colour-matched to the base grass at ingest. No water art exists yet.
 const TERRAIN_SPRITE_VARIANTS = [
-  'terrain_grass', 'terrain_dirt_patch', 'terrain_dirt_cross', 'terrain_weathered', 'terrain_rubble',
+  'terrain_grass', 'terrain_grass', 'terrain_grass',
+  'terrain_grass_flowers', 'terrain_grass_dry', 'terrain_grass_pebbles', 'terrain_grass_thyme',
 ];
 const PLAZA_SPRITE = 'terrain_cobblestone';
+const ROAD_SPRITE = 'terrain_road';
 
 function terrainHash(gx: number, gy: number): number {
   return hashString(`${gx},${gy}`) % TERRAIN_VARIANTS.length;
@@ -151,7 +155,10 @@ export function drawGround(buildings: Building[]): PIXI.Container {
 
       let tile: PIXI.Container;
       if (isRoad && !isWater) {
-        tile = drawRoadTile(gx, gy, roads);
+        // A real cobblestone tile is already a road surface -- adjacent road
+        // tiles form the path on their own, so the procedural centre lines
+        // are only for the placeholder fallback.
+        tile = (isProduction() ? drawAtlasTile(ROAD_SPRITE) : null) ?? drawRoadTile(gx, gy, roads);
       } else if (isWater) {
         const halfW = TILE_WIDTH / 2;
         const halfH = TILE_HEIGHT / 2;

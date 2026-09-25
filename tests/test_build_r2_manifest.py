@@ -11,29 +11,67 @@ from PIL import Image
 from tools.art.build_r2_manifest import BUILDINGS, PROPS, TILE_TARGET, TILES, squash_tile
 from tools.art.common import PUBLIC_SPRITES_DIR, SPRITES_DIR
 
+GREEN = [100, 200, 100, 255]  # top face
+BROWN = [120, 60, 30, 255]  # side faces -- must never reach the output
 
-def _diamond(canvas_w: int, top_row: int, bottom_row: int) -> np.ndarray:
-    """A synthetic top face: opaque rows [top_row, bottom_row], full width,
-    like PixelLab's iso-tile output (see STYLE_BIBLE's measured 64x36/41)."""
-    arr = np.zeros((canvas_w, canvas_w, 4), dtype=np.uint8)
-    arr[top_row : bottom_row + 1, :] = [100, 200, 100, 255]
+
+def _iso_block(top: int, half_h: int, thickness: int, w: int = 64) -> np.ndarray:
+    """Synthetic PixelLab iso tile: a GREEN top-face diamond (rows
+    top..top+2*half_h, equator at top+half_h) sitting on BROWN side faces
+    `thickness` px deep, on a square transparent canvas."""
+    arr = np.zeros((w, w, 4), dtype=np.uint8)
+    cx = (w - 1) / 2
+    for y in range(w):
+        for x in range(w):
+            dx = abs(x - cx) / (w / 2)
+            # side faces: the diamond's lower half, pushed down by thickness
+            ys = y - top - half_h
+            lower_v = 0 <= ys - thickness <= half_h and dx + (ys - thickness) / half_h <= 1.0
+            band = 0 <= ys <= thickness and dx <= 1.0
+            if lower_v or band:
+                arr[y, x] = BROWN
+    for y in range(w):
+        for x in range(w):
+            dy = abs(y - (top + half_h)) / half_h
+            if abs(x - cx) / (w / 2) + dy <= 1.0:
+                arr[y, x] = GREEN
     return arr
 
 
 def test_squash_tile_outputs_exact_target_size():
-    tile = _diamond(64, top_row=22, bottom_row=63)  # 64x42, like grass_calibration
-    out = squash_tile(tile)
+    out = squash_tile(_iso_block(top=22, half_h=18, thickness=6))  # face 64x36, like grass
     assert out.shape[:2][::-1] == TILE_TARGET  # (width, height) vs (h, w) shape
 
 
-def test_squash_tile_crops_to_content_first():
-    # Content only occupies rows 10-49 (40px tall) inside a taller 80px canvas
-    # -- squash must crop to the opaque bbox, not squash the whole canvas.
-    arr = np.zeros((80, 64, 4), dtype=np.uint8)
-    arr[10:50, :] = [50, 50, 200, 255]
-    out = squash_tile(arr)
-    assert out.shape[:2][::-1] == TILE_TARGET
-    assert (out[:, :, 3] > 0).all()  # fully opaque -- no transparent border introduced
+def test_squash_tile_drops_side_faces():
+    # The bug this replaced: cropping the whole bbox squashed the brown side
+    # faces INTO the ground diamond, striping every tile.
+    out = squash_tile(_iso_block(top=10, half_h=18, thickness=12))
+    opaque = out[out[:, :, 3] > 0][:, :3]
+    assert not (opaque == BROWN[:3]).all(axis=1).any()
+
+
+def test_squash_tile_ignores_blades_above_the_face():
+    # Real grass tiles have blades poking above the diamond's top point;
+    # measuring the face from the top then over-sized it and let the side
+    # band back in (R2b pebbles/thyme tiles).
+    tile = _iso_block(top=14, half_h=18, thickness=10)
+    tile[8:14, 30:34] = GREEN  # blades sticking up 6px above the top point
+    out = squash_tile(tile)
+    opaque = out[out[:, :, 3] > 0][:, :3]
+    assert not (opaque == BROWN[:3]).all(axis=1).any()
+
+
+def test_squash_tile_is_a_clean_diamond():
+    out = squash_tile(_iso_block(top=22, half_h=18, thickness=6))
+    h, w = out.shape[:2]
+    assert out[h // 2, w // 2, 3] == 255  # centre opaque
+    for corner in ((0, 0), (0, w - 1), (h - 1, 0), (h - 1, w - 1)):
+        assert out[corner][3] == 0  # outside the diamond stays transparent
+    # every pixel inside the diamond is opaque -- no holes for the renderer
+    ys, xs = np.mgrid[0:h, 0:w]
+    diamond = (np.abs(xs + 0.5 - w / 2) / (w / 2) + np.abs(ys + 0.5 - h / 2) / (h / 2)) <= 1.0
+    assert (out[diamond, 3] == 255).all()
 
 
 def test_squash_tile_rejects_empty_image():
@@ -43,10 +81,9 @@ def test_squash_tile_rejects_empty_image():
 
 
 def test_squash_tile_preserves_colour():
-    tile = _diamond(64, top_row=20, bottom_row=60)
-    out = squash_tile(tile)
+    out = squash_tile(_iso_block(top=20, half_h=18, thickness=6))
     opaque = out[out[:, :, 3] > 0]
-    assert (opaque[:, :3] == [100, 200, 100]).all()
+    assert (opaque[:, :3] == GREEN[:3]).all()
 
 
 # --------------------------------------------------------------------------

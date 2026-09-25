@@ -207,7 +207,7 @@
     "frame": {
       "height": 32,
       "width": 64,
-      "x": 66,
+      "x": 330,
       "y": 0
     },
     "hasVolume": true,
@@ -226,6 +226,96 @@
       "height": 32,
       "width": 64,
       "x": 0,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_grass_dry": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 132,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_grass_flowers": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 66,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_grass_pebbles": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 198,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_grass_thyme": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 264,
+      "y": 0
+    },
+    "hasVolume": true,
+    "litWindows": false,
+    "outline": "none",
+    "outlineColor": 0
+  },
+  "terrain_road": {
+    "anchor": {
+      "x": 32,
+      "y": 16
+    },
+    "atlas": "terrain_atlas.png",
+    "desaturate": 0,
+    "frame": {
+      "height": 32,
+      "width": 64,
+      "x": 396,
       "y": 0
     },
     "hasVolume": true,

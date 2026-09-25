@@ -298,17 +298,36 @@ hero_fold:
   hybrid: duelist
 
 tiles:
+  # Five cohesive grass variants fill ground.ts's default-fill slots -- all
+  # the same short meadow grass so any mix of neighbours reads as one field,
+  # each with one subtle difference for variety.
   grass:
     greek_name: "Meadow ground"
-    subject: "Mediterranean grass ground with small olive-green tufts and pale stones"
+    subject: "short dense Mediterranean meadow grass covering the whole surface"
+    details: []
+  grass_flowers:
+    greek_name: "Meadow with wildflowers"
+    subject: "short dense Mediterranean meadow grass with tiny scattered white and yellow wildflowers"
+    details: []
+  grass_dry:
+    greek_name: "Summer meadow"
+    subject: "short sun-dried golden summer meadow grass covering the whole surface"
+    details: []
+  grass_pebbles:
+    greek_name: "Meadow with pebbles"
+    subject: "short dense Mediterranean meadow grass with a few tiny scattered pale limestone pebbles"
+    details: []
+  grass_thyme:
+    greek_name: "Meadow with thyme"
+    subject: "short dense Mediterranean meadow grass mixed with low wild thyme"
     details: []
   plaza:
     greek_name: "Agora paving"
-    subject: "pale marble plaza paving stones of an agora"
+    subject: "pale cream marble paving slabs of an agora in a tight regular grid filling the whole surface"
     details: []
   road:
     greek_name: "Cobbled road"
-    subject: "a pale cobbled road of worn marble and limestone setts"
+    subject: "worn pale limestone cobblestone road surface of small rounded setts filling the whole surface"
     details: []
 
 props:

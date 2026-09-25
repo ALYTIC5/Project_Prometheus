@@ -10,11 +10,16 @@ style_suffix_world: >-
   greenery, Aegean blue water, warm Mediterranean light from the top-left,
   crisp dark outlines, detailed, no text
 
+# Ground tiles repeat across the whole map, so they must be a UNIFORM texture
+# that reads edge to edge: no border, no centre feature, no outlines. R2's
+# first grass tile had grass tufts in its corners around a bare centre and
+# tiled into an obvious checkerboard; "crisp dark outlines" drew a grid.
 style_suffix_terrain: >-
-  ancient Greek landscape ground, isometric pixel art, 2:1 projection,
-  sun-warmed marble and limestone pebbles, olive and cypress greenery nearby,
-  warm Mediterranean light from the top-left, crisp dark outlines, detailed,
-  no text
+  seamless flat ground texture, evenly distributed across the entire tile
+  surface, no border, no edge trim, no central feature, no objects,
+  isometric pixel art, 2:1 projection, warm Aegean summer light from the
+  top-left, soft muted Mediterranean palette with olive and ochre tones,
+  no outlines, no text
 
 # Props: a single small object. No roof tiles, water or scenery -- those words
 # turned R2's amphora/column prompts into whole scenes and buildings.
