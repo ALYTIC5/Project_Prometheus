@@ -135,10 +135,22 @@ function isLlmHypothesis(strategy: StrategyRow): boolean {
  * and recently ingested papers (GET /research-papers/). Every row opens
  * DetailModal on click. All empty states are honest, not hidden. */
 export function LiveActivity() {
-  const { data: queueData, isLoading: queueLoading } = useQueueQuery(DASHBOARD_POLL_MS);
-  const { data: strategyData, isLoading: strategiesLoading } = useStrategiesQuery(DASHBOARD_POLL_MS);
-  const { data: paperData, isLoading: papersLoading } = useResearchPapersQuery(DASHBOARD_POLL_MS);
+  const queueQuery = useQueueQuery(DASHBOARD_POLL_MS);
+  const strategiesQuery = useStrategiesQuery(DASHBOARD_POLL_MS);
+  const papersQuery = useResearchPapersQuery(DASHBOARD_POLL_MS);
+  const { data: queueData, isLoading: queueLoading } = queueQuery;
+  const { data: strategyData, isLoading: strategiesLoading } = strategiesQuery;
+  const { data: paperData, isLoading: papersLoading } = papersQuery;
   const [target, setTarget] = useState<DetailTarget | null>(null);
+
+  const failed = [queueQuery, strategiesQuery, papersQuery].find((q) => q.isError);
+  if (failed) {
+    return (
+      <div className="border-b border-border px-4 py-3 font-mono text-xs text-red-400">
+        Live activity unavailable: {String(failed.error)}
+      </div>
+    );
+  }
 
   if (queueLoading || strategiesLoading || papersLoading) {
     return (

@@ -89,10 +89,18 @@ class PopulationCandidate:
 # CTE by every query below that needs a strategy's current score.
 _LATEST_FINGERPRINT_CTE = """
     latest_experiment AS (
-        SELECT DISTINCT ON (strategy_id) strategy_id, config_hash
-          FROM experiments
-         WHERE strategy_id IS NOT NULL
-         ORDER BY strategy_id, created_at DESC
+        -- Scoped to the only statuses any caller of this CTE selects on
+        -- (VALIDATED/CHAMPION/PROMISING). Unscoped, it walked every
+        -- strategy ever created (~441k, mostly insufficient-data REJECTs)
+        -- on every elect_champions call -- 3.8 hours of one research
+        -- cycle on 2026-09-25. Any new caller needing another status must
+        -- widen this list, not drop it.
+        SELECT DISTINCT ON (e.strategy_id) e.strategy_id, e.config_hash
+          FROM experiments e
+         WHERE e.strategy_id IN (
+             SELECT id FROM strategies WHERE status IN ('VALIDATED', 'CHAMPION', 'PROMISING')
+         )
+         ORDER BY e.strategy_id, e.created_at DESC
     ),
     latest_score AS (
         SELECT le.strategy_id, vr.score

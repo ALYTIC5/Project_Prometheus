@@ -50,8 +50,16 @@ function ConcernChip({ concern, onClick }: { concern: PipelineConcern; onClick: 
  * feed: this answers "is the worker alive and what's it about to do
  * next", the feed answers "what has it actually produced". */
 export function PipelineStatus() {
-  const { data, isLoading } = usePipelineStatusQuery(DASHBOARD_POLL_MS);
+  const { data, isLoading, isError, error } = usePipelineStatusQuery(DASHBOARD_POLL_MS);
   const [target, setTarget] = useState<DetailTarget | null>(null);
+
+  if (isError) {
+    return (
+      <div className="border-b border-border px-4 py-2 font-mono text-xs text-red-400">
+        Pipeline status unavailable: {String(error)}
+      </div>
+    );
+  }
 
   if (isLoading || !data) {
     return (

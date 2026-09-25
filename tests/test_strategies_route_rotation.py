@@ -92,7 +92,9 @@ class _StubSession:
         self.queried_symbols: tuple[str, ...] = ()
 
     async def execute(self, _statement: Any, params: Any = None) -> _StubResult:
-        if params is None:
+        # The latest-validation query is scoped by strategy ids (params
+        # {"ids": ...}); only the asset_class lookup carries "symbols".
+        if params is None or "symbols" not in params:
             return _StubResult([])
         self.queried_symbols = tuple(params["symbols"])
         return _StubResult(
