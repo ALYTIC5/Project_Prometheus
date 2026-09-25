@@ -35,8 +35,20 @@ router = APIRouter(prefix="/paper", tags=["paper"])
 
 _SELECT_CHAMPIONS = text("SELECT id, family, spec FROM strategies WHERE status = 'CHAMPION'")
 
+# The worker's own latest mark first (migration 0022): ohlcv_bars stops at
+# holdout_start, so marking there alone freezes every open position's value.
 _SELECT_LATEST_CLOSE = text(
-    "SELECT close FROM ohlcv_bars WHERE symbol = :symbol ORDER BY event_time DESC LIMIT 1"
+    """
+    SELECT close FROM (
+        (SELECT close, 1 AS pref, marked_at AS at FROM paper_marks
+          WHERE symbol = :symbol ORDER BY marked_at DESC LIMIT 1)
+        UNION ALL
+        (SELECT close, 2 AS pref, event_time AS at FROM ohlcv_bars
+          WHERE symbol = :symbol ORDER BY event_time DESC LIMIT 1)
+    ) latest
+    ORDER BY pref
+    LIMIT 1
+    """
 )
 
 _SELECT_RECENT_ORDERS = text(

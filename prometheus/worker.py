@@ -800,6 +800,12 @@ _SELECT_STRATEGY_FILLED_ORDER_IDS = text(
 )
 
 
+_INSERT_PAPER_MARK = text(
+    "INSERT INTO paper_marks (symbol, close, bar_available_at) "
+    "VALUES (:symbol, :close, :bar_available_at)"
+)
+
+
 def paper_decision_bars(
     history: PointInTimeFrame, forward: PointInTimeFrame, cutoff: datetime
 ) -> pl.DataFrame:
@@ -919,6 +925,15 @@ async def _run_paper() -> None:
                     )
 
                 current_price = float(bars.tail(1)["close"][0])
+                await session.execute(
+                    _INSERT_PAPER_MARK,
+                    {
+                        "symbol": spec.symbol,
+                        "close": current_price,
+                        "bar_available_at": bars.tail(1)["available_at"][0],
+                    },
+                )
+                await session.commit()
                 paper_curve = await compute_paper_equity_curve(
                     session, strategy_id=row.id, current_price=current_price
                 )

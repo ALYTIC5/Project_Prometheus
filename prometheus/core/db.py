@@ -447,6 +447,22 @@ class PaperFinding(Base):
     )
 
 
+class PaperMark(Base):
+    """The latest close a paper tick decided on (migration 0022) -- how the
+    API marks open positions without reading the holdout vault itself.
+    Append-only by convention."""
+
+    __tablename__ = "paper_marks"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(sa.String(32))
+    close: Mapped[float] = mapped_column(sa.Float)
+    bar_available_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True))
+    marked_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class WorkerCadence(Base):
     """Scheduling state for worker.py's cadence-gated concerns -- mutable,
     like Strategy.status, not a history log."""
