@@ -19,13 +19,19 @@ characters_atlas.png.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from tools.art.common import PUBLIC_SPRITES_DIR, SPRITES_DIR, alpha_mask, anchor_prop, bbox_of, json_dump
+from tools.art.common import (
+    PUBLIC_SPRITES_DIR,
+    SPRITES_DIR,
+    alpha_mask,
+    anchor_prop,
+    bbox_of,
+    json_dump,
+)
 from tools.art.pack_atlas import Sprite, _pack
 
 TILE_TARGET = (64, 32)  # projection.ts TILE_WIDTH x TILE_HEIGHT
@@ -41,7 +47,8 @@ TILES = [
 PROPS: list[tuple[str, list[Path]]] = [
     ("olive_tree", [Path("art/raw/props/olive_tree.png"), Path("art/raw/props/olive_tree_v2.png")]),
     ("cypress", [Path("art/raw/props/cypress.png"), Path("art/raw/props/cypress_v3.png")]),
-    ("laurel_bush", [Path("art/raw/props/laurel_bush.png"), Path("art/raw/props/laurel_bush_v2.png")]),
+    ("laurel_bush", [Path("art/raw/props/laurel_bush.png"),
+                     Path("art/raw/props/laurel_bush_v2.png")]),
     ("amphora_pair", [Path("art/raw/props/amphora_pair.png")]),
     ("column_fragment", [Path("art/raw/props/column_fragment.png")]),
     ("tripod_brazier", [Path("art/raw/props/tripod_brazier.png")]),

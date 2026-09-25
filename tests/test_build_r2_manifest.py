@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from tools.art.build_r2_manifest import PROPS, TILES, TILE_TARGET, squash_tile
+from tools.art.build_r2_manifest import PROPS, TILE_TARGET, TILES, squash_tile
 from tools.art.common import PUBLIC_SPRITES_DIR, SPRITES_DIR
 
 
