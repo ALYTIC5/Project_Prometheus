@@ -7,7 +7,7 @@ drift.
 """
 from __future__ import annotations
 
-LLM_INGESTION_INTERVAL_SECONDS = 86400.0  # daily
+LLM_INGESTION_INTERVAL_SECONDS = 7200.0  # 2h -- spreads PAPERS_PER_DAY over the day
 INGEST_INTERVAL_SECONDS = 3600.0  # hourly
 RESEARCH_INTERVAL_SECONDS = 1800.0  # 30 min
 PAPER_INTERVAL_SECONDS = 900.0  # 15 min -- also the worker cron tick itself

@@ -1,6 +1,7 @@
 """tests/test_worker_llm_integration.py"""
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -171,37 +172,148 @@ async def test_llm_step_does_nothing_when_halted(db_session: AsyncSession) -> No
     assert job_id is None
 
 
-async def test_llm_ingestion_calls_ingest_paper_for_each_search_result(
-    db_session: AsyncSession,
+async def test_llm_ingestion_stores_new_search_results_abstract_only(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from contextlib import asynccontextmanager
 
     from prometheus.research.llm.ingestion import ArxivPaper
     from prometheus.worker import _run_llm_ingestion
 
+    monkeypatch.setenv("PAPERS_PER_DAY", "200")
     fake_paper = ArxivPaper(
-        arxiv_id="2401.00099", title="Fake Paper", abstract="fake abstract",
-        pdf_url="https://arxiv.org/pdf/2401.00099",
+        arxiv_id="2401.00099v1", title="Fake Paper", abstract="fake abstract",
+        pdf_url="https://arxiv.org/pdf/2401.00099v1",
     )
 
     @asynccontextmanager
     async def _fake_get_session():
-        # _run_llm_ingestion opens its own session via get_session()
-        # (matching _run_ingest's shape, see the implementation below) --
-        # patched here to hand it the test's own db_session so the
-        # inserted rows are visible to assertions in the SAME
-        # transaction, same technique this test file needs precisely
-        # because that function takes no session parameter.
+        # _run_llm_ingestion opens its own session; hand it the test's
+        # db_session so inserted rows are visible in the same transaction.
         yield db_session
 
     with (
         patch("prometheus.worker.get_session", _fake_get_session),
-        patch("prometheus.worker.search_arxiv", new=AsyncMock(return_value=[fake_paper])),
-        patch("prometheus.worker.ingest_paper", new=AsyncMock(
-            return_value=MagicMock(arxiv_id="2401.00099")
-        )) as mock_ingest,
+        patch(
+            "prometheus.worker.search_arxiv",
+            new=AsyncMock(side_effect=[[fake_paper], []]),
+        ),
+        patch("prometheus.worker._ARXIV_CALL_SPACING_SECONDS", 0.0),
     ):
         ingested = await _run_llm_ingestion()
 
-    assert ingested == ["2401.00099"]
-    mock_ingest.assert_awaited_once_with(db_session, "2401.00099")
+    assert ingested == ["2401.00099v1"]
+    row = (
+        await db_session.execute(
+            text(
+                "SELECT abstract, full_text, key_sections FROM research_papers "
+                "WHERE arxiv_id = '2401.00099v1'"
+            )
+        )
+    ).one()
+    assert row.abstract == "fake abstract"
+    assert row.full_text == ""
+    assert row.key_sections == "fake abstract"
+
+
+def _paper(arxiv_id: str) -> Any:
+    from prometheus.research.llm.ingestion import ArxivPaper
+
+    return ArxivPaper(
+        arxiv_id=arxiv_id, title=f"t {arxiv_id}", abstract=f"a {arxiv_id}",
+        pdf_url=f"https://arxiv.org/pdf/{arxiv_id}",
+    )
+
+
+def _fake_ingestion_session(known_ids: list[str], last_24h: int) -> MagicMock:
+    session = MagicMock()
+    known_result = MagicMock()
+    known_result.scalars.return_value = iter(known_ids)
+    count_result = MagicMock()
+    count_result.scalar_one.return_value = last_24h
+    session.execute = AsyncMock(side_effect=[known_result, count_result])
+    session.commit = AsyncMock()
+    return session
+
+
+async def _run_ingestion_with(
+    session: MagicMock, search: AsyncMock, papers_per_day: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[str]:
+    from contextlib import asynccontextmanager
+
+    from prometheus.worker import _run_llm_ingestion
+
+    monkeypatch.setenv("PAPERS_PER_DAY", papers_per_day)
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield session
+
+    with (
+        patch("prometheus.worker.get_session", _fake_get_session),
+        patch("prometheus.worker.search_arxiv", new=search),
+        patch("prometheus.worker._ARXIV_CALL_SPACING_SECONDS", 0.0),
+    ):
+        return await _run_llm_ingestion()
+
+
+async def test_llm_ingestion_skips_known_papers_across_versions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _fake_ingestion_session(["2401.00001v1"], last_24h=0)
+    search = AsyncMock(side_effect=[[_paper("2401.00001v2"), _paper("2401.00002v1")], []])
+
+    ingested = await _run_ingestion_with(session, search, "200", monkeypatch)
+
+    assert ingested == ["2401.00002v1"]
+    assert session.add.call_count == 1
+
+
+async def test_llm_ingestion_jumps_to_backlog_depth_once_newest_page_is_all_known(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    known = [f"2401.{i:05d}v1" for i in range(250)]
+    session = _fake_ingestion_session(known, last_24h=0)
+    search = AsyncMock(
+        side_effect=[[_paper("2401.00000v1")], [_paper("1901.00001v1")], []]
+    )
+
+    ingested = await _run_ingestion_with(session, search, "200", monkeypatch)
+
+    assert ingested == ["1901.00001v1"]
+    starts = [call.kwargs["start"] for call in search.await_args_list]
+    assert starts[:2] == [0, 250]
+
+
+async def test_llm_ingestion_respects_the_24h_quota(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _fake_ingestion_session([], last_24h=199)
+    search = AsyncMock(side_effect=[[_paper("2401.00001v1"), _paper("2401.00002v1")]])
+
+    ingested = await _run_ingestion_with(session, search, "200", monkeypatch)
+
+    assert ingested == ["2401.00001v1"]
+
+
+async def test_llm_ingestion_does_nothing_when_quota_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _fake_ingestion_session([], last_24h=200)
+    search = AsyncMock()
+
+    ingested = await _run_ingestion_with(session, search, "200", monkeypatch)
+
+    assert ingested == []
+    search.assert_not_awaited()
+
+
+async def test_llm_ingestion_spreads_the_daily_target_across_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _fake_ingestion_session([], last_24h=0)
+    page = [_paper(f"2401.{i:05d}v1") for i in range(100)]
+    search = AsyncMock(side_effect=[page])
+
+    ingested = await _run_ingestion_with(session, search, "200", monkeypatch)
+
+    assert len(ingested) == 17  # ceil(200 / 12 two-hour runs)

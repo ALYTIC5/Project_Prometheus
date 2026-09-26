@@ -52,12 +52,36 @@ _WANTED_SECTION_HEADS = re.compile(
 _FALLBACK_CHAR_BUDGET = 12_000
 
 
+_VERSION_SUFFIX = re.compile(r"v\d+$")
+
+
 @dataclass(frozen=True)
 class ArxivPaper:
     arxiv_id: str
     title: str
     abstract: str
     pdf_url: str
+
+
+def base_arxiv_id(arxiv_id: str) -> str:
+    """'2401.00123v2' -> '2401.00123'. Search results carry the latest
+    version, so dedupe must ignore the suffix or every revision of an
+    already-ingested paper would be stored again."""
+    return _VERSION_SUFFIX.sub("", arxiv_id)
+
+
+def abstract_only_paper(paper: ArxivPaper) -> ResearchPaper:
+    """A research_papers row built from the search result alone -- no
+    re-fetch, no PDF, no GROBID. full_text is empty (the column is NOT
+    NULL); key_sections is the abstract, which is all a claim extractor
+    needs to decide whether a paper is worth a full-text fetch."""
+    return ResearchPaper(
+        arxiv_id=paper.arxiv_id,
+        title=paper.title,
+        abstract=paper.abstract,
+        full_text="",
+        key_sections=paper.abstract,
+    )
 
 
 async def _fetch_arxiv_metadata(arxiv_id: str) -> dict[str, str]:
@@ -75,7 +99,7 @@ async def _fetch_arxiv_metadata(arxiv_id: str) -> dict[str, str]:
     return {"title": title, "abstract": abstract}
 
 
-async def search_arxiv(query: str, max_results: int) -> list[ArxivPaper]:
+async def search_arxiv(query: str, max_results: int, *, start: int = 0) -> list[ArxivPaper]:
     """Public arXiv API, no key required. `query` is caller-supplied for
     testability; production always passes a fixed category filter
     (see worker.py's own call site) -- never anything derived from
@@ -92,6 +116,7 @@ async def search_arxiv(query: str, max_results: int) -> list[ArxivPaper]:
             _ARXIV_API_BASE,
             params={
                 "search_query": query,
+                "start": start,
                 "max_results": max_results,
                 "sortBy": "submittedDate",
                 "sortOrder": "descending",

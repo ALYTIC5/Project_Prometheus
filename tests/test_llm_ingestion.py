@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.research.llm.ingestion import (
     _extract_key_sections,
+    base_arxiv_id,
     ingest_paper,
     search_arxiv,
 )
@@ -108,6 +109,23 @@ async def test_search_arxiv_sorts_by_submission_date_descending() -> None:
     assert params["sortOrder"] == "descending"
     assert params["search_query"] == "cat:q-fin.*"
     assert params["max_results"] == 5
+    assert params["start"] == 0
+
+
+async def test_search_arxiv_passes_the_page_offset() -> None:
+    client_ctx, client = _mock_httpx_client(_FAKE_ARXIV_FEED)
+    with patch(
+        "prometheus.research.llm.ingestion.httpx.AsyncClient", return_value=client_ctx
+    ):
+        await search_arxiv("cat:q-fin.*", 100, start=300)
+
+    assert client.get.await_args.kwargs["params"]["start"] == 300
+
+
+def test_base_arxiv_id_strips_the_version_suffix() -> None:
+    assert base_arxiv_id("2401.00123v2") == "2401.00123"
+    assert base_arxiv_id("2401.00123") == "2401.00123"
+    assert base_arxiv_id("q-fin/0601001v1") == "q-fin/0601001"
 
 
 async def test_ingest_paper_is_idempotent_on_arxiv_id(db_session: AsyncSession) -> None:

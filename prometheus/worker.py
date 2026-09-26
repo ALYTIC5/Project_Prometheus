@@ -24,10 +24,9 @@ gated by worker_cadence (is_due/mark_run below): ingest hourly, research
 (today's grid/validate/evolve pipeline -- every classic-template family
 AND every ML component, RANDOM_FOREST/GRADIENT_BOOSTING/
 LOGISTIC_REGRESSION/SVM, not just MOMENTUM) every 30 minutes, paper
-trading every tick, PROMPT 9's llm_ingestion daily -- an arXiv search
-plus PDF/GROBID extraction into research_papers, coarser than the
-others because papers don't appear faster than that and the extraction
-is comparatively expensive -- and ablation daily: the six real
+trading every tick, llm_ingestion every 2h -- arXiv q-fin abstracts
+into research_papers up to PAPERS_PER_DAY, walking the backlog once new
+papers run out -- and ablation daily: the six real
 component-vs-baseline A/B batches (evolution, LLM hypotheses, and every
 ML family) that were previously written but never scheduled anywhere in
 production (docs/DEFERRED.md's "RANDOM_FOREST strategy family" entry),
@@ -126,7 +125,11 @@ from prometheus.research.llm.hypothesis import (
     _AnthropicClientProtocol,
     generate_hypothesis,
 )
-from prometheus.research.llm.ingestion import ingest_paper, search_arxiv
+from prometheus.research.llm.ingestion import (
+    abstract_only_paper,
+    base_arxiv_id,
+    search_arxiv,
+)
 from prometheus.research.ml.generate import (
     generate_gradient_boosting_grid,
     generate_logistic_regression_grid,
@@ -193,15 +196,23 @@ _EVOLUTION_EXPLORATION_PARENTS = 1
 _LLM_ARXIV_QUERY = "cat:q-fin.*"
 _LLM_RECENT_PAPERS_LIMIT = 3
 _LLM_SYMBOL = "BTC/USDT"
-_LLM_INGESTION_MAX_RESULTS = 5
 
-# Ingestion (PDF download + GROBID call) is comparatively expensive and
-# papers don't change fast enough to justify checking every 30-min
-# research cycle -- a separate, coarser worker_cadence concern, same
-# "different concerns, different rates from one entrypoint" pattern
-# ingest/research/paper already use. Daily, not weekly: arXiv publishes
-# new quant-finance papers daily, and a $0-idle scale-to-zero GROBID
-# service means checking daily costs nothing when there's nothing new.
+# Paper ingestion walks arXiv q-fin newest-first, then keeps paging deeper
+# into the backlog -- q-fin only publishes a few dozen papers a day, so a
+# daily target of PAPERS_PER_DAY (env, required) is reached from history.
+# arXiv's API terms ask for no more than one request every 3 seconds.
+_ARXIV_PAGE_SIZE = 100
+_ARXIV_MAX_PAGES_PER_RUN = 5
+_ARXIV_CALL_SPACING_SECONDS = 3.0
+
+_SELECT_PAPER_ARXIV_IDS = text("SELECT arxiv_id FROM research_papers")
+_COUNT_PAPERS_LAST_24H = text(
+    "SELECT count(*) FROM research_papers WHERE ingested_at > now() - interval '24 hours'"
+)
+
+# Paper ingestion is its own worker_cadence concern, coarser than the
+# 30-min research cycle -- same "different concerns, different rates from
+# one entrypoint" pattern ingest/research/paper already use.
 #
 # The five interval constants and the slack factor are imported from
 # core/cadence.py (see the top of this file) rather than defined here --
@@ -427,29 +438,54 @@ async def _run_ingest() -> None:
         record_failure("ingest", exc, context="etf")
 
 
-async def _run_llm_ingestion() -> list[str]:
-    """The daily-cadence concern that actually populates research_papers
-    -- without this, ingestion.py has no production caller and
-    research_papers stays empty forever, starving
-    _run_llm_hypothesis_step of any context to work with. Fixed arXiv
-    category query, never derived from strategy/research state (see
-    ingestion.search_arxiv's own docstring). ingest_paper is idempotent
-    on arxiv_id, so re-discovering an already-ingested paper in a later
-    search is a safe no-op, not a duplicate.
+def _papers_per_run(papers_per_day: int) -> int:
+    runs_per_day = 86400.0 / _LLM_INGESTION_INTERVAL_SECONDS
+    return max(1, -(-papers_per_day // int(runs_per_day)))
 
-    Takes no session parameter and manages its own -- same shape as
-    _run_ingest() above (backfill() manages its own session
-    internally), not _run_research()/_run_paper()'s shape (which open
-    their own sessions per internal step). One session for this whole
-    concern is enough: ingestion has no cross-step state that needs
-    isolating the way research's grid/validate/evolve steps do."""
-    candidates = await search_arxiv(_LLM_ARXIV_QUERY, _LLM_INGESTION_MAX_RESULTS)
+
+async def _run_llm_ingestion() -> list[str]:
+    """Populates research_papers from a fixed arXiv category query, never
+    one derived from strategy/research state (see search_arxiv).
+
+    Pages newest-first until a page holds nothing new, then jumps to a
+    depth equal to the number of papers already stored and keeps walking
+    into the backlog. Papers published since the last run can only shift
+    known papers deeper, so the jump can re-show known papers but never
+    skip an unseen one. Each paper is stored abstract-only and committed on
+    its own, so a failure mid-run keeps everything before it."""
+    papers_per_day = int(os.environ["PAPERS_PER_DAY"])
     ingested: list[str] = []
     async with get_session() as session:
-        for candidate in candidates:
-            paper = await ingest_paper(session, candidate.arxiv_id)
-            ingested.append(paper.arxiv_id)
-        await session.commit()
+        known = {
+            base_arxiv_id(arxiv_id)
+            for arxiv_id in (await session.execute(_SELECT_PAPER_ARXIV_IDS)).scalars()
+        }
+        last_24h = int((await session.execute(_COUNT_PAPERS_LAST_24H)).scalar_one())
+        quota = min(papers_per_day - last_24h, _papers_per_run(papers_per_day))
+        if quota <= 0:
+            return ingested
+
+        start = 0
+        jumped_to_backlog = False
+        for page_number in range(_ARXIV_MAX_PAGES_PER_RUN):
+            if page_number:
+                await asyncio.sleep(_ARXIV_CALL_SPACING_SECONDS)
+            page = await search_arxiv(_LLM_ARXIV_QUERY, _ARXIV_PAGE_SIZE, start=start)
+            if not page:
+                break
+            new = [paper for paper in page if base_arxiv_id(paper.arxiv_id) not in known]
+            for paper in new:
+                session.add(abstract_only_paper(paper))
+                await session.commit()
+                known.add(base_arxiv_id(paper.arxiv_id))
+                ingested.append(paper.arxiv_id)
+                if len(ingested) >= quota:
+                    return ingested
+            if not new and not jumped_to_backlog:
+                start = max(start + _ARXIV_PAGE_SIZE, len(known))
+                jumped_to_backlog = True
+            else:
+                start += _ARXIV_PAGE_SIZE
     return ingested
 
 
