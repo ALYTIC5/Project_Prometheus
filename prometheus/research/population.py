@@ -1,25 +1,10 @@
-"""Population management -- PROMPT 7. CHAMPION / PROMISING / EXPERIMENTAL /
-REGIME_SPECIALIST / DORMANT / QUARANTINED / REJECTED / RETIRED. Nothing is
-ever hard-deleted: every function here only SELECTs or UPDATEs `strategies.
-status` (mutable by design, see core.db.Strategy's own docstring) -- no
-DELETE anywhere in this module.
+"""Population selection -- PROMPT 7's selection modes for evolution.
 
-The mapping below is not a second, invented state machine: PROMPT 5's
-`validation.decision.Verdict` (PROMOTE/PROMISING/CONTINUE_RESEARCH/
-REGIME_SPECIALIST/DORMANT/QUARANTINE/REJECT/RETIRE) already IS almost
-exactly this lifecycle -- `experiments.runner._validate_one_spec` computes
-one of these 8 verdicts every validation cycle today, but only ever acts
-on the PROMOTE branch (writing `status = "VALIDATED"`); the other 7 are
-silently discarded. `verdict_to_status` is the missing mapping, used for
-EVERY verdict, not a parallel implementation.
-
-CHAMPION is deliberately NOT what PROMOTE writes -- the frontend's own
-`StrategyState` union (frontend/src/mapping/stateToVisual.ts) already
-treats VALIDATED and CHAMPION as distinct states, and a "champion" here
-means something more specific: the single best-scoring VALIDATED
-strategy PER FAMILY (a real, derived count -- one per family, not an
-arbitrary top-N -- see `elect_champions`), not every strategy that
-clears the Oracle's bar.
+Read-only. Law 9: research code sees the population only through the
+breedable_strategies / breedable_scores views (migration 0024), which
+exclude canaries inside the view. Status writes, verdict mapping and
+champion election are judging decisions and live in
+validation/promotion.py and validation/status.py.
 """
 from __future__ import annotations
 
@@ -30,18 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import BindParameter
 
 from prometheus.strategy.rotation_spec import ROTATION_FAMILIES
-from prometheus.strategy.spec import FAMILIES, StrategySpec
-
-_VERDICT_TO_STATUS: dict[str, str] = {
-    "PROMOTE": "VALIDATED",
-    "PROMISING": "PROMISING",
-    "CONTINUE_RESEARCH": "EXPERIMENTAL",
-    "REGIME_SPECIALIST": "REGIME_SPECIALIST",
-    "DORMANT": "DORMANT",
-    "QUARANTINE": "QUARANTINED",
-    "REJECT": "REJECTED",
-    "RETIRE": "RETIRED",
-}
+from prometheus.strategy.spec import StrategySpec
 
 # The full, real lifecycle -- used to validate inputs/outputs elsewhere
 # (e.g. a status column write that isn't one of these is a bug, not a
@@ -59,17 +33,6 @@ STRATEGY_STATES = (
 )
 
 
-def verdict_to_status(verdict: str) -> str:
-    """The canonical, single source of truth for verdict -> strategies.
-    status. Raises on an unknown verdict rather than silently defaulting
-    -- a new Verdict member added to validation/decision.py without a
-    corresponding entry here is a real gap, not something to paper over."""
-    try:
-        return _VERDICT_TO_STATUS[verdict]
-    except KeyError:
-        raise ValueError(f"no status mapping for verdict {verdict!r}") from None
-
-
 @dataclass(frozen=True)
 class PopulationCandidate:
     strategy_id: str
@@ -79,39 +42,6 @@ class PopulationCandidate:
     score: float | None
 
 
-# `validation_results.strategy_fingerprint` is `StrategySpec.config_hash()`
-# (a sha256 hex string), NOT `strategies.id` (a "FAMILY-NNN" id) -- these
-# are different identifiers. The real join path is strategies -> its
-# latest experiment (`experiments.strategy_id`) -> that experiment's own
-# `config_hash` column (populated by `run_one` as `spec.config_hash()`,
-# the exact same value `_validate_one_spec` uses as `strategy_fingerprint`)
-# -> the latest validation_results row for that fingerprint. Reused as a
-# CTE by every query below that needs a strategy's current score.
-_LATEST_FINGERPRINT_CTE = """
-    latest_experiment AS (
-        -- Scoped to the only statuses any caller of this CTE selects on
-        -- (VALIDATED/CHAMPION/PROMISING). Unscoped, it walked every
-        -- strategy ever created (~441k, mostly insufficient-data REJECTs)
-        -- on every elect_champions call -- 3.8 hours of one research
-        -- cycle on 2026-09-25. Any new caller needing another status must
-        -- widen this list, not drop it.
-        SELECT DISTINCT ON (e.strategy_id) e.strategy_id, e.config_hash
-          FROM experiments e
-         WHERE e.strategy_id IN (
-             SELECT id FROM strategies WHERE status IN ('VALIDATED', 'CHAMPION', 'PROMISING')
-         )
-         ORDER BY e.strategy_id, e.created_at DESC
-    ),
-    latest_score AS (
-        SELECT le.strategy_id, vr.score
-          FROM latest_experiment le
-          JOIN LATERAL (
-              SELECT score FROM validation_results
-               WHERE strategy_fingerprint = le.config_hash
-               ORDER BY created_at DESC LIMIT 1
-          ) vr ON true
-    )
-"""
 
 # C1 (final-review fix wave): every selector in this module parses each
 # row's `spec` JSON with StrategySpec.model_validate(). The `strategies`
@@ -145,11 +75,10 @@ def _rotation_families_param() -> BindParameter[str]:
 
 
 _SELECT_FOR_EXPLOITATION = text(
-    f"""
-    WITH {_LATEST_FINGERPRINT_CTE}
+    """
     SELECT s.id, s.family, s.spec, s.status, ls.score
-      FROM strategies s
-      LEFT JOIN latest_score ls ON ls.strategy_id = s.id
+      FROM breedable_strategies s
+      LEFT JOIN breedable_scores ls ON ls.strategy_id = s.id
      WHERE s.status IN ('VALIDATED', 'CHAMPION')
        AND s.family NOT IN :rotation_families
      ORDER BY ls.score DESC NULLS LAST
@@ -184,7 +113,7 @@ async def select_for_exploitation(
 
 
 _SELECT_FOR_EXPLORATION = text(
-    "SELECT id, family, spec, status FROM strategies "
+    "SELECT id, family, spec, status FROM breedable_strategies "
     "WHERE family NOT IN :rotation_families ORDER BY random() LIMIT :limit"
 ).bindparams(_rotation_families_param())
 
@@ -210,7 +139,8 @@ async def select_for_exploration(session: AsyncSession, *, limit: int) -> list[P
 
 
 _SELECT_ALL_FOR_DIVERSIFICATION = text(
-    "SELECT id, family, spec, status FROM strategies WHERE family NOT IN :rotation_families"
+    "SELECT id, family, spec, status FROM breedable_strategies "
+    "WHERE family NOT IN :rotation_families"
 ).bindparams(_rotation_families_param())
 
 
@@ -264,7 +194,7 @@ async def select_for_diversification(
 
 _SELECT_FOR_REVIVAL = text(
     """
-    SELECT id, family, spec, status FROM strategies
+    SELECT id, family, spec, status FROM breedable_strategies
      WHERE status IN ('DORMANT', 'QUARANTINED')
        AND family NOT IN :rotation_families
      ORDER BY created_at ASC
@@ -290,11 +220,10 @@ async def select_for_revival(session: AsyncSession, *, limit: int) -> list[Popul
 
 
 _SELECT_FOR_CROSS_BREEDING = text(
-    f"""
-    WITH {_LATEST_FINGERPRINT_CTE}
+    """
     SELECT s.id, s.family, s.spec, s.status, ls.score
-      FROM strategies s
-      LEFT JOIN latest_score ls ON ls.strategy_id = s.id
+      FROM breedable_strategies s
+      LEFT JOIN breedable_scores ls ON ls.strategy_id = s.id
      WHERE s.family = :family AND s.status IN ('VALIDATED', 'CHAMPION', 'PROMISING')
        AND s.family NOT IN :rotation_families
      ORDER BY ls.score DESC NULLS LAST
@@ -329,54 +258,3 @@ async def select_for_cross_breeding(
         for r in rows
     ]
     return candidates[0], candidates[1]
-
-
-_SELECT_BEST_VALIDATED_PER_FAMILY = text(
-    f"""
-    WITH {_LATEST_FINGERPRINT_CTE}
-    SELECT DISTINCT ON (s.family) s.id
-      FROM strategies s
-      LEFT JOIN latest_score ls ON ls.strategy_id = s.id
-     WHERE s.status = 'VALIDATED'
-     ORDER BY s.family, ls.score DESC NULLS LAST
-    """
-)
-_UPDATE_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
-_DEMOTE_STALE_CHAMPIONS = text(
-    "UPDATE strategies SET status = 'VALIDATED' WHERE status = 'CHAMPION' AND id != ALL(:keep_ids)"
-)
-
-
-async def elect_champions(session: AsyncSession) -> list[str]:
-    """One CHAMPION per family: the current best-scoring VALIDATED
-    strategy. Real, derived count (one per real family, not an invented
-    top-N). A family with zero VALIDATED strategies simply has no
-    champion -- never fabricated. Any strategy currently CHAMPION that
-    is no longer the best in its family is demoted back to VALIDATED
-    (never REJECTED/RETIRED by this function -- losing the title is not
-    the same as failing validation)."""
-    best_ids = [
-        row.id
-        for row in (await session.execute(_SELECT_BEST_VALIDATED_PER_FAMILY)).fetchall()
-    ]
-    await session.execute(_DEMOTE_STALE_CHAMPIONS, {"keep_ids": best_ids})
-    for strategy_id in best_ids:
-        await session.execute(_UPDATE_STATUS, {"status": "CHAMPION", "id": strategy_id})
-    return best_ids
-
-
-_POPULATION_SUMMARY = text(
-    "SELECT family, status, COUNT(*) AS n FROM strategies GROUP BY family, status"
-)
-
-
-async def population_summary(session: AsyncSession) -> dict[str, dict[str, int]]:
-    """Real `SELECT ... GROUP BY family, status` -- feeds
-    `world.entities.District.population_by_status` with actual counts.
-    Keys are lower-cased to match that field's own existing convention
-    (already lower-cased for the 7 states it was scaffolded with)."""
-    rows = (await session.execute(_POPULATION_SUMMARY)).fetchall()
-    summary: dict[str, dict[str, int]] = {family: {} for family in FAMILIES}
-    for row in rows:
-        summary.setdefault(row.family, {})[row.status.lower()] = int(row.n)
-    return summary

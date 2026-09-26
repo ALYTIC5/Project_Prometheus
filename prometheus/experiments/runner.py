@@ -61,7 +61,6 @@ from prometheus.experiments.queue import Job, claim, enqueue, fail, release, suc
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
-from prometheus.research.population import elect_champions, verdict_to_status
 from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.decay import DecayProfile, compute_decay
@@ -69,10 +68,10 @@ from prometheus.validation.decision import Evidence, decide
 from prometheus.validation.metrics import ValidationMetrics, compute_metrics, signal_frame_or_none
 from prometheus.validation.metrics import hit_rate as compute_hit_rate
 from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
+from prometheus.validation.promotion import elect_champions, verdict_to_status
 from prometheus.validation.regime import classify_current_regime, regime_breakdown
 from prometheus.validation.scoring import ScoreInputs
-
-_UPDATE_STRATEGY_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
+from prometheus.validation.status import set_status
 
 
 class InsufficientDataRecorded(ValueError):
@@ -225,9 +224,7 @@ async def run_one(
                 },
             )
         )
-        await session.execute(
-            _UPDATE_STRATEGY_STATUS, {"status": "REJECTED", "id": strategy_id}
-        )
+        await set_status(session, strategy_id, "REJECTED", reason="insufficient_data")
         await session.commit()
         raise InsufficientDataRecorded(str(exc), experiment_id) from exc
     compute_cost = time.perf_counter() - started
@@ -304,9 +301,11 @@ async def run_one(
         )
     )
 
-    await session.execute(
-        _UPDATE_STRATEGY_STATUS,
-        {"status": "PROMISING" if beats_benchmark else "REJECTED", "id": strategy_id},
+    await set_status(
+        session,
+        strategy_id,
+        "PROMISING" if beats_benchmark else "REJECTED",
+        reason="backtest vs benchmark net of costs",
     )
     await session.commit()
     return experiment_id
@@ -870,10 +869,12 @@ async def _validate_one_spec(
     )
     if strategy_id is not None:
         # PROMPT 7: EVERY verdict updates strategies.status, not just
-        # PROMOTE -- population.verdict_to_status is the one real mapping
+        # PROMOTE -- promotion.verdict_to_status is the one real mapping
         # from an Oracle verdict to a population lifecycle state.
         new_status = verdict_to_status(decision_result.verdict.value)
-        await session.execute(_UPDATE_STRATEGY_STATUS, {"status": new_status, "id": strategy_id})
+        await set_status(
+            session, strategy_id, new_status, reason=f"verdict {decision_result.verdict.value}"
+        )
 
 
 _RUN_BACKTEST_KIND = "run_backtest"

@@ -44,14 +44,11 @@ from prometheus.core.db import Experiment, Strategy, ValidationResult
 from prometheus.core.ids import next_experiment_id, next_strategy_id
 from prometheus.research.population import (
     STRATEGY_STATES,
-    elect_champions,
-    population_summary,
     select_for_cross_breeding,
     select_for_diversification,
     select_for_exploitation,
     select_for_exploration,
     select_for_revival,
-    verdict_to_status,
 )
 from prometheus.strategy.rotation_spec import (
     ROTATION_FAMILIES,
@@ -59,6 +56,8 @@ from prometheus.strategy.rotation_spec import (
     RotationSpec,
 )
 from prometheus.strategy.spec import StrategySpec
+from prometheus.validation.promotion import elect_champions, verdict_to_status
+from prometheus.world.population import population_summary
 
 pytestmark = [
     pytest.mark.db,

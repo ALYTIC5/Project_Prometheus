@@ -44,10 +44,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from prometheus.backtest.costs import load_cost_config
 from prometheus.core.db import Experiment, PaperFinding
 from prometheus.core.ids import next_experiment_id
+from prometheus.validation.status import set_status
 
 _Z_95 = 1.96
-
-_QUARANTINE_STRATEGY = text("UPDATE strategies SET status = 'QUARANTINED' WHERE id = :id")
 
 _SELECT_LATEST_CONFIG_HASH = text(
     "SELECT config_hash FROM experiments WHERE strategy_id = :id ORDER BY created_at DESC LIMIT 1"
@@ -102,7 +101,7 @@ async def check_divergence(
             },
         )
     )
-    await session.execute(_QUARANTINE_STRATEGY, {"id": strategy_id})
+    await set_status(session, strategy_id, "QUARANTINED", reason="paper/backtest divergence")
 
     latest_config_hash = (
         await session.execute(_SELECT_LATEST_CONFIG_HASH, {"id": strategy_id})

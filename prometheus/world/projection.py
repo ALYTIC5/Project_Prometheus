@@ -23,7 +23,7 @@ from sqlalchemy import text
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.research.population import STRATEGY_STATES, population_summary
+from prometheus.research.population import STRATEGY_STATES
 from prometheus.world.construction import (
     BUILDING_LOCATIONS,
     CONSTRUCTION_MANIFEST,
@@ -47,6 +47,7 @@ from prometheus.world.entities import (
     WorldEvent,
     WorldState,
 )
+from prometheus.world.population import population_summary
 
 LAWS: list[LawCompliance] = [
     LawCompliance(

@@ -46,6 +46,7 @@ class ResearchViolation(str, Enum):
     UNIVERSE_CHANGED_AFTER_RESULTS = "UNIVERSE_CHANGED_AFTER_RESULTS"
     HOLDOUT_REPEATED_ACCESS = "HOLDOUT_REPEATED_ACCESS"
     COST_CONFIG_LOOSENED = "COST_CONFIG_LOOSENED"  # no detector -- see module docstring
+    CANARY_BREACH = "CANARY_BREACH"  # raised by validation.status.set_status
 
 
 _INSERT_CONFIG_SNAPSHOT = text(
