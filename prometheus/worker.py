@@ -831,12 +831,21 @@ async def _log_llm_usage(
     await session.commit()
 
 
+# Papers with no successful extraction and fewer than
+# _MAX_EXTRACTION_ATTEMPTS attempts. An unparseable response is usually the
+# model's problem, not the paper's, but retrying forever would re-bill a
+# paper the model genuinely can't handle.
+_MAX_EXTRACTION_ATTEMPTS = 2
 _SELECT_UNEXTRACTED_PAPERS = text(
     """
     SELECT p.id, p.title, p.abstract
       FROM research_papers p
-      LEFT JOIN paper_extractions e ON e.paper_id = p.id
-     WHERE e.paper_id IS NULL
+     WHERE NOT EXISTS (
+             SELECT 1 FROM paper_extractions e
+              WHERE e.paper_id = p.id AND e.model NOT LIKE :unparseable_pattern
+           )
+       AND (SELECT count(*) FROM paper_extractions e WHERE e.paper_id = p.id)
+           < :max_attempts
      ORDER BY p.id DESC
      LIMIT :limit
     """
@@ -886,9 +895,18 @@ async def _run_paper_knowledge(
     anything that can fail; an unparseable extraction still marks the paper
     as processed, so a paper the model can't handle is not re-billed every
     run. Returns (papers, claims, links)."""
-    per_run = _papers_per_run(int(os.environ["PAPERS_PER_DAY"]))
+    # Twice ingestion's per-run rate, so a backlog (retries, or papers
+    # ingested while extraction was failing) drains instead of growing.
+    per_run = 2 * _papers_per_run(int(os.environ["PAPERS_PER_DAY"]))
     papers = (
-        await session.execute(_SELECT_UNEXTRACTED_PAPERS, {"limit": per_run})
+        await session.execute(
+            _SELECT_UNEXTRACTED_PAPERS,
+            {
+                "limit": per_run,
+                "max_attempts": _MAX_EXTRACTION_ATTEMPTS,
+                "unparseable_pattern": "%:unparseable",
+            },
+        )
     ).all()
     n_papers = n_claims = n_links = 0
     for paper in papers:

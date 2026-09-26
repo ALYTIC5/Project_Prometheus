@@ -73,7 +73,8 @@ async def test_paper_knowledge_extracts_claims_and_links_across_papers(
         text(
             "INSERT INTO paper_extractions (paper_id, model, n_claims) "
             "SELECT p.id, 'test-preexisting', 0 FROM research_papers p "
-            "LEFT JOIN paper_extractions e ON e.paper_id = p.id WHERE e.paper_id IS NULL"
+            "WHERE NOT EXISTS (SELECT 1 FROM paper_extractions e WHERE e.paper_id = p.id "
+                "AND e.model NOT LIKE '%\\:unparseable')"
         )
     )
     first = await _insert_paper(db_session)
@@ -113,7 +114,8 @@ async def test_unparseable_extraction_is_logged_and_not_retried(
         text(
             "INSERT INTO paper_extractions (paper_id, model, n_claims) "
             "SELECT p.id, 'test-preexisting', 0 FROM research_papers p "
-            "LEFT JOIN paper_extractions e ON e.paper_id = p.id WHERE e.paper_id IS NULL"
+            "WHERE NOT EXISTS (SELECT 1 FROM paper_extractions e WHERE e.paper_id = p.id "
+                "AND e.model NOT LIKE '%\\:unparseable')"
         )
     )
     paper_id = await _insert_paper(db_session)
@@ -122,13 +124,42 @@ async def test_unparseable_extraction_is_logged_and_not_retried(
 
     with patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")):
         first_run = await _run_paper_knowledge(db_session, client=client)
-        second_run = await _run_paper_knowledge(db_session, client=client)
+        retry = await _run_paper_knowledge(db_session, client=client)
+        third_run = await _run_paper_knowledge(db_session, client=client)
 
     assert first_run == (1, 0, 0)
-    assert second_run == (0, 0, 0)
-    marker = (
+    assert retry == (1, 0, 0)  # one retry: unparseable is usually the model's fault
+    assert third_run == (0, 0, 0)  # then never re-billed again
+    markers = (
         await db_session.execute(
             text("SELECT model FROM paper_extractions WHERE paper_id = :p"), {"p": paper_id}
         )
-    ).scalar_one()
-    assert marker.endswith(":unparseable")
+    ).scalars().all()
+    assert len(markers) == 2 and all(m.endswith(":unparseable") for m in markers)
+
+
+async def test_a_paper_is_retried_after_an_unparseable_attempt_and_then_succeeds(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PAPERS_PER_DAY", "200")
+    await db_session.execute(
+        text(
+            "INSERT INTO paper_extractions (paper_id, model, n_claims) "
+            "SELECT p.id, 'test-preexisting', 0 FROM research_papers p "
+            "WHERE NOT EXISTS (SELECT 1 FROM paper_extractions e WHERE e.paper_id = p.id "
+                "AND e.model NOT LIKE '%\\:unparseable')"
+        )
+    )
+    paper_id = await _insert_paper(db_session)
+    await db_session.execute(
+        text(
+            "INSERT INTO paper_extractions (paper_id, model, n_claims) "
+            "VALUES (:p, 'claude-haiku-4-5:unparseable', 0)"
+        ),
+        {"p": paper_id},
+    )
+
+    with patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")):
+        papers, claims, _links = await _run_paper_knowledge(db_session, client=_fake_client())
+
+    assert (papers, claims) == (1, 1)

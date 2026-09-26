@@ -70,7 +70,8 @@ async def test_research_role_can_run_the_whole_paper_to_job_path(
             text(
                 "INSERT INTO paper_extractions (paper_id, model, n_claims) "
                 "SELECT p.id, 'test-preexisting', 0 FROM research_papers p "
-                "LEFT JOIN paper_extractions e ON e.paper_id = p.id WHERE e.paper_id IS NULL"
+                "WHERE NOT EXISTS (SELECT 1 FROM paper_extractions e WHERE e.paper_id = p.id "
+                "AND e.model NOT LIKE '%\\:unparseable')"
             )
         )
         for i in range(2):
