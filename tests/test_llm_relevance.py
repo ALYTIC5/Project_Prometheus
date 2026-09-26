@@ -1,9 +1,9 @@
 """The free relevance gate in front of claim extraction.
 
-Measured 2026-09-26 against 204 production extractions: it kept all 8
-papers that yielded a testable claim and all 66 that yielded any claim,
-and dropped 34 of the 138 that yielded none (17% of LLM calls saved).
-Deliberately loose -- 8 positives is too few to tune a tighter rule
+Measured 2026-09-26 against 136 distinct production papers: it kept all 5
+that yielded a testable claim and all 46 that yielded any claim, and
+dropped 22 of the 90 that yielded none (16% of LLM calls saved).
+Deliberately loose -- 5 positives is too few to tune a tighter rule
 without overfitting, and a dropped testable paper is lost knowledge while
 an extra extraction costs ~$0.001."""
 from __future__ import annotations

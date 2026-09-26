@@ -30,7 +30,11 @@ _SELECT_SUMMARY = text(
     """
     SELECT
       (SELECT count(*) FROM research_papers) AS papers,
-      (SELECT count(*) FROM paper_extractions) AS papers_extracted,
+      (SELECT count(DISTINCT paper_id) FROM paper_extractions
+        WHERE model NOT LIKE '%\\:unparseable' AND model <> 'relevance-filter')
+        AS papers_extracted,
+      (SELECT count(DISTINCT paper_id) FROM paper_extractions
+        WHERE model = 'relevance-filter') AS papers_skipped_off_topic,
       (SELECT count(*) FROM paper_claims) AS claims,
       (SELECT count(*) FROM paper_claims WHERE testable) AS testable_claims,
       (SELECT count(*) FROM claim_links) AS links,

@@ -241,7 +241,8 @@ def test_research_summary_response_shape() -> None:
     assert response.status_code == 200
     body = response.json()
     for field in (
-        "papers", "papers_extracted", "claims", "testable_claims", "links",
+        "papers", "papers_extracted", "papers_skipped_off_topic", "claims",
+        "testable_claims", "links",
         "hypotheses_from_claims", "links_by_relation",
     ):
         assert field in body

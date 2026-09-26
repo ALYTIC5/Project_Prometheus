@@ -3,10 +3,10 @@ of claim extraction.
 
 Most arXiv q-fin papers are pricing theory, stochastic calculus or
 econometric method; an LLM call on them returns no testable claim. This
-gate keeps a paper only if its title or abstract talks about returns,
-trading, portfolios, predictability or a known anomaly, AND is not purely
-a derivatives-pricing / numerical-method paper. It is deliberately loose:
-dropping a paper with a testable claim loses knowledge, extracting an
+gate keeps a paper only if its title or abstract mentions returns,
+trading, portfolios, predictability, a known anomaly or a traded market.
+It is deliberately loose: dropping a paper with a testable claim loses
+knowledge, extracting an
 irrelevant one only costs a cheap call. Measured against production
 extractions before enabling (tests/test_llm_relevance.py records the
 numbers).
