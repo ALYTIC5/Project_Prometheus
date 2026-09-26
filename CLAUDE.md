@@ -49,6 +49,13 @@ code, never the test.
    not an edge — it is activity. The buy-and-hold equity curve is always
    visible. The system's job is to prove it can do better; the default
    assumption is that it cannot.
+9. **The evaluator is out of reach.** No research, generation, or LLM process
+   may write to evaluation code, validation state, the holdout, the canary
+   registry, or the alpha-wealth ledger. Research code runs as the
+   non-superuser research DB role (migration 0024), reads the population only
+   through the canary-free breeding views, and every strategy status change
+   goes through `validation/status.py::set_status`. Enforced by
+   `tests/laws/test_evaluator_isolation.py`.
 
 ---
 

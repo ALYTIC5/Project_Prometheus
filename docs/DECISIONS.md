@@ -7,6 +7,54 @@ reading the code.
 
 ---
 
+## Paper knowledge engine (2026-09-26)
+
+- **200 papers/day** (`PAPERS_PER_DAY`, user's number) from arXiv `cat:q-fin.*`
+  every 2h. q-fin publishes a few dozen a day, so most of the volume walks the
+  backlog. Papers are stored abstract-only; `research_papers` is insert-only,
+  so full text is never back-filled onto an existing row.
+- Each paper gets one Haiku extraction call (structured claims + concept
+  tags); each new claim is compared with claims from other papers sharing a
+  concept (typed links: SUPPORTS/CONTRADICTS/EXTENDS/SAME_MECHANISM). All
+  four tables are append-only. Every billed call is in `llm_usage` with its
+  own purpose; the existing 80%/100% budget tiers apply.
+- **Hypotheses test claims, not "the 3 newest papers".** Volume stays at one
+  per research cycle until the `llm_generation` ablation verdict is
+  VALUABLE; only then does `LLM_HYPOTHESES_PER_CYCLE` apply. User decision
+  this session: scale knowledge now, strategy volume only on proof.
+
+## Law 9 evaluator isolation -- what it is and is not (2026-09-26)
+
+- Research role (0024) is a real Postgres boundary for every code path that
+  connects as `RESEARCH_DATABASE_URL`: ingestion, claim extraction/linking
+  and the LLM hypothesis step. Proven by permission-denied tests.
+- **Not a process boundary.** The worker process also holds the superuser
+  `DATABASE_URL`, and the evolution step (mutation/crossover) still runs on
+  it because it needs lineage lookups on `experiments`. Its population reads
+  go through the breeding views, so canaries are excluded, but nothing
+  stops that code path reading raw tables. Closing this needs the evaluator
+  in a separate service (a cost-budget decision, deferred).
+
+## Canaries (2026-09-26)
+
+- ~5% of each baseline grid (the prompt's rate) gets a salted near-duplicate
+  whose signal the evaluator swaps for a known null. `CANARY_SALT` must be
+  set wherever grids are enqueued/validated.
+- "Promoted past PROMISING" = VALIDATED or CHAMPION, per
+  `STRATEGY_STATES`' own ordering (REGIME_SPECIALIST ranks below PROMISING).
+- **Open finding, measured before deploy:** 102 canaries through the real
+  pipeline on zero-drift synthetic data: 0-3 received a PROMOTE verdict,
+  depending on how many trials the database already held (fewer trials,
+  weaker DSR deflation). The failures came from symbols whose buy-and-hold
+  fell: partly-flat noise "beats" a falling benchmark. The gate refused
+  every one, but in production any such breach halts ALL promotions until a
+  human runs `validation.status.clear_promotion_halt`. The fix belongs in
+  Phase 2 (online FDR discovery gate); no validation threshold was tuned to
+  hide it (Law 7).
+- The canary kinds lose to costs on average (null-suite z = -15 to -19), the
+  same bias `experiments/ablation.py` documents for placebos, so a zero
+  false-pass rate is weaker evidence than it sounds.
+
 ## Railway cron schedule is a manual, dashboard-only setting (2026-09-24)
 
 `prometheus-worker`'s cron schedule is configured in the Railway
