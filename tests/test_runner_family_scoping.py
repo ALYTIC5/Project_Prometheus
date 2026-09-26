@@ -43,7 +43,10 @@ class _FakeSessionCtx:
         return False
 
 
-async def test_enqueue_baseline_grid_calls_generate_baseline_grid() -> None:
+async def test_enqueue_baseline_grid_calls_generate_baseline_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CANARY_SALT", "test-salt")
     with (
         patch(
             "prometheus.experiments.runner.generate_baseline_grid", return_value=[]
@@ -60,7 +63,10 @@ async def test_enqueue_baseline_grid_calls_generate_baseline_grid() -> None:
     mock_enqueue_specs.assert_called_once()
 
 
-async def test_validate_baseline_grid_calls_generate_baseline_grid() -> None:
+async def test_validate_baseline_grid_calls_generate_baseline_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CANARY_SALT", "test-salt")
     with (
         patch(
             "prometheus.experiments.runner.generate_baseline_grid", return_value=[]

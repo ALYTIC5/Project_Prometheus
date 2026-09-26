@@ -1058,9 +1058,10 @@ async def enqueue_baseline_grid(
     Canaries (validation/canaries.py) ride along: registered in the
     evaluator schema first, then enqueued exactly like grid specs."""
     specs, canaries = with_canaries(generate_baseline_grid(symbol, timeframe))
-    async with get_session() as session:
-        await register_canaries(session, canaries)
-        await session.commit()
+    if canaries:
+        async with get_session() as session:
+            await register_canaries(session, canaries)
+            await session.commit()
     return await enqueue_specs(
         symbol, timeframe, specs, days,
         priority=priority, expected_information_value=expected_information_value,
