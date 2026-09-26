@@ -50,6 +50,11 @@ jobs:
       HOLDOUT_DB_ROLE: prometheus_holdout
       HOLDOUT_DB_PASSWORD: ci-holdout-password
       HOLDOUT_DATABASE_URL: postgresql+asyncpg://prometheus_holdout:ci-holdout-password@localhost:5432/prometheus_test
+      # Law 9 (tests/laws/test_evaluator_isolation.py): migration 0024's
+      # research role, proven unable to touch judging state.
+      RESEARCH_DB_ROLE: prometheus_research
+      RESEARCH_DB_PASSWORD: ci-research-password
+      RESEARCH_DATABASE_URL: postgresql+asyncpg://prometheus_research:ci-research-password@localhost:5432/prometheus_test
       MAX_POSITION_PCT: "11"
       MAX_GROSS_EXPOSURE_PCT: "22"
       MAX_LEVERAGE: "3"
@@ -94,6 +99,11 @@ jobs:
       HOLDOUT_DB_ROLE: prometheus_holdout
       HOLDOUT_DB_PASSWORD: ci-holdout-password
       HOLDOUT_DATABASE_URL: postgresql+asyncpg://prometheus_holdout:ci-holdout-password@localhost:5432/prometheus_test
+      # Law 9 (tests/laws/test_evaluator_isolation.py): migration 0024's
+      # research role, proven unable to touch judging state.
+      RESEARCH_DB_ROLE: prometheus_research
+      RESEARCH_DB_PASSWORD: ci-research-password
+      RESEARCH_DATABASE_URL: postgresql+asyncpg://prometheus_research:ci-research-password@localhost:5432/prometheus_test
       MAX_POSITION_PCT: "11"
       MAX_GROSS_EXPOSURE_PCT: "22"
       MAX_LEVERAGE: "3"
