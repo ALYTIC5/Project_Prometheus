@@ -529,3 +529,34 @@ def get_holdout_session_factory() -> async_sessionmaker[AsyncSession]:
 async def get_holdout_session() -> AsyncIterator[AsyncSession]:
     async with get_holdout_session_factory()() as session:
         yield session
+
+
+_research_engine: AsyncEngine | None = None
+_research_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def get_research_engine() -> AsyncEngine:
+    """Same lazy pattern, bound to RESEARCH_DATABASE_URL -- migration 0024's
+    non-superuser research role, which can write research inputs only and
+    cannot read or write any judging table (Law 9)."""
+    global _research_engine
+    if _research_engine is None:
+        _research_engine = create_async_engine(
+            os.environ["RESEARCH_DATABASE_URL"], pool_pre_ping=True
+        )
+    return _research_engine
+
+
+def get_research_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _research_session_factory
+    if _research_session_factory is None:
+        _research_session_factory = async_sessionmaker(
+            get_research_engine(), expire_on_commit=False
+        )
+    return _research_session_factory
+
+
+@asynccontextmanager
+async def get_research_session() -> AsyncIterator[AsyncSession]:
+    async with get_research_session_factory()() as session:
+        yield session

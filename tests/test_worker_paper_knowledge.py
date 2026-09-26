@@ -79,6 +79,11 @@ async def test_paper_knowledge_extracts_claims_and_links_across_papers(
     first = await _insert_paper(db_session)
     second = await _insert_paper(db_session)
     client = _fake_client()
+    usage_sql = text(
+        "SELECT purpose, count(*) FROM llm_usage "
+        "WHERE purpose IN ('paper_extraction', 'claim_linking') GROUP BY purpose"
+    )
+    before = dict((await db_session.execute(usage_sql)).all())
 
     with patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")):
         papers, claims, links = await _run_paper_knowledge(db_session, client=client)
@@ -88,20 +93,16 @@ async def test_paper_knowledge_extracts_claims_and_links_across_papers(
         await db_session.execute(
             text(
                 "SELECT a.paper_id AS pa, b.paper_id AS pb, l.relation FROM claim_links l "
-                "JOIN paper_claims a ON a.id = l.claim_a JOIN paper_claims b ON b.id = l.claim_b"
-            )
+                "JOIN paper_claims a ON a.id = l.claim_a JOIN paper_claims b ON b.id = l.claim_b "
+                "WHERE a.paper_id IN (:first, :second)"
+            ),
+            {"first": first, "second": second},
         )
     ).one()
     assert (link.pa, link.pb, link.relation) == (first, second, "SUPPORTS")
-    purposes = (
-        await db_session.execute(
-            text(
-                "SELECT purpose, count(*) FROM llm_usage "
-                "WHERE purpose IN ('paper_extraction', 'claim_linking') GROUP BY purpose"
-            )
-        )
-    ).all()
-    assert dict(purposes) == {"paper_extraction": 2, "claim_linking": 1}
+    after = dict((await db_session.execute(usage_sql)).all())
+    assert after.get("paper_extraction", 0) - before.get("paper_extraction", 0) == 2
+    assert after.get("claim_linking", 0) - before.get("claim_linking", 0) == 1
 
 
 async def test_unparseable_extraction_is_logged_and_not_retried(

@@ -140,7 +140,10 @@ async def test_llm_step_logs_usage_even_when_the_response_is_invalid(
     # re-billed next cycle) but carries no strategy fingerprint.
     hypothesis_row = (
         await db_session.execute(
-            text("SELECT strategy_fingerprint, claim_ids FROM llm_hypotheses")
+            text(
+                "SELECT strategy_fingerprint, claim_ids FROM llm_hypotheses "
+                "WHERE input_tokens = 4242"
+            )
         )
     ).one()
     assert hypothesis_row.strategy_fingerprint == "unparseable"
@@ -303,7 +306,7 @@ async def test_llm_ingestion_stores_new_search_results_abstract_only(
         yield db_session
 
     with (
-        patch("prometheus.worker.get_session", _fake_get_session),
+        patch("prometheus.worker.get_research_session", _fake_get_session),
         patch(
             "prometheus.worker.search_arxiv",
             new=AsyncMock(side_effect=[[fake_paper], []]),
@@ -361,7 +364,7 @@ async def _run_ingestion_with(
         yield session
 
     with (
-        patch("prometheus.worker.get_session", _fake_get_session),
+        patch("prometheus.worker.get_research_session", _fake_get_session),
         patch("prometheus.worker.search_arxiv", new=search),
         patch("prometheus.worker._ARXIV_CALL_SPACING_SECONDS", 0.0),
     ):

@@ -73,7 +73,7 @@ from prometheus.core.cadence import (
 from prometheus.core.cadence import (
     RESEARCH_INTERVAL_SECONDS as _RESEARCH_INTERVAL_SECONDS,
 )
-from prometheus.core.db import get_session
+from prometheus.core.db import get_research_session, get_session
 from prometheus.core.health import (
     alert_discord_for_threshold_breaches,
     flush_cycle,
@@ -453,7 +453,7 @@ async def _run_llm_ingestion() -> list[str]:
     its own, so a failure mid-run keeps everything before it."""
     papers_per_day = int(os.environ["PAPERS_PER_DAY"])
     ingested: list[str] = []
-    async with get_session() as session:
+    async with get_research_session() as session:
         known = {
             base_arxiv_id(arxiv_id)
             for arxiv_id in (await session.execute(_SELECT_PAPER_ARXIV_IDS)).scalars()
@@ -681,11 +681,13 @@ async def _run_research() -> list[str]:
         # principle run_once() already applies per concern.
         try:
             client = _anthropic_client()
-            for _ in range(await _hypotheses_per_cycle(session)):
-                llm_job_id = await _run_llm_hypothesis_step(session, client=client)
-                await session.commit()
-                if llm_job_id is not None:
-                    print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
+            # Law 9: the LLM path runs as the research DB role.
+            async with get_research_session() as research_session:
+                for _ in range(await _hypotheses_per_cycle(research_session)):
+                    llm_job_id = await _run_llm_hypothesis_step(research_session, client=client)
+                    await research_session.commit()
+                    if llm_job_id is not None:
+                        print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
         except Exception as exc:
             record_failure("research", exc, context="llm_hypothesis_step")
     if evolved_job_ids:
@@ -1349,7 +1351,7 @@ async def run_once() -> list[str]:
         # Knowledge extraction runs after ingestion on the same cadence but
         # fails independently: a bad LLM call must not stop papers arriving.
         try:
-            async with get_session() as session:
+            async with get_research_session() as session:
                 papers, claims, links = await _run_paper_knowledge(
                     session, client=_anthropic_client()
                 )

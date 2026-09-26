@@ -44,11 +44,17 @@ async def _fresh_core_engine() -> AsyncIterator[None]:
     get_engine() -- resetting an unused module global costs nothing."""
     core_db._engine = None
     core_db._session_factory = None
+    core_db._research_engine = None
+    core_db._research_session_factory = None
     yield
     if core_db._engine is not None:
         await core_db._engine.dispose()
         core_db._engine = None
         core_db._session_factory = None
+    if core_db._research_engine is not None:
+        await core_db._research_engine.dispose()
+        core_db._research_engine = None
+        core_db._research_session_factory = None
 
 
 @pytest.fixture()
