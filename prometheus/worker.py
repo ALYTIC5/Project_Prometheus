@@ -120,7 +120,11 @@ from prometheus.paper.reconciliation import (
 from prometheus.paper.sim_broker import SimBroker
 from prometheus.research.crossover import crossover
 from prometheus.research.llm.budget import current_tier, estimate_cost, model_for_tier
-from prometheus.research.llm.extraction import extract_claims
+from prometheus.research.llm.extraction import (
+    EXTRACTION_BATCH_SIZE,
+    ExtractedClaim,
+    extract_claims_batch,
+)
 from prometheus.research.llm.hypothesis import (
     LLMResponseError,
     PaperContext,
@@ -133,6 +137,7 @@ from prometheus.research.llm.ingestion import (
     search_arxiv,
 )
 from prometheus.research.llm.linking import ClaimRef, link_claims
+from prometheus.research.llm.relevance import is_relevant
 from prometheus.research.ml.generate import (
     generate_gradient_boosting_grid,
     generate_logistic_regression_grid,
@@ -871,6 +876,7 @@ _SELECT_LINK_CANDIDATES = text(
       FROM paper_claims c
       JOIN claim_concepts cc ON cc.claim_id = c.id
      WHERE cc.concept = ANY(:concepts) AND c.paper_id <> :paper_id
+       AND c.id < :claim_id
      GROUP BY c.id
      ORDER BY count(*) DESC, c.id DESC
      LIMIT :limit
@@ -884,17 +890,122 @@ _INSERT_CLAIM_LINK = text(
     """
 )
 _LINK_CANDIDATES_PER_CLAIM = 10
+# paper_extractions.model for a paper the free relevance gate skipped -- a
+# completed (not unparseable) outcome, so it is never retried.
+_RELEVANCE_FILTER_MARKER = "relevance-filter"
+
+
+async def _log_failed_call(session: AsyncSession, exc: LLMResponseError, purpose: str) -> None:
+    await _log_llm_usage(
+        session, model=exc.model, input_tokens=exc.input_tokens,
+        output_tokens=exc.output_tokens,
+        est_cost_usd=estimate_cost(
+            exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
+        ),
+        purpose=purpose,
+    )
+
+
+async def _store_claims(
+    session: AsyncSession, paper_id: int, claims: list[ExtractedClaim], model: str
+) -> list[tuple[ClaimRef, tuple[str, ...], int]]:
+    """Inserts one paper's claims and concepts; returns the TESTABLE ones
+    as (ref, concepts, paper_id) for linking."""
+    testable: list[tuple[ClaimRef, tuple[str, ...], int]] = []
+    for claim in claims:
+        claim_id = int(
+            (
+                await session.execute(
+                    _INSERT_PAPER_CLAIM,
+                    {
+                        "paper_id": paper_id,
+                        "mechanism": claim.mechanism,
+                        "asset_class": claim.asset_class,
+                        "horizon": claim.horizon,
+                        "direction": claim.direction,
+                        "stated_effect": claim.stated_effect,
+                        "data_period": claim.data_period,
+                        "testable": claim.testable,
+                        "family_hint": claim.family_hint,
+                        "model": model,
+                    },
+                )
+            ).scalar_one()
+        )
+        for concept in claim.concepts:
+            await session.execute(
+                _INSERT_CLAIM_CONCEPT, {"claim_id": claim_id, "concept": concept}
+            )
+        if claim.testable and claim.concepts:
+            testable.append(
+                (
+                    ClaimRef(claim_id, claim.mechanism, claim.asset_class, claim.horizon),
+                    claim.concepts,
+                    paper_id,
+                )
+            )
+    return testable
+
+
+async def _link_claim(
+    session: AsyncSession,
+    client: _AnthropicClientProtocol,
+    ref: ClaimRef,
+    concepts: tuple[str, ...],
+    paper_id: int,
+) -> int:
+    candidates = [
+        ClaimRef(row.id, row.mechanism, row.asset_class, row.horizon)
+        for row in (
+            await session.execute(
+                _SELECT_LINK_CANDIDATES,
+                # Older claims only: each pair is linked once, from the newer
+                # claim's side, even when both arrive in the same run.
+                {"concepts": list(concepts), "paper_id": paper_id,
+                 "claim_id": ref.claim_id, "limit": _LINK_CANDIDATES_PER_CLAIM},
+            )
+        ).all()
+    ]
+    if not candidates:
+        return 0
+    try:
+        linking = await link_claims(client, new=ref, candidates=candidates)
+    except LLMResponseError as exc:
+        await _log_failed_call(session, exc, "claim_linking")
+        return 0
+    await _log_llm_usage(
+        session, model=linking.model, input_tokens=linking.input_tokens,
+        output_tokens=linking.output_tokens, est_cost_usd=linking.est_cost_usd,
+        purpose="claim_linking",
+    )
+    for link in linking.links:
+        await session.execute(
+            _INSERT_CLAIM_LINK,
+            {
+                "claim_a": link.claim_a,
+                "claim_b": link.claim_b,
+                "relation": link.relation,
+                "rationale": link.rationale,
+                "model": linking.model,
+            },
+        )
+    await session.commit()
+    return len(linking.links)
 
 
 async def _run_paper_knowledge(
     session: AsyncSession, *, client: _AnthropicClientProtocol
 ) -> tuple[int, int, int]:
-    """Extracts claims from not-yet-processed papers and links each new
-    claim to related claims from other papers. Keeps pace with ingestion
-    (same per-run count). Every billed call is logged to llm_usage before
-    anything that can fail; an unparseable extraction still marks the paper
-    as processed, so a paper the model can't handle is not re-billed every
-    run. Returns (papers, claims, links)."""
+    """Extracts claims from not-yet-processed papers and links testable
+    claims to related claims from other papers. Returns (papers processed,
+    claims stored, links stored).
+
+    Token discipline: a free rule-based relevance gate (research/llm/
+    relevance.py) marks off-topic papers without any LLM call; the rest go
+    EXTRACTION_BATCH_SIZE papers per call; only testable claims -- the ones
+    that can become strategies -- are linked. Every billed call is logged to
+    llm_usage before anything that can fail. An unparseable paper is marked
+    so it is retried at most _MAX_EXTRACTION_ATTEMPTS times."""
     # Twice ingestion's per-run rate, so a backlog (retries, or papers
     # ingested while extraction was failing) drains instead of growing.
     per_run = 2 * _papers_per_run(int(os.environ["PAPERS_PER_DAY"]))
@@ -909,119 +1020,56 @@ async def _run_paper_knowledge(
         )
     ).all()
     n_papers = n_claims = n_links = 0
+
+    relevant = [p for p in papers if is_relevant(p.title, p.abstract)]
     for paper in papers:
-        if await current_tier(session) == "halted":
-            break
-        try:
-            extraction = await extract_claims(client, title=paper.title, abstract=paper.abstract)
-        except LLMResponseError as exc:
-            await _log_llm_usage(
-                session, model=exc.model, input_tokens=exc.input_tokens,
-                output_tokens=exc.output_tokens,
-                est_cost_usd=estimate_cost(
-                    exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
-                ),
-                purpose="paper_extraction",
-            )
+        if paper not in relevant:
             await session.execute(
                 _INSERT_PAPER_EXTRACTION,
-                {"paper_id": paper.id, "model": f"{exc.model}:unparseable", "n": 0},
+                {"paper_id": paper.id, "model": _RELEVANCE_FILTER_MARKER, "n": 0},
             )
-            await session.commit()
             n_papers += 1
+    await session.commit()
+
+    to_link: list[tuple[ClaimRef, tuple[str, ...], int]] = []
+    for start in range(0, len(relevant), EXTRACTION_BATCH_SIZE):
+        if await current_tier(session) == "halted":
+            break
+        chunk = relevant[start : start + EXTRACTION_BATCH_SIZE]
+        try:
+            batch = await extract_claims_batch(client, [(p.title, p.abstract) for p in chunk])
+        except LLMResponseError as exc:
+            await _log_failed_call(session, exc, "paper_extraction")
+            for paper in chunk:
+                await session.execute(
+                    _INSERT_PAPER_EXTRACTION,
+                    {"paper_id": paper.id, "model": f"{exc.model}:unparseable", "n": 0},
+                )
+            await session.commit()
+            n_papers += len(chunk)
             continue
         await _log_llm_usage(
-            session, model=extraction.model, input_tokens=extraction.input_tokens,
-            output_tokens=extraction.output_tokens, est_cost_usd=extraction.est_cost_usd,
+            session, model=batch.model, input_tokens=batch.input_tokens,
+            output_tokens=batch.output_tokens, est_cost_usd=batch.est_cost_usd,
             purpose="paper_extraction",
         )
-        new_claims: list[tuple[ClaimRef, tuple[str, ...]]] = []
-        for claim in extraction.claims:
-            claim_id = int(
-                (
-                    await session.execute(
-                        _INSERT_PAPER_CLAIM,
-                        {
-                            "paper_id": paper.id,
-                            "mechanism": claim.mechanism,
-                            "asset_class": claim.asset_class,
-                            "horizon": claim.horizon,
-                            "direction": claim.direction,
-                            "stated_effect": claim.stated_effect,
-                            "data_period": claim.data_period,
-                            "testable": claim.testable,
-                            "family_hint": claim.family_hint,
-                            "model": extraction.model,
-                        },
-                    )
-                ).scalar_one()
+        for paper, claims in zip(chunk, batch.claims_by_paper, strict=True):
+            if claims is None:
+                marker, n = f"{batch.model}:unparseable", 0
+            else:
+                to_link.extend(await _store_claims(session, paper.id, claims, batch.model))
+                marker, n = batch.model, len(claims)
+                n_claims += n
+            await session.execute(
+                _INSERT_PAPER_EXTRACTION, {"paper_id": paper.id, "model": marker, "n": n}
             )
-            for concept in claim.concepts:
-                await session.execute(
-                    _INSERT_CLAIM_CONCEPT, {"claim_id": claim_id, "concept": concept}
-                )
-            new_claims.append(
-                (
-                    ClaimRef(claim_id, claim.mechanism, claim.asset_class, claim.horizon),
-                    claim.concepts,
-                )
-            )
-        await session.execute(
-            _INSERT_PAPER_EXTRACTION,
-            {"paper_id": paper.id, "model": extraction.model, "n": len(extraction.claims)},
-        )
         await session.commit()
-        n_papers += 1
-        n_claims += len(new_claims)
+        n_papers += len(chunk)
 
-        for ref, concepts in new_claims:
-            if not concepts or await current_tier(session) == "halted":
-                continue
-            candidates = [
-                ClaimRef(row.id, row.mechanism, row.asset_class, row.horizon)
-                for row in (
-                    await session.execute(
-                        _SELECT_LINK_CANDIDATES,
-                        {
-                            "concepts": list(concepts),
-                            "paper_id": paper.id,
-                            "limit": _LINK_CANDIDATES_PER_CLAIM,
-                        },
-                    )
-                ).all()
-            ]
-            if not candidates:
-                continue
-            try:
-                linking = await link_claims(client, new=ref, candidates=candidates)
-            except LLMResponseError as exc:
-                await _log_llm_usage(
-                    session, model=exc.model, input_tokens=exc.input_tokens,
-                    output_tokens=exc.output_tokens,
-                    est_cost_usd=estimate_cost(
-                        exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
-                    ),
-                    purpose="claim_linking",
-                )
-                continue
-            await _log_llm_usage(
-                session, model=linking.model, input_tokens=linking.input_tokens,
-                output_tokens=linking.output_tokens, est_cost_usd=linking.est_cost_usd,
-                purpose="claim_linking",
-            )
-            for link in linking.links:
-                await session.execute(
-                    _INSERT_CLAIM_LINK,
-                    {
-                        "claim_a": link.claim_a,
-                        "claim_b": link.claim_b,
-                        "relation": link.relation,
-                        "rationale": link.rationale,
-                        "model": linking.model,
-                    },
-                )
-            await session.commit()
-            n_links += len(linking.links)
+    for ref, concepts, paper_id in to_link:
+        if await current_tier(session) == "halted":
+            break
+        n_links += await _link_claim(session, client, ref, concepts, paper_id)
     return n_papers, n_claims, n_links
 
 

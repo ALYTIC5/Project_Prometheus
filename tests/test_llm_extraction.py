@@ -11,6 +11,7 @@ import pytest
 from prometheus.research.llm.extraction import (
     EXTRACTION_MODEL,
     extract_claims,
+    extract_claims_batch,
     normalize_concept,
 )
 from prometheus.research.llm.hypothesis import LLMResponseError
@@ -18,8 +19,12 @@ from prometheus.research.llm.linking import ClaimRef, link_claims
 
 
 def _client(payload: Any, *, stop_reason: str = "end_turn") -> MagicMock:
+    """A single-paper {"claims": [...]} payload is sent in the batched
+    response shape the extractor asks for."""
     client = MagicMock()
     message = MagicMock()
+    if isinstance(payload, dict) and "claims" in payload:
+        payload = {"papers": [{"paper": 1, "claims": payload["claims"]}]}
     body = payload if isinstance(payload, str) else json.dumps(payload)
     message.content = [MagicMock(type="text", text=body)]
     message.stop_reason = stop_reason
@@ -64,7 +69,7 @@ async def test_extract_claims_parses_and_normalizes() -> None:
 )
 async def test_extract_claims_accepts_a_code_fenced_response(wrap: str) -> None:
     """claude-haiku-4-5 fences its JSON in production (2026-09-26)."""
-    body = json.dumps({"claims": [_claim()]})
+    body = json.dumps({"papers": [{"paper": 1, "claims": [_claim()]}]})
     extraction = await extract_claims(_client(wrap.format(body=body)), title="t", abstract="a")
     assert len(extraction.claims) == 1
 
@@ -99,6 +104,29 @@ async def test_extract_claims_rejects_truncated_response() -> None:
         await extract_claims(
             _client({"claims": []}, stop_reason="max_tokens"), title="t", abstract="a"
         )
+
+
+async def test_batch_sends_all_papers_in_one_call_and_isolates_a_bad_entry() -> None:
+    client = _client(
+        {
+            "papers": [
+                {"paper": 1, "claims": [_claim()]},
+                {"paper": 2, "claims": [_claim(asset_class="stocks")]},
+                {"paper": 3, "claims": []},
+            ]
+        }
+    )
+    batch = await extract_claims_batch(client, [("a", "x"), ("b", "y"), ("c", "z"), ("d", "w")])
+
+    assert client.messages.create.call_count == 1
+    content = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "[1] Title: a" in content and "[4] Title: d" in content
+    first, bad, empty, missing = batch.claims_by_paper
+    assert first is not None and len(first) == 1
+    assert bad is None  # invalid enum drops only this paper
+    assert empty == []
+    assert missing is None  # no entry returned for paper 4
+    assert batch.input_tokens == 400
 
 
 def test_normalize_concept() -> None:

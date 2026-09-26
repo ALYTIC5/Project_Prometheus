@@ -48,7 +48,10 @@ def _client(marker: str) -> MagicMock:
     def create(**kwargs: Any) -> MagicMock:
         user = kwargs["messages"][0]["content"]
         if "EXISTING claims" not in user:
-            return _message(json.dumps({"claims": [claim]}))
+            n = len(re.findall(r"^\[\d+\] Title:", user, re.MULTILINE))
+            return _message(
+                json.dumps({"papers": [{"paper": i + 1, "claims": [claim]} for i in range(n)]})
+            )
         target = int(re.search(r"EXISTING claims:\n(\d+)\.", user).group(1))  # type: ignore[union-attr]
         return _message(
             json.dumps({"links": [{"id": target, "relation": "SUPPORTS", "rationale": "r"}]})
@@ -79,7 +82,7 @@ async def test_research_role_can_run_the_whole_paper_to_job_path(
                 text(
                     "INSERT INTO research_papers "
                     "(arxiv_id, title, abstract, full_text, key_sections) "
-                    "VALUES (:a, 't', 'a', '', 'a')"
+                    "VALUES (:a, 't', 'momentum returns', '', 'momentum returns')"
                 ),
                 {"a": f"role.{marker}.{i}"},
             )

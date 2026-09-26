@@ -37,7 +37,10 @@ def _fake_client() -> MagicMock:
     def create(**kwargs: Any) -> MagicMock:
         user = kwargs["messages"][0]["content"]
         if "EXISTING claims" not in user:
-            return _message(json.dumps({"claims": [claim]}))
+            n = len(re.findall(r"^\[\d+\] Title:", user, re.MULTILINE))
+            return _message(
+                json.dumps({"papers": [{"paper": i + 1, "claims": [claim]} for i in range(n)]})
+            )
         target = int(re.search(r"EXISTING claims:\n(\d+)\.", user).group(1))  # type: ignore[union-attr]
         return _message(
             json.dumps(
@@ -102,8 +105,89 @@ async def test_paper_knowledge_extracts_claims_and_links_across_papers(
     ).one()
     assert (link.pa, link.pb, link.relation) == (first, second, "SUPPORTS")
     after = dict((await db_session.execute(usage_sql)).all())
-    assert after.get("paper_extraction", 0) - before.get("paper_extraction", 0) == 2
+    # Both papers went in one batched extraction call.
+    assert after.get("paper_extraction", 0) - before.get("paper_extraction", 0) == 1
     assert after.get("claim_linking", 0) - before.get("claim_linking", 0) == 1
+
+
+async def _hide_existing(session: AsyncSession) -> None:
+    await session.execute(
+        text(
+            "INSERT INTO paper_extractions (paper_id, model, n_claims) "
+            "SELECT p.id, 'test-preexisting', 0 FROM research_papers p "
+            "WHERE NOT EXISTS (SELECT 1 FROM paper_extractions e WHERE e.paper_id = p.id "
+            "AND e.model NOT LIKE '%\\:unparseable')"
+        )
+    )
+
+
+async def _insert_paper_text(session: AsyncSession, title: str, abstract: str) -> int:
+    return int(
+        (
+            await session.execute(
+                text(
+                    "INSERT INTO research_papers "
+                    "(arxiv_id, title, abstract, full_text, key_sections) "
+                    "VALUES (:a, :t, :b, '', :b) RETURNING id"
+                ),
+                {"a": f"test.{uuid.uuid4().hex[:10]}", "t": title, "b": abstract},
+            )
+        ).scalar_one()
+    )
+
+
+async def test_off_topic_papers_are_skipped_without_any_llm_call(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PAPERS_PER_DAY", "200")
+    await _hide_existing(db_session)
+    paper_id = await _insert_paper_text(
+        db_session, "Existence of solutions to a Hamilton-Jacobi-Bellman PDE",
+        "We prove existence and uniqueness of viscosity solutions.",
+    )
+    client = MagicMock()
+
+    with patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")):
+        result = await _run_paper_knowledge(db_session, client=client)
+
+    assert result == (1, 0, 0)
+    client.messages.create.assert_not_called()
+    marker = (
+        await db_session.execute(
+            text("SELECT model FROM paper_extractions WHERE paper_id = :p"), {"p": paper_id}
+        )
+    ).scalar_one()
+    assert marker == "relevance-filter"
+
+
+async def test_papers_share_one_extraction_call_and_untestable_claims_are_not_linked(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PAPERS_PER_DAY", "200")
+    await _hide_existing(db_session)
+    for i in range(3):
+        await _insert_paper_text(db_session, f"Momentum paper {i}", "momentum returns")
+    untestable = {
+        "mechanism": "theory", "asset_class": "equity", "horizon": "monthly",
+        "direction": "none", "stated_effect": "e", "data_period": "d",
+        "testable": False, "family_hint": None, "concepts": ["momentum"],
+    }
+
+    def create(**kwargs: Any) -> MagicMock:
+        user = kwargs["messages"][0]["content"]
+        n = len(re.findall(r"^\[\d+\] Title:", user, re.MULTILINE))
+        return _message(
+            json.dumps({"papers": [{"paper": i + 1, "claims": [untestable]} for i in range(n)]})
+        )
+
+    client = MagicMock()
+    client.messages.create.side_effect = create
+
+    with patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")):
+        result = await _run_paper_knowledge(db_session, client=client)
+
+    assert result == (3, 3, 0)
+    assert client.messages.create.call_count == 1  # one call for three papers, no linking
 
 
 async def test_unparseable_extraction_is_logged_and_not_retried(

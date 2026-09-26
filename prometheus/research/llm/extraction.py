@@ -31,13 +31,15 @@ HORIZONS = ("intraday", "daily", "weekly", "monthly", "quarterly_plus", "unspeci
 DIRECTIONS = ("long", "short", "long_short", "market_neutral", "none")
 
 _SYSTEM_PROMPT = f"""You read quantitative-finance paper abstracts and extract
-the paper's empirical or theoretical CLAIMS about asset returns, risk or
+each paper's empirical or theoretical CLAIMS about asset returns, risk or
 trading. A claim is one falsifiable statement: a mechanism and what it is
 said to predict.
 
-Respond with ONLY a JSON object: {{"claims": [ ... ]}} with at most
-{MAX_CLAIMS_PER_PAPER} claims. Return {{"claims": []}} if the paper makes no
-claim about returns, risk or trading. Each claim is an object with keys:
+You get one or more numbered papers. Respond with ONLY a JSON object:
+{{"papers": [{{"paper": <number>, "claims": [ ... ]}}, ...]}} with exactly one
+entry per paper and at most {MAX_CLAIMS_PER_PAPER} claims per paper. A paper
+that makes no claim about returns, risk or trading gets "claims": [].
+Each claim is an object with keys:
 - "mechanism": one sentence, WHY the effect should exist
 - "asset_class": one of {list(ASSET_CLASSES)}
 - "horizon": one of {list(HORIZONS)}
@@ -112,23 +114,50 @@ def _parse_claim(raw: dict[str, Any]) -> ExtractedClaim:
     )
 
 
-async def extract_claims(
-    client: _AnthropicClientProtocol, *, title: str, abstract: str
-) -> Extraction:
+# Papers per extraction call: the instructions are sent once per 8 papers.
+# Measured 2026-09-26 on 8 real papers: ~7% cheaper per paper, with no loss
+# of testable claims versus single calls -- output tokens (5x the input
+# price) dominate, and they only come from papers that do make claims.
+# Small enough that the worst case (8 x 5 claims) fits in max_tokens.
+EXTRACTION_BATCH_SIZE = 8
+_MAX_TOKENS = 8192
+
+
+@dataclass(frozen=True)
+class BatchExtraction:
+    """claims_by_paper[i] is the claims for the i-th paper passed in, or
+    None when that paper's part of the response was missing or invalid --
+    one bad entry never discards the other papers' results."""
+
+    claims_by_paper: list[list[ExtractedClaim] | None]
+    model: str
+    input_tokens: int
+    output_tokens: int
+    est_cost_usd: float
+
+
+async def extract_claims_batch(
+    client: _AnthropicClientProtocol, papers: list[tuple[str, str]]
+) -> BatchExtraction:
+    """One call for up to EXTRACTION_BATCH_SIZE (title, abstract) pairs.
+    Raises LLMResponseError (carrying the billed usage) only when the
+    response as a whole is unusable."""
+    listing = "\n\n".join(
+        f"[{i}] Title: {title}\nAbstract: {abstract}"
+        for i, (title, abstract) in enumerate(papers, start=1)
+    )
     message = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=2048,
+        max_tokens=_MAX_TOKENS,
         system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Title: {title}\n\nAbstract:\n{abstract}"}],
+        messages=[{"role": "user", "content": listing}],
     )
     input_tokens = message.usage.input_tokens
     output_tokens = message.usage.output_tokens
     try:
-        parsed = json.loads(response_text(message))
-        raw_claims = parsed["claims"]
-        if not isinstance(raw_claims, list):
-            raise ValueError("claims is not a list")
-        claims = [_parse_claim(raw) for raw in raw_claims[:MAX_CLAIMS_PER_PAPER]]
+        entries = json.loads(response_text(message))["papers"]
+        if not isinstance(entries, list):
+            raise ValueError("papers is not a list")
     except Exception as exc:
         raise LLMResponseError(
             f"claim extraction could not be parsed: {exc}",
@@ -136,12 +165,46 @@ async def extract_claims(
             output_tokens=output_tokens,
             model=EXTRACTION_MODEL,
         ) from exc
-    return Extraction(
-        claims=claims,
+    claims_by_paper: list[list[ExtractedClaim] | None] = [None] * len(papers)
+    for entry in entries:
+        try:
+            index = int(entry["paper"]) - 1
+            raw_claims = entry["claims"]
+            if not 0 <= index < len(papers) or not isinstance(raw_claims, list):
+                continue
+            claims_by_paper[index] = [
+                _parse_claim(raw) for raw in raw_claims[:MAX_CLAIMS_PER_PAPER]
+            ]
+        except (KeyError, TypeError, ValueError):
+            continue
+    return BatchExtraction(
+        claims_by_paper=claims_by_paper,
         model=EXTRACTION_MODEL,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         est_cost_usd=estimate_cost(
             EXTRACTION_MODEL, input_tokens=input_tokens, output_tokens=output_tokens
         ),
+    )
+
+
+async def extract_claims(
+    client: _AnthropicClientProtocol, *, title: str, abstract: str
+) -> Extraction:
+    """Single-paper form of extract_claims_batch."""
+    batch = await extract_claims_batch(client, [(title, abstract)])
+    claims = batch.claims_by_paper[0]
+    if claims is None:
+        raise LLMResponseError(
+            "claim extraction could not be parsed: no valid entry for the paper",
+            input_tokens=batch.input_tokens,
+            output_tokens=batch.output_tokens,
+            model=batch.model,
+        )
+    return Extraction(
+        claims=claims,
+        model=batch.model,
+        input_tokens=batch.input_tokens,
+        output_tokens=batch.output_tokens,
+        est_cost_usd=batch.est_cost_usd,
     )
