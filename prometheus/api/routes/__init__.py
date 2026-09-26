@@ -8,6 +8,7 @@ from prometheus.api.routes.paper import router as paper_router
 from prometheus.api.routes.papers import router as papers_router
 from prometheus.api.routes.pipeline import router as pipeline_router
 from prometheus.api.routes.queue import router as queue_router
+from prometheus.api.routes.research_health import router as research_health_router
 from prometheus.api.routes.scoreboard import router as scoreboard_router
 from prometheus.api.routes.strategies import router as strategies_router
 from prometheus.api.routes.violations import router as violations_router
@@ -22,6 +23,7 @@ __all__ = [
     "papers_router",
     "pipeline_router",
     "queue_router",
+    "research_health_router",
     "scoreboard_router",
     "strategies_router",
     "violations_router",

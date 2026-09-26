@@ -55,6 +55,7 @@ jobs:
       RESEARCH_DB_ROLE: prometheus_research
       RESEARCH_DB_PASSWORD: ci-research-password
       RESEARCH_DATABASE_URL: postgresql+asyncpg://prometheus_research:ci-research-password@localhost:5432/prometheus_test
+      CANARY_SALT: ci-canary-salt
       MAX_POSITION_PCT: "11"
       MAX_GROSS_EXPOSURE_PCT: "22"
       MAX_LEVERAGE: "3"
@@ -104,6 +105,7 @@ jobs:
       RESEARCH_DB_ROLE: prometheus_research
       RESEARCH_DB_PASSWORD: ci-research-password
       RESEARCH_DATABASE_URL: postgresql+asyncpg://prometheus_research:ci-research-password@localhost:5432/prometheus_test
+      CANARY_SALT: ci-canary-salt
       MAX_POSITION_PCT: "11"
       MAX_GROSS_EXPOSURE_PCT: "22"
       MAX_LEVERAGE: "3"

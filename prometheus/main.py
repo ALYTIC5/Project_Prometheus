@@ -28,6 +28,7 @@ from prometheus.api.routes import (
     papers_router,
     pipeline_router,
     queue_router,
+    research_health_router,
     scoreboard_router,
     strategies_router,
     violations_router,
@@ -104,6 +105,7 @@ app.include_router(pipeline_router)
 app.include_router(papers_router)
 app.include_router(paper_router)
 app.include_router(clusters_router)
+app.include_router(research_health_router)
 
 
 @app.get("/api/info", tags=["meta"])

@@ -255,6 +255,17 @@ def test_research_learned_response_shape() -> None:
         assert {"claim", "paper", "strategy", "hypothesis_text"} <= set(item)
 
 
+def test_research_health_canaries_exposes_aggregates_only() -> None:
+    with TestClient(app) as client:
+        response = client.get("/research-health/canaries")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {
+        "canaries_registered", "canaries_evaluated", "breaches", "false_pass_rate",
+        "last_breach_at", "promotions_halted",
+    }
+
+
 def test_research_paper_detail_404s_for_unknown_paper() -> None:
     with TestClient(app) as client:
         response = client.get("/research-papers/999999999")
