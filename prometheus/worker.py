@@ -46,6 +46,7 @@ import asyncio
 import hashlib
 import os
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -190,14 +191,9 @@ _RUN_BACKTEST_KIND = "run_backtest"
 _EVOLUTION_EXPLOITATION_PARENTS = 1
 _EVOLUTION_EXPLORATION_PARENTS = 1
 
-# One bounded LLM hypothesis per research cycle -- same "bounded work per
-# tick" reasoning as _EVOLUTION_EXPLOITATION_PARENTS/_EVOLUTION_EXPLORATION_
-# PARENTS above, not a statistical choice. Fixed arXiv category filter
-# (Quantitative Finance), never a query derived from strategy state --
-# ingestion must not depend on research outcomes.
+# Fixed arXiv category filter (Quantitative Finance), never a query derived
+# from strategy state -- ingestion must not depend on research outcomes.
 _LLM_ARXIV_QUERY = "cat:q-fin.*"
-_LLM_RECENT_PAPERS_LIMIT = 3
-_LLM_SYMBOL = "BTC/USDT"
 
 # Paper ingestion walks arXiv q-fin newest-first, then keeps paging deeper
 # into the backlog -- q-fin only publishes a few dozen papers a day, so a
@@ -684,10 +680,12 @@ async def _run_research() -> list[str]:
         # Same "one concern's failure must not sink unrelated work"
         # principle run_once() already applies per concern.
         try:
-            llm_job_id = await _run_llm_hypothesis_step(session, client=_anthropic_client())
-            await session.commit()
-            if llm_job_id is not None:
-                print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
+            client = _anthropic_client()
+            for _ in range(await _hypotheses_per_cycle(session)):
+                llm_job_id = await _run_llm_hypothesis_step(session, client=client)
+                await session.commit()
+                if llm_job_id is not None:
+                    print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
         except Exception as exc:
             record_failure("research", exc, context="llm_hypothesis_step")
     if evolved_job_ids:
@@ -696,14 +694,92 @@ async def _run_research() -> list[str]:
     return ran + validated
 
 
-_SELECT_RECENT_PAPERS = text(
-    "SELECT id, key_sections FROM research_papers ORDER BY ingested_at DESC LIMIT :limit"
+# One liquid, already-ingested representative per claim asset class. A claim
+# about an asset class with no representative here is not turned into a
+# hypothesis -- the engine cannot test it on data it doesn't have.
+_ASSET_CLASS_SYMBOL: dict[str, str] = {
+    "crypto": "BTC/USDT",
+    "equity": "SPY",
+    "multi_asset": "SPY",
+    "fixed_income": "TLT",
+    "commodity": "GLD",
+    "fx": "UUP",
+}
+
+# Testable claims no hypothesis has tested yet, most-corroborated first
+# (SUPPORTS links in either direction), newest next.
+_SELECT_UNTESTED_CLAIM = text(
+    """
+    SELECT c.id, c.paper_id, c.mechanism, c.stated_effect, c.asset_class,
+           c.family_hint, p.title, p.abstract
+      FROM paper_claims c
+      JOIN research_papers p ON p.id = c.paper_id
+     WHERE c.testable
+       AND c.family_hint IS NOT NULL
+       AND c.asset_class = ANY(:asset_classes)
+       AND NOT EXISTS (
+             SELECT 1 FROM llm_hypotheses h
+              WHERE h.claim_ids @> jsonb_build_array(c.id)
+           )
+     ORDER BY (
+             SELECT count(*) FROM claim_links l
+              WHERE l.relation = 'SUPPORTS' AND (l.claim_a = c.id OR l.claim_b = c.id)
+           ) DESC,
+           c.id DESC
+     LIMIT 1
+    """
+)
+
+_SELECT_LLM_GENERATION_VERDICT = text(
+    """
+    SELECT verdict, disabled FROM component_registry
+     WHERE component = 'llm_generation'
+     ORDER BY updated_at DESC
+     LIMIT 1
+    """
 )
 
 
-async def _select_recent_papers(session: AsyncSession, limit: int) -> list[PaperContext]:
-    rows = (await session.execute(_SELECT_RECENT_PAPERS, {"limit": limit})).fetchall()
-    return [PaperContext(paper_id=r.id, key_sections=r.key_sections) for r in rows]
+@dataclass(frozen=True)
+class _ClaimContext:
+    claim_id: int
+    symbol: str
+    paper: PaperContext
+
+
+async def _next_untested_claim(session: AsyncSession) -> _ClaimContext | None:
+    row = (
+        await session.execute(
+            _SELECT_UNTESTED_CLAIM, {"asset_classes": list(_ASSET_CLASS_SYMBOL)}
+        )
+    ).first()
+    if row is None:
+        return None
+    return _ClaimContext(
+        claim_id=row.id,
+        symbol=_ASSET_CLASS_SYMBOL[row.asset_class],
+        paper=PaperContext(
+            paper_id=row.paper_id,
+            key_sections=(
+                f"Claim under test: {row.mechanism}\n"
+                f"Effect the paper reports: {row.stated_effect}\n"
+                f"Closest registered family: {row.family_hint}\n\n"
+                f"Paper: {row.title}\n{row.abstract}"
+            ),
+        ),
+    )
+
+
+async def _hypotheses_per_cycle(session: AsyncSession) -> int:
+    """1 per research cycle (the long-standing rate) until the ablation
+    harness has shown LLM generation VALUABLE against the deterministic
+    baseline; only then LLM_HYPOTHESES_PER_CYCLE (env) applies. More
+    unproven hypotheses would only raise the trial count every other
+    strategy's DSR is deflated by."""
+    row = (await session.execute(_SELECT_LLM_GENERATION_VERDICT)).first()
+    if row is None or row.verdict != "VALUABLE" or row.disabled:
+        return 1
+    return int(os.environ.get("LLM_HYPOTHESES_PER_CYCLE", "1"))
 
 
 _INSERT_LLM_USAGE = text(
@@ -715,13 +791,13 @@ _INSERT_LLM_USAGE = text(
 _INSERT_LLM_HYPOTHESIS = text(
     """
     INSERT INTO llm_hypotheses
-        (strategy_fingerprint, paper_ids, hypothesis_text, expected_effect,
+        (strategy_fingerprint, paper_ids, claim_ids, hypothesis_text, expected_effect,
          model, input_tokens, output_tokens, est_cost_usd)
     VALUES
-        (:strategy_fingerprint, :paper_ids, :hypothesis_text, :expected_effect,
+        (:strategy_fingerprint, :paper_ids, :claim_ids, :hypothesis_text, :expected_effect,
          :model, :input_tokens, :output_tokens, :est_cost_usd)
     """
-).bindparams(bindparam("paper_ids", type_=JSONB))
+).bindparams(bindparam("paper_ids", type_=JSONB), bindparam("claim_ids", type_=JSONB))
 
 
 async def _log_llm_usage(
@@ -949,13 +1025,15 @@ async def _run_llm_hypothesis_step(
     if tier == "halted":
         return None
 
-    papers = await _select_recent_papers(session, _LLM_RECENT_PAPERS_LIMIT)
-    if not papers:
+    claim = await _next_untested_claim(session)
+    if claim is None:
         return None
 
     model = model_for_tier(tier)
     try:
-        result = await generate_hypothesis(client, model, _LLM_SYMBOL, _TIMEFRAME, papers)
+        result = await generate_hypothesis(
+            client, model, claim.symbol, _TIMEFRAME, [claim.paper]
+        )
     except LLMResponseError as exc:
         await _log_llm_usage(
             session,
@@ -966,6 +1044,24 @@ async def _run_llm_hypothesis_step(
                 exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
             ),
         )
+        # Record the attempt so the same claim isn't re-billed every cycle.
+        await session.execute(
+            _INSERT_LLM_HYPOTHESIS,
+            {
+                "strategy_fingerprint": "unparseable",
+                "paper_ids": [claim.paper.paper_id],
+                "claim_ids": [claim.claim_id],
+                "hypothesis_text": f"unparseable response: {exc}",
+                "expected_effect": "",
+                "model": exc.model,
+                "input_tokens": exc.input_tokens,
+                "output_tokens": exc.output_tokens,
+                "est_cost_usd": estimate_cost(
+                    exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
+                ),
+            },
+        )
+        await session.commit()
         print(f"worker: LLM hypothesis generation produced an invalid spec, skipping: {exc}")
         return None
     except ValueError as exc:
@@ -986,6 +1082,7 @@ async def _run_llm_hypothesis_step(
         {
             "strategy_fingerprint": result.spec.config_hash(),
             "paper_ids": result.paper_ids,
+            "claim_ids": [claim.claim_id],
             "hypothesis_text": result.hypothesis_text,
             "expected_effect": result.expected_effect,
             "model": result.model,

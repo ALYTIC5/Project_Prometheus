@@ -8,11 +8,22 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from prometheus.research.llm.hypothesis import LLMHypothesis, LLMResponseError
+from prometheus.research.llm.hypothesis import LLMHypothesis, LLMResponseError, PaperContext
 from prometheus.strategy.spec import StrategySpec
-from prometheus.worker import _enqueue_child, _run_llm_hypothesis_step
+from prometheus.worker import (
+    _ClaimContext,
+    _enqueue_child,
+    _hypotheses_per_cycle,
+    _next_untested_claim,
+    _run_llm_hypothesis_step,
+)
 
 pytestmark = pytest.mark.db
+
+_CLAIM = _ClaimContext(
+    claim_id=7, symbol="BTC/USDT",
+    paper=PaperContext(paper_id=1, key_sections="Claim under test: momentum"),
+)
 
 
 def _fake_hypothesis() -> LLMHypothesis:
@@ -35,9 +46,7 @@ async def test_llm_step_enqueues_job_and_logs_usage_when_full_tier(
         patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")),
         patch("prometheus.worker.model_for_tier", return_value="claude-sonnet-5"),
         patch("prometheus.worker.search_arxiv", new=AsyncMock(return_value=[])),
-        patch("prometheus.worker._select_recent_papers", new=AsyncMock(return_value=[
-            MagicMock(id=1, key_sections="momentum literature")
-        ])),
+        patch("prometheus.worker._next_untested_claim", new=AsyncMock(return_value=_CLAIM)),
         patch(
             "prometheus.worker.generate_hypothesis",
             new=AsyncMock(return_value=_fake_hypothesis()),
@@ -110,9 +119,7 @@ async def test_llm_step_logs_usage_even_when_the_response_is_invalid(
     with (
         patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")),
         patch("prometheus.worker.model_for_tier", return_value="claude-sonnet-5"),
-        patch("prometheus.worker._select_recent_papers", new=AsyncMock(return_value=[
-            MagicMock(id=1, key_sections="momentum literature")
-        ])),
+        patch("prometheus.worker._next_untested_claim", new=AsyncMock(return_value=_CLAIM)),
         patch("prometheus.worker.generate_hypothesis", new=AsyncMock(side_effect=failure)),
     ):
         job_id = await _run_llm_hypothesis_step(db_session, client=MagicMock())
@@ -129,11 +136,15 @@ async def test_llm_step_logs_usage_even_when_the_response_is_invalid(
     assert usage_row is not None
     assert usage_row.output_tokens == 2121
     assert float(usage_row.est_cost_usd) > 0
-    # No hypothesis record for a response that never produced a valid spec.
+    # The failed attempt is recorded against its claim (so the claim is not
+    # re-billed next cycle) but carries no strategy fingerprint.
     hypothesis_row = (
-        await db_session.execute(text("SELECT id FROM llm_hypotheses"))
-    ).first()
-    assert hypothesis_row is None
+        await db_session.execute(
+            text("SELECT strategy_fingerprint, claim_ids FROM llm_hypotheses")
+        )
+    ).one()
+    assert hypothesis_row.strategy_fingerprint == "unparseable"
+    assert hypothesis_row.claim_ids == [7]
 
 
 async def test_llm_step_commits_usage_before_enqueue_can_fail(
@@ -145,9 +156,7 @@ async def test_llm_step_commits_usage_before_enqueue_can_fail(
     with (
         patch("prometheus.worker.current_tier", new=AsyncMock(return_value="full")),
         patch("prometheus.worker.model_for_tier", return_value="claude-sonnet-5"),
-        patch("prometheus.worker._select_recent_papers", new=AsyncMock(return_value=[
-            MagicMock(id=1, key_sections="momentum literature")
-        ])),
+        patch("prometheus.worker._next_untested_claim", new=AsyncMock(return_value=_CLAIM)),
         patch(
             "prometheus.worker.generate_hypothesis",
             new=AsyncMock(return_value=_fake_hypothesis()),
@@ -164,6 +173,107 @@ async def test_llm_step_commits_usage_before_enqueue_can_fail(
         )
     ).first()
     assert usage_row is not None
+
+
+async def _paper_with_claim(
+    session: AsyncSession, *, asset_class: str = "crypto", testable: bool = True
+) -> int:
+    import uuid
+
+    paper_id = (
+        await session.execute(
+            text(
+                "INSERT INTO research_papers (arxiv_id, title, abstract, full_text, key_sections) "
+                "VALUES (:a, 'title', 'abstract', '', 'abstract') RETURNING id"
+            ),
+            {"a": f"test.{uuid.uuid4().hex[:10]}"},
+        )
+    ).scalar_one()
+    return int(
+        (
+            await session.execute(
+                text(
+                    "INSERT INTO paper_claims (paper_id, mechanism, asset_class, horizon, "
+                    "direction, stated_effect, data_period, testable, family_hint, model) "
+                    "VALUES (:p, 'trend persists', :ac, 'monthly', 'long', 'e', 'd', :t, "
+                    ":fh, 'x') RETURNING id"
+                ),
+                {"p": paper_id, "ac": asset_class, "t": testable,
+                 "fh": "TSMOM" if testable else None},
+            )
+        ).scalar_one()
+    )
+
+
+async def _hide_existing_claims(session: AsyncSession) -> None:
+    await session.execute(
+        text(
+            "INSERT INTO llm_hypotheses (strategy_fingerprint, paper_ids, claim_ids, "
+            "hypothesis_text, expected_effect, model, input_tokens, output_tokens, est_cost_usd) "
+            "SELECT 'test-hidden', '[]'::jsonb, jsonb_build_array(c.id), '', '', 'x', 0, 0, 0 "
+            "FROM paper_claims c"
+        )
+    )
+
+
+async def test_next_untested_claim_prefers_supported_claims_and_skips_tested_ones(
+    db_session: AsyncSession,
+) -> None:
+    await _hide_existing_claims(db_session)
+    lonely = await _paper_with_claim(db_session)
+    supported = await _paper_with_claim(db_session, asset_class="equity")
+    supporter = await _paper_with_claim(db_session)
+    await _paper_with_claim(db_session, testable=False)
+    await _paper_with_claim(db_session, asset_class="other")
+    await db_session.execute(
+        text(
+            "INSERT INTO claim_links (claim_a, claim_b, relation, rationale, model) "
+            "VALUES (:a, :b, 'SUPPORTS', 'r', 'x')"
+        ),
+        {"a": supporter, "b": supported},
+    )
+
+    first = await _next_untested_claim(db_session)
+    assert first is not None
+    assert first.claim_id in (supported, supporter)
+    assert first.symbol in ("SPY", "BTC/USDT")
+
+    await db_session.execute(
+        text(
+            "INSERT INTO llm_hypotheses (strategy_fingerprint, paper_ids, claim_ids, "
+            "hypothesis_text, expected_effect, model, input_tokens, output_tokens, est_cost_usd) "
+            "VALUES ('f', '[]'::jsonb, CAST(:ids AS jsonb), '', '', 'x', 0, 0, 0)"
+        ),
+        {"ids": f"[{supported}, {supporter}]"},
+    )
+    remaining = await _next_untested_claim(db_session)
+    assert remaining is not None and remaining.claim_id == lonely
+
+
+async def test_hypotheses_per_cycle_is_one_until_llm_generation_is_valuable(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LLM_HYPOTHESES_PER_CYCLE", "4")
+    await db_session.execute(
+        text("DELETE FROM component_registry WHERE component = 'llm_generation'")
+    )
+    assert await _hypotheses_per_cycle(db_session) == 1
+
+    await db_session.execute(
+        text(
+            "INSERT INTO component_registry (component, version, verdict) "
+            "VALUES ('llm_generation', 'v-test', 'NEUTRAL')"
+        )
+    )
+    assert await _hypotheses_per_cycle(db_session) == 1
+
+    await db_session.execute(
+        text(
+            "INSERT INTO component_registry (component, version, verdict, updated_at) "
+            "VALUES ('llm_generation', 'v-test-2', 'VALUABLE', now() + interval '1 second')"
+        )
+    )
+    assert await _hypotheses_per_cycle(db_session) == 4
 
 
 async def test_llm_step_does_nothing_when_halted(db_session: AsyncSession) -> None:
