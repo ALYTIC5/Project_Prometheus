@@ -73,7 +73,7 @@ from prometheus.core.cadence import (
 from prometheus.core.cadence import (
     RESEARCH_INTERVAL_SECONDS as _RESEARCH_INTERVAL_SECONDS,
 )
-from prometheus.core.db import get_research_session, get_session
+from prometheus.core.db import ResearchPaper, get_research_session, get_session
 from prometheus.core.health import (
     alert_discord_for_threshold_breaches,
     flush_cycle,
@@ -138,6 +138,7 @@ from prometheus.research.llm.ingestion import (
 )
 from prometheus.research.llm.linking import ClaimRef, link_claims
 from prometheus.research.llm.relevance import is_relevant
+from prometheus.research.llm.seed_lists import fetch_readme, find_paper, strategy_titles
 from prometheus.research.ml.generate import (
     generate_gradient_boosting_grid,
     generate_logistic_regression_grid,
@@ -251,6 +252,49 @@ _UPSERT_CADENCE = text(
 # backtest job once appends a superseding experiment/result under the
 # corrected benchmark; the drain's time budget spreads it across cycles.
 _BENCHMARK_BACKFILL_MARKER = "bench_fix_0924"
+
+
+# One-time seed (worker_cadence marker): papers named by the
+# paperswithbacktest/awesome-systematic-trading strategy list, found by
+# exact title on arXiv/OpenAlex (research/llm/seed_lists.py). Measured
+# 2026-09-26: 16 of its 61 titles resolve to a paper with an abstract.
+_SEED_LIST_MARKER = "seed_awesome_systematic_trading_0926"
+
+
+async def _run_seed_lists() -> int:
+    async with get_session() as session:
+        done = (await session.execute(_SELECT_CADENCE, {"concern": _SEED_LIST_MARKER})).first()
+    if done is not None:
+        return 0
+    titles = strategy_titles(await fetch_readme())
+    added = 0
+    async with get_research_session() as session:
+        known = {
+            base_arxiv_id(arxiv_id)
+            for arxiv_id in (await session.execute(_SELECT_PAPER_ARXIV_IDS)).scalars()
+        }
+        for title in titles:
+            try:
+                paper = await find_paper(title)
+            except Exception as exc:
+                record_failure("llm_ingestion", exc, context=f"seed lookup {title[:60]}")
+                paper = None
+            await asyncio.sleep(_ARXIV_CALL_SPACING_SECONDS)
+            if paper is None or base_arxiv_id(paper.paper_id) in known:
+                continue
+            session.add(
+                ResearchPaper(
+                    arxiv_id=paper.paper_id, title=paper.title, abstract=paper.abstract,
+                    full_text="", key_sections=paper.abstract,
+                )
+            )
+            await session.commit()
+            known.add(base_arxiv_id(paper.paper_id))
+            added += 1
+    async with get_session() as session:
+        await session.execute(_UPSERT_CADENCE, {"concern": _SEED_LIST_MARKER})
+        await session.commit()
+    return added
 
 
 async def _run_one_time_backfills() -> None:
@@ -1407,6 +1451,9 @@ async def run_once() -> list[str]:
 
     if llm_ingestion_due:
         try:
+            seeded = await _run_seed_lists()
+            if seeded:
+                print(f"worker: seeded {seeded} paper(s) from curated strategy lists")
             ingested = await _run_llm_ingestion()
             async with get_session() as session:
                 await mark_run(session, concern="llm_ingestion")
