@@ -58,6 +58,17 @@ async def test_extract_claims_parses_and_normalizes() -> None:
     assert extraction.est_cost_usd > 0
 
 
+@pytest.mark.parametrize(
+    "wrap",
+    ["```json\n{body}\n```", "```\n{body}\n```", "  ```json\n{body}```  ", "{body}"],
+)
+async def test_extract_claims_accepts_a_code_fenced_response(wrap: str) -> None:
+    """claude-haiku-4-5 fences its JSON in production (2026-09-26)."""
+    body = json.dumps({"claims": [_claim()]})
+    extraction = await extract_claims(_client(wrap.format(body=body)), title="t", abstract="a")
+    assert len(extraction.claims) == 1
+
+
 async def test_extract_claims_drops_family_hint_on_untestable_claims() -> None:
     client = _client({"claims": [_claim(testable=False)]})
     extraction = await extract_claims(client, title="t", abstract="a")

@@ -28,6 +28,7 @@ under-counts exactly the spend that produced no value.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -154,15 +155,23 @@ def _build_user_prompt(symbol: str, timeframe: str, paper_context: list[PaperCon
     )
 
 
+_CODE_FENCE = re.compile(r"^\s*```[a-zA-Z]*\s*\n(?P<body>.*?)\n?\s*```\s*$", re.DOTALL)
+
+
 def response_text(message: Any) -> str:
-    """The first text block of a Messages API response. Raises ValueError
-    when the response was cut off or refused -- a truncated JSON answer
-    must fail loudly, not parse as a shorter one."""
+    """The first text block of a Messages API response, with one wrapping
+    markdown code fence removed (claude-haiku-4-5 returns ```json ... ```
+    despite being told not to -- found in production 2026-09-26, where it
+    discarded every claim extraction). Raises ValueError when the response
+    was cut off or refused -- a truncated JSON answer must fail loudly, not
+    parse as a shorter one."""
     if message.stop_reason in ("max_tokens", "refusal"):
         raise ValueError(f"response ended with stop_reason={message.stop_reason!r}")
     for block in message.content:
         if block.type == "text":
-            return str(block.text)
+            text = str(block.text)
+            fenced = _CODE_FENCE.match(text)
+            return fenced.group("body") if fenced else text
     raise ValueError("response contained no text block")
 
 
