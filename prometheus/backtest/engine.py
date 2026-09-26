@@ -45,6 +45,7 @@ from prometheus.backtest.ml_signal import (
     random_forest_signal,
     svm_signal,
 )
+from prometheus.backtest.null_signals import apply_null
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import (
     FAMILY_ADX_DI_CROSSOVER,
@@ -2038,10 +2039,17 @@ def run_backtest(
     *,
     cost_model: CostModel = apply_cost,
     benchmark_result: BenchmarkResult | None = None,
+    null_kind: str | None = None,
+    null_seed: int = 0,
 ) -> BacktestResult:
     """`benchmark_result`, if passed, must already be the benchmark for
     this spec's own universe and realised window -- it is checked, and a
-    mismatch raises BenchmarkMismatch rather than being silently used."""
+    mismatch raises BenchmarkMismatch rather than being silently used.
+
+    `null_kind` runs this spec as a canary: its signal is replaced by a
+    known-null one (backtest/null_signals.py) before accounting. Only the
+    evaluator sets it, from the canary registry; the engine itself never
+    looks anything up."""
     bars = pit.as_of(as_of_cutoff).filter(pl.col("symbol") == spec.symbol).sort("available_at")
     min_bars = _min_bars_for(spec)
     if bars.height < min_bars:
@@ -2051,6 +2059,8 @@ def run_backtest(
         )
 
     signaled = signal_for(bars, spec)
+    if null_kind is not None:
+        signaled = apply_null(signaled, null_kind, null_seed)
     start = warmup_start_index(spec)
     positions = signaled["position"].to_list()[start:]
     window_bars = bars.slice(start)

@@ -24,11 +24,15 @@ from prometheus.experiments.violations import ResearchViolation, record_violatio
 
 logger = logging.getLogger(__name__)
 
-PROMOTED_STATUSES = frozenset({"VALIDATED", "CHAMPION", "REGIME_SPECIALIST"})
+# "Past PROMISING" in research/population.STRATEGY_STATES' own ordering
+# (CHAMPION > VALIDATED > PROMISING > EXPERIMENTAL > REGIME_SPECIALIST ...).
+# REGIME_SPECIALIST ranks below PROMISING there and never leads to a
+# champion or to paper trading, so it is not a promotion.
+PROMOTED_STATUSES = frozenset({"VALIDATED", "CHAMPION"})
 
-# Only the order above PROMISING matters: moving INTO a promoted status from
-# a lower rank is a promotion; CHAMPION -> VALIDATED is a demotion.
-_RANK = {"CHAMPION": 3, "VALIDATED": 2, "REGIME_SPECIALIST": 2}
+# Moving INTO a promoted status from a lower rank is a promotion;
+# CHAMPION -> VALIDATED is a demotion.
+_RANK = {"CHAMPION": 2, "VALIDATED": 1}
 
 _UPDATE_STATUS = text("UPDATE strategies SET status = :status WHERE id = :id")
 _SELECT_STATUS = text("SELECT status FROM strategies WHERE id = :id")

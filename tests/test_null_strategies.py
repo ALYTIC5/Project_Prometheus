@@ -28,10 +28,12 @@ import statistics
 from datetime import UTC, datetime, timedelta
 
 import polars as pl
+import pytest
 
 from prometheus.backtest.benchmark import compute_benchmark_curve
 from prometheus.backtest.costs import apply_cost
 from prometheus.backtest.engine import STARTING_CAPITAL, run_backtest, run_backtest_from_positions
+from prometheus.backtest.null_signals import NULL_KINDS, turnover_matched_positions
 from prometheus.core.seeds import rng_for
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.strategy.spec import StrategySpec
@@ -104,15 +106,9 @@ def _run_positions(bars: pl.DataFrame, positions: list[float]) -> float:
 
 
 def _turnover_matched_positions(n_bars: int, n_transitions: int, rng: random.Random) -> list[float]:
-    n_transitions = min(n_transitions, n_bars - 1)
-    flip_points = set(rng.sample(range(1, n_bars), n_transitions))
-    positions = []
-    current = 0.0
-    for i in range(n_bars):
-        if i in flip_points:
-            current = 1.0 - current
-        positions.append(current)
-    return positions
+    """The production canary generator (backtest/null_signals.py) -- the
+    same null this suite has always tested, now shared with canaries."""
+    return turnover_matched_positions(n_bars, n_transitions, rng)
 
 
 def _assert_not_significantly_positive(label: str, returns: list[float]) -> None:
@@ -251,6 +247,22 @@ def test_null_random_entry_exit_at_matched_turnover() -> None:
         positions = _turnover_matched_positions(_N_BARS, n_transitions, rng)
         returns.append(_run_positions(bars_df, positions))
     _assert_not_significantly_positive("random-entry-exit-matched-turnover", returns)
+
+
+@pytest.mark.parametrize("kind", NULL_KINDS)
+def test_every_canary_kind_is_null_through_the_real_engine_hook(kind: str) -> None:
+    """Canaries (validation/canaries.py) run through run_backtest's
+    null_kind hook. Each kind, on a fixed zero-drift series, 1000 seeds:
+    not significantly positive after costs -- a canary that could look
+    profitable would make the canary false-pass rate meaningless."""
+    bars_df = _fixed_zero_drift_bars()
+    pit = PointInTimeFrame(bars_df)
+    cutoff = bars_df["available_at"][-1]
+    returns = [
+        run_backtest(pit, _SPEC, cutoff, null_kind=kind, null_seed=seed).total_return_pct
+        for seed in range(_N_SEEDS)
+    ]
+    _assert_not_significantly_positive(f"canary-{kind}", returns)
 
 
 def test_null_pure_lagged_noise() -> None:

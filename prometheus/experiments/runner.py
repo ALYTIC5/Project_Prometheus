@@ -48,6 +48,7 @@ from prometheus.backtest.benchmark import (
 )
 from prometheus.backtest.costs import DEFAULT_COST_CONFIG_PATH, load_cost_config, make_cost_model
 from prometheus.backtest.engine import min_bars_for, run_backtest
+from prometheus.backtest.null_signals import apply_null
 from prometheus.backtest.portfolio_engine import run_portfolio_backtest
 from prometheus.core.db import Decision, Experiment, Result, Strategy, ValidationResult, get_session
 from prometheus.core.health import record_failure
@@ -63,6 +64,13 @@ from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
 from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
+from prometheus.validation.canaries import (
+    canary_kinds,
+    null_seed,
+    record_canary_strategy,
+    register_canaries,
+    with_canaries,
+)
 from prometheus.validation.decay import DecayProfile, compute_decay
 from prometheus.validation.decision import Evidence, decide
 from prometheus.validation.metrics import ValidationMetrics, compute_metrics, signal_frame_or_none
@@ -177,6 +185,13 @@ async def run_one(
     )
     await session.flush()
 
+    config_hash = spec.config_hash()
+    null_kind: str | None = None
+    if isinstance(spec, StrategySpec):
+        null_kind = (await canary_kinds(session, [config_hash])).get(config_hash)
+        if null_kind is not None:
+            await record_canary_strategy(session, strategy_id, config_hash)
+
     experiment_id = await next_experiment_id()
     started = time.perf_counter()
     # The benchmark is computed INSIDE the backtest (strategy_result.
@@ -190,7 +205,10 @@ async def run_one(
                 pit, spec, membership, end, cost_model=cost_model
             )
         else:
-            strategy_result = run_backtest(pit, spec, end, cost_model=cost_model)
+            strategy_result = run_backtest(
+                pit, spec, end, cost_model=cost_model,
+                null_kind=null_kind, null_seed=null_seed(config_hash),
+            )
     except ValueError as exc:
         session.add(
             _build_experiment(
@@ -376,13 +394,20 @@ async def validate_specs(
     pit, _data_version_hash = await load_point_in_time(session, [symbol], timeframe, start, end)
     bars = pit.as_of(end).filter(pl.col("symbol") == symbol).sort("available_at")
 
+    # Canaries are re-scored on the same null signal they were run with.
+    null_kinds = await canary_kinds(session, [spec.config_hash() for spec in specs])
+
     per_spec: list[tuple[StrategySpec, Any]] = []
     for spec in specs:
         try:
             # Each spec gets its OWN benchmark (its own post-warm-up
             # window) -- one shared per-symbol curve compared every spec
             # against the same full-history window regardless of warm-up.
-            result = run_backtest(pit, spec, end, cost_model=cost_model)
+            result = run_backtest(
+                pit, spec, end, cost_model=cost_model,
+                null_kind=null_kinds.get(spec.config_hash()),
+                null_seed=null_seed(spec.config_hash()),
+            )
         except BenchmarkMismatch as exc:
             record_failure("research", exc, context=f"benchmark hash={spec.config_hash()}")
             continue
@@ -460,6 +485,9 @@ async def validate_specs(
         signal_error: str | None = None
         try:
             signaled = signal_frame_or_none(bars, spec)
+            spec_null_kind = null_kinds.get(spec.config_hash())
+            if signaled is not None and spec_null_kind is not None:
+                signaled = apply_null(signaled, spec_null_kind, null_seed(spec.config_hash()))
         except Exception as exc:
             signaled = None
             signal_error = repr(exc)
@@ -597,10 +625,13 @@ async def validate_baseline_grid(
     validate_grid's hardcoded family meant no non-MOMENTUM strategy
     could ever reach 'VALIDATED' status
     (population.verdict_to_status's only PROMOTE->VALIDATED path), and
-    therefore never CHAMPION, and therefore never paper-traded."""
-    return await validate_specs(
-        session, symbol, timeframe, generate_baseline_grid(symbol, timeframe), days
-    )
+    therefore never CHAMPION, and therefore never paper-traded.
+
+    The grid's canaries are re-validated with it, so a canary faces the
+    same PBO/DSR gate as every real spec."""
+    specs, canaries = with_canaries(generate_baseline_grid(symbol, timeframe))
+    await register_canaries(session, canaries)
+    return await validate_specs(session, symbol, timeframe, specs, days)
 
 
 _NULL_DECAY_PROFILE_TEMPLATE: dict[str, Any] = {
@@ -1022,9 +1053,16 @@ async def enqueue_baseline_grid(
     docs/superpowers/specs/2026-09-20-random-forest-strategy-design.md:
     worker.py's _run_research() called enqueue_grid with a hardcoded
     family, so BOLLINGER/VOL_BREAKOUT/RSI/MACD strategies were never
-    enqueued through this path at all."""
+    enqueued through this path at all.
+
+    Canaries (validation/canaries.py) ride along: registered in the
+    evaluator schema first, then enqueued exactly like grid specs."""
+    specs, canaries = with_canaries(generate_baseline_grid(symbol, timeframe))
+    async with get_session() as session:
+        await register_canaries(session, canaries)
+        await session.commit()
     return await enqueue_specs(
-        symbol, timeframe, generate_baseline_grid(symbol, timeframe), days,
+        symbol, timeframe, specs, days,
         priority=priority, expected_information_value=expected_information_value,
         estimated_cost=estimated_cost, max_attempts=max_attempts,
     )
