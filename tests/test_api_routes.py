@@ -223,8 +223,42 @@ def test_research_papers_response_shape() -> None:
     assert "papers" in body
     # Empty table is a valid, honest state (no papers ingested yet).
     for paper in body["papers"]:
-        for field in ("id", "arxiv_id", "title", "abstract", "ingested_at"):
+        for field in ("id", "arxiv_id", "title", "abstract", "ingested_at", "extracted"):
             assert field in paper
+    assert body["page"] == 1
+    assert body["total"] >= len(body["papers"])
+
+
+def test_research_papers_paging_is_bounded() -> None:
+    with TestClient(app) as client:
+        assert client.get("/research-papers/?page_size=500").status_code == 422
+        assert client.get("/research-papers/?page=0").status_code == 422
+
+
+def test_research_summary_response_shape() -> None:
+    with TestClient(app) as client:
+        response = client.get("/research-papers/summary")
+    assert response.status_code == 200
+    body = response.json()
+    for field in (
+        "papers", "papers_extracted", "claims", "testable_claims", "links",
+        "hypotheses_from_claims", "links_by_relation",
+    ):
+        assert field in body
+
+
+def test_research_learned_response_shape() -> None:
+    with TestClient(app) as client:
+        response = client.get("/research-papers/learned")
+    assert response.status_code == 200
+    for item in response.json()["learned"]:
+        assert {"claim", "paper", "strategy", "hypothesis_text"} <= set(item)
+
+
+def test_research_paper_detail_404s_for_unknown_paper() -> None:
+    with TestClient(app) as client:
+        response = client.get("/research-papers/999999999")
+    assert response.status_code == 404
 
 
 def test_paper_trading_response_shape() -> None:
