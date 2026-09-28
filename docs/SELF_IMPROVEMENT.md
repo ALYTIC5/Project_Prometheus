@@ -33,17 +33,22 @@ signal-strength/IC and benchmark-universe fixes in and backfilled
   swapped in by the evaluator. Breach = refuse + halt all promotions +
   `CANARY_BREACH` violation; only `clear_promotion_halt` (human) resumes.
   `GET /research-health/canaries`.
-- **Open finding:** production false-pass rate ~1% (2 of ~190 canaries) --
-  DSR > 0 lets partly-flat noise through on falling symbols. Promotions have
-  been halted since 2026-09-26. The fix is Phase 2.
+- Canaries found the pre-gate pipeline promoting noise (2 of ~190, ~1%):
+  the old `deflated_sharpe > 0` check was always true. Promotions were
+  halted 2026-09-26 -> cleared 2026-09-28 once Phase 2 was live (reason
+  logged in `evaluator.promotion_halts`).
 
-## Phase 2 -- Discovery gate, online FDR (NOT STARTED)
+## Phase 2 -- Discovery gate, online FDR (DONE, 2026-09-28)
 
-LORD++ with an append-only, evaluator-isolated `alpha_wealth_ledger`. Feed
-the PSR p-value vs the matched benchmark (DSR already corrects for trials --
-don't double-correct). One test per correlation cluster. Nobody may reset or
-top up alpha-wealth (Law 10). Must bring the canary false-pass rate to zero
-before the promotion halt is cleared.
+LORD++ (alpha 5%, W0 2.5%) on the PSR p-value of per-bar excess returns vs
+the matched buy-and-hold; append-only `evaluator.alpha_wealth_ledger`; one
+test per spec ever and per correlation cluster; `set_status` refuses
+VALIDATED without a discovery (Law 10, `tests/laws/test_discovery_gate.py`).
+Simulated FDR 0.7-1.0% (target 5%); 102-canary acceptance test 0 breaches;
+first production cycles: 70 tests, 0 discoveries, no breach. The gate is
+strict while nothing has been discovered (next threshold ~1e-5) -- SAFFRON
+is the prompt's measured ablation if it proves too conservative.
+`GET /research-health/discovery-gate`.
 
 ## Phase 3 -- Pre-registered hypotheses (NOT STARTED)
 
