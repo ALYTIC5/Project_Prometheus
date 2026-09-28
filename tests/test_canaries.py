@@ -140,6 +140,7 @@ async def _insert_zero_drift_bars(
 
 @_needs_db
 @pytest.mark.db
+@pytest.mark.usefixtures("search_unfrozen")
 async def test_100_canaries_through_the_real_pipeline_none_promoted(
     factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -230,7 +231,7 @@ async def test_100_canaries_through_the_real_pipeline_none_promoted(
                     "JOIN experiments e ON e.id = v.experiment_id "
                     "WHERE e.config_hash = ANY(:h) "
                     "AND jsonb_exists_any(v.reason_codes, array['NOT_PREREGISTERED',"
-                    "'NEAR_DUPLICATE','MECHANISM_MISMATCH'])"
+                    "'NEAR_DUPLICATE','MECHANISM_MISMATCH','GATE_FROZEN'])"
                 ),
                 {"h": all_hashes},
             )

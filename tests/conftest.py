@@ -64,6 +64,21 @@ async def _fresh_core_engine() -> AsyncIterator[None]:
 
 
 @pytest.fixture()
+def search_unfrozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """config/search.yaml freezes the search in production (BUILD_PLAN D11).
+    Tests of the gate, evolution or LLM steps opt back in explicitly --
+    a frozen gate would otherwise make e.g. the canary acceptance test
+    pass without testing anything."""
+    from prometheus.core.search_flags import SearchFlags
+
+    unfrozen = SearchFlags(
+        evolution_enabled=True, llm_steps_enabled=True, gate_submissions_enabled=True
+    )
+    for module in ("prometheus.experiments.runner", "prometheus.worker"):
+        monkeypatch.setattr(f"{module}.load_search_flags", lambda: unfrozen)
+
+
+@pytest.fixture()
 async def db_session() -> AsyncIterator[AsyncSession]:
     """A real-Postgres session, isolated per test by a savepoint-joined
     transaction that is always rolled back at teardown -- tests can INSERT/

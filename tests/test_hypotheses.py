@@ -175,6 +175,7 @@ async def _gate(session: AsyncSession, spec: StrategySpec) -> tuple[DecisionResu
 
 @pytestmark_db
 @pytest.mark.db
+@pytest.mark.usefixtures("search_unfrozen")
 async def test_gate_refuses_without_spending_wealth(db_session: AsyncSession) -> None:
     symbol = _symbol()
     unregistered = _spec(symbol, 7, 30)
@@ -198,6 +199,7 @@ async def test_gate_refuses_without_spending_wealth(db_session: AsyncSession) ->
 
 @pytestmark_db
 @pytest.mark.db
+@pytest.mark.usefixtures("search_unfrozen")
 async def test_clean_registered_candidate_is_tested(db_session: AsyncSession) -> None:
     spec = _spec(_symbol(), 10, 50)
     registration = await register_hypothesis(db_session, spec)
