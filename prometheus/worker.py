@@ -258,7 +258,9 @@ _BENCHMARK_BACKFILL_MARKER = "bench_fix_0924"
 # paperswithbacktest/awesome-systematic-trading strategy list, found by
 # exact title on arXiv/OpenAlex (research/llm/seed_lists.py). Measured
 # 2026-09-26: 16 of its 61 titles resolve to a paper with an abstract.
-_SEED_LIST_MARKER = "seed_awesome_systematic_trading_0926"
+# worker_cadence.concern is varchar(16): a longer marker fails to save,
+# which made the seed re-run (and ingestion fail) on every tick 2026-09-26..28.
+_SEED_LIST_MARKER = "seed_pwb_0926"
 
 
 async def _run_seed_lists() -> int:
@@ -1451,9 +1453,13 @@ async def run_once() -> list[str]:
 
     if llm_ingestion_due:
         try:
-            seeded = await _run_seed_lists()
-            if seeded:
-                print(f"worker: seeded {seeded} paper(s) from curated strategy lists")
+            # The one-time seed must never block regular ingestion.
+            try:
+                seeded = await _run_seed_lists()
+                if seeded:
+                    print(f"worker: seeded {seeded} paper(s) from curated strategy lists")
+            except Exception as exc:
+                record_failure("llm_ingestion", exc, context="seed_lists")
             ingested = await _run_llm_ingestion()
             async with get_session() as session:
                 await mark_run(session, concern="llm_ingestion")
