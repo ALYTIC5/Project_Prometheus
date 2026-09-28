@@ -87,6 +87,25 @@ async def set_status(
     return True
 
 
+async def reinstate_champion(session: AsyncSession, strategy_id: str, *, reason: str) -> bool:
+    """VALIDATED -> CHAMPION even while promotions are halted -- ONLY to
+    give back a title the halt-time election churn took away (see
+    promotion.restore_champions_demoted_by_halt). A canary is still refused
+    and recorded as a breach. Returns whether the status was written."""
+    current = (await session.execute(_SELECT_STATUS, {"id": strategy_id})).scalar_one_or_none()
+    if current != "VALIDATED":
+        return False
+    canary_hash = (
+        await session.execute(_SELECT_CANARY, {"id": strategy_id})
+    ).scalar_one_or_none()
+    if canary_hash is not None:
+        await _record_breach(session, strategy_id, canary_hash, "CHAMPION", reason)
+        return False
+    logger.warning("reinstating %s as CHAMPION during a halt: %s", strategy_id, reason)
+    await session.execute(_UPDATE_STATUS, {"status": "CHAMPION", "id": strategy_id})
+    return True
+
+
 async def _is_promotion(session: AsyncSession, strategy_id: str, new_status: str) -> bool:
     if new_status not in PROMOTED_STATUSES:
         return False

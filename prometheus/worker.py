@@ -157,6 +157,7 @@ from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.rotation_spec import ROTATION_FAMILIES
 from prometheus.strategy.spec import FAMILIES, StrategySpec
 from prometheus.validation.holdout import access_holdout_for_paper
+from prometheus.validation.promotion import restore_champions_demoted_by_halt
 
 
 def _anthropic_client() -> _AnthropicClientProtocol:
@@ -297,6 +298,25 @@ async def _run_seed_lists() -> int:
         await session.execute(_UPSERT_CADENCE, {"concern": _SEED_LIST_MARKER})
         await session.commit()
     return added
+
+
+# One-time (worker_cadence marker, <= 16 chars): give back the champions the
+# halt-time election churn demoted, 2026-09-26..28 (user decision
+# 2026-09-28: keep champions during a halt).
+_CHAMPION_RESTORE_MARKER = "champ_rst_0928"
+
+
+async def _run_champion_restore() -> None:
+    async with get_session() as session:
+        done = (
+            await session.execute(_SELECT_CADENCE, {"concern": _CHAMPION_RESTORE_MARKER})
+        ).first()
+        if done is not None:
+            return
+        restored = await restore_champions_demoted_by_halt(session)
+        await session.execute(_UPSERT_CADENCE, {"concern": _CHAMPION_RESTORE_MARKER})
+        await session.commit()
+    print(f"worker: restored {len(restored)} champion(s) demoted during the halt: {restored}")
 
 
 async def _run_one_time_backfills() -> None:
@@ -1402,6 +1422,10 @@ async def run_once() -> list[str]:
         await _run_one_time_backfills()
     except Exception as exc:
         record_failure("backfill", exc)
+    try:
+        await _run_champion_restore()
+    except Exception as exc:
+        record_failure("backfill", exc, context="champion_restore")
 
     ran: list[str] = []
     async with get_session() as session:
