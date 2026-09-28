@@ -92,11 +92,18 @@ def test_promotes_on_full_positive_evidence() -> None:
     assert result.verdict == Verdict.PROMOTE
 
 
-def test_non_positive_dsr_is_quarantined_not_rejected() -> None:
-    evidence = _evidence(score_inputs=_inputs(deflated_sharpe=-0.1))
-    result = decide(evidence)
-    assert result.verdict == Verdict.QUARANTINE
-    assert "DSR_NOT_POSITIVE" in result.reason_codes
+def test_dsr_value_no_longer_decides_promotion() -> None:
+    """2026-09-28: DSR is a probability, so the old `dsr > 0` test passed
+    for everything. PROMOTE is now only a candidate; the LORD++ discovery
+    gate (validation/discovery_gate.py) decides. A low DSR is reported,
+    not acted on here."""
+    result = decide(_evidence(score_inputs=_inputs(deflated_sharpe=0.001)))
+    assert result.verdict == Verdict.PROMOTE
+
+
+def test_no_dsr_means_not_enough_trials_to_be_a_candidate() -> None:
+    result = decide(_evidence(score_inputs=_inputs(deflated_sharpe=None)))
+    assert result.verdict != Verdict.PROMOTE
 
 
 def test_metric_failure_blocks_promote_even_with_full_positive_evidence() -> None:

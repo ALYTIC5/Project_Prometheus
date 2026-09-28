@@ -198,17 +198,11 @@ async def test_100_canaries_through_the_real_pipeline_none_promoted(
     # evaluator and none ever holds a promoted status.
     assert recorded == len(all_hashes)
     assert promoted == 0
-    # The evaluator's honesty -- the canary false-pass rate. Measured
-    # 2026-09-26 at ~2% on this fixture: noise that is partly flat "beats"
-    # buy-and-hold on a falling symbol and clears DSR > 0 when the trial
-    # count is small. That is exactly what the canaries exist to expose and
-    # what the Phase 2 discovery gate (online FDR) must fix; no validation
-    # threshold may be tuned here to hide it (Law 7).
-    if breaches:
-        pytest.xfail(
-            f"OPEN FINDING: canary false-pass rate {breaches}/{len(all_hashes)} -- "
-            "validation promotes noise; fix is the Phase 2 discovery gate"
-        )
+    # The evaluator's honesty -- the canary false-pass rate. Before the
+    # LORD++ discovery gate (2026-09-26) this fixture measured 0-3% because
+    # `deflated_sharpe > 0` was always true. With the gate it must be zero:
+    # the self-improvement prompt's own acceptance bar.
+    assert breaches == 0, f"canary false-pass rate {breaches}/{len(all_hashes)}"
 
 
 def test_null_seed_is_stable() -> None:

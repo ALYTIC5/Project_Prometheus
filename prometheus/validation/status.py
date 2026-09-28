@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.experiments.violations import ResearchViolation, record_violations
+from prometheus.validation.discovery_gate import has_discovery
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,18 @@ async def set_status(
             logger.warning(
                 "promotion of %s to %s refused: promotions are halted (%s)",
                 strategy_id, new_status, reason,
+            )
+            return False
+        # Law 10: no path to VALIDATED bypasses the discovery gate.
+        if new_status == "VALIDATED" and not await has_discovery(session, strategy_id):
+            await record_violations(
+                session,
+                ResearchViolation.VALIDATED_WITHOUT_DISCOVERY,
+                [{"strategy_id": strategy_id, "reason": reason}],
+            )
+            logger.error(
+                "promotion of %s to VALIDATED refused: no discovery in the alpha-wealth "
+                "ledger (%s)", strategy_id, reason,
             )
             return False
     await session.execute(_UPDATE_STATUS, {"status": new_status, "id": strategy_id})

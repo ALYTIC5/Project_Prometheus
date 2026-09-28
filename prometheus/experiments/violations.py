@@ -47,6 +47,7 @@ class ResearchViolation(str, Enum):
     HOLDOUT_REPEATED_ACCESS = "HOLDOUT_REPEATED_ACCESS"
     COST_CONFIG_LOOSENED = "COST_CONFIG_LOOSENED"  # no detector -- see module docstring
     CANARY_BREACH = "CANARY_BREACH"  # raised by validation.status.set_status
+    VALIDATED_WITHOUT_DISCOVERY = "VALIDATED_WITHOUT_DISCOVERY"  # Law 10, set_status
 
 
 _INSERT_CONFIG_SNAPSHOT = text(

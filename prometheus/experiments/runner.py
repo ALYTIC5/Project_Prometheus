@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import math
 import time
 import uuid
 from collections.abc import Callable, Sequence
@@ -72,7 +73,12 @@ from prometheus.validation.canaries import (
     with_canaries,
 )
 from prometheus.validation.decay import DecayProfile, compute_decay
-from prometheus.validation.decision import Evidence, decide
+from prometheus.validation.decision import DecisionResult, Evidence, Verdict, decide
+from prometheus.validation.discovery_gate import (
+    excess_return_pvalue,
+    existing_gate_test,
+    run_gate_test,
+)
 from prometheus.validation.metrics import ValidationMetrics, compute_metrics, signal_frame_or_none
 from prometheus.validation.metrics import hit_rate as compute_hit_rate
 from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
@@ -345,6 +351,9 @@ async def latest_experiment_id_for_spec(session: AsyncSession, config_hash: str)
         await session.execute(_SELECT_LATEST_EXPERIMENT_FOR_SPEC, {"config_hash": config_hash})
     ).first()
     return row.id if row is not None else None
+
+# cpz-quant annualises Sharpe by sqrt(252) regardless of timeframe.
+_ANNUALISATION = math.sqrt(252)
 
 _SELECT_LATEST_VERDICT_FOR_FINGERPRINT = text(
     "SELECT verdict FROM validation_results WHERE strategy_fingerprint = :fp "
@@ -799,9 +808,13 @@ async def _validate_one_spec(
     if risk is not None and risk.sharpe is not None and len(strategy_equity_values) >= 2:
         skewness = risk.skew if risk.skew is not None else 0.0
         excess_kurtosis = risk.excess_kurtosis if risk.excess_kurtosis is not None else 0.0
+        # PSR/DSR take a PER-PERIOD Sharpe (they scale by sqrt(n_bars)
+        # themselves); cpz-quant's risk.sharpe is annualised by sqrt(252).
+        # Feeding the annualised figure inflated z ~16x (fixed 2026-09-28).
+        # DSR is a reported diagnostic only -- the discovery gate decides.
         dsr_result = deflated_sharpe_ratio(
-            trial_sharpes_for_variance=trial_sharpes,
-            this_trial_sharpe=risk.sharpe,
+            trial_sharpes_for_variance=[s / _ANNUALISATION for s in trial_sharpes],
+            this_trial_sharpe=risk.sharpe / _ANNUALISATION,
             n_trials_for_deflation=n_trials_for_deflation,
             n_observations=len(strategy_equity_values),
             skewness=skewness,
@@ -842,7 +855,9 @@ async def _validate_one_spec(
         metric_failures=tuple(metric_failures),
         benchmark_mismatch=benchmark_mismatch,
     )
-    decision_result = decide(evidence)
+    decision_result, gate_payload = await _apply_discovery_gate(
+        session, spec=spec, result=result, decision=decide(evidence), cluster_info=cluster_info
+    )
 
     metrics_payload = {
         "risk": risk.to_dict() if risk is not None else None,
@@ -874,6 +889,8 @@ async def _validate_one_spec(
         # of specs; non-empty is a real signal something needs attention,
         # surfaced verbatim rather than guessed away.
         "metric_failures": metric_failures,
+        # Law 10: the LORD++ test this spec faced (or why it faced none).
+        "discovery_gate": gate_payload,
     }
 
     session.add(
@@ -906,6 +923,56 @@ async def _validate_one_spec(
         await set_status(
             session, strategy_id, new_status, reason=f"verdict {decision_result.verdict.value}"
         )
+
+
+async def _apply_discovery_gate(
+    session: AsyncSession,
+    *,
+    spec: StrategySpec | RotationSpec,
+    result: Any,
+    decision: DecisionResult,
+    cluster_info: dict[str, Any] | None,
+) -> tuple[DecisionResult, dict[str, Any] | None]:
+    """Law 10: a PROMOTE verdict from decide() is only a CANDIDATE. It
+    becomes a discovery (-> VALIDATED) only by passing the LORD++ gate
+    (validation/discovery_gate.py); otherwise the verdict stored and acted
+    on is PROMISING. One test per spec ever (an earlier test's outcome is
+    reused), and one per correlation cluster (non-representatives are not
+    tested -- the prompt's dependence mitigation)."""
+    if decision.verdict is not Verdict.PROMOTE:
+        return decision, None
+
+    def not_a_discovery(
+        reason: str, payload: dict[str, Any]
+    ) -> tuple[DecisionResult, dict[str, Any]]:
+        return (
+            DecisionResult(Verdict.PROMISING, decision.score, [*decision.reason_codes, reason]),
+            payload,
+        )
+
+    config_hash = spec.config_hash()
+    earlier = await existing_gate_test(session, config_hash)
+    representative = cluster_info is None or bool(cluster_info.get("is_representative", True))
+    if earlier is None and not representative:
+        return not_a_discovery("CLUSTER_NOT_REPRESENTATIVE", {"tested": False})
+    if earlier is None:
+        pvalue = excess_return_pvalue(result.equity_curve, result.benchmark.equity_curve)
+        if pvalue is None:
+            return not_a_discovery("FDR_TOO_FEW_OBSERVATIONS", {"tested": False})
+        test = await run_gate_test(session, config_hash, pvalue)
+    else:
+        test = earlier
+    payload = {
+        "tested": True,
+        "test_index": test.test_index,
+        "p_value": test.p_value,
+        "alpha_threshold": test.alpha_threshold,
+        "discovery": test.discovery,
+        "reused_earlier_test": test.reused,
+    }
+    if test.discovery:
+        return decision, payload
+    return not_a_discovery("FDR_NOT_DISCOVERY", payload)
 
 
 _RUN_BACKTEST_KIND = "run_backtest"

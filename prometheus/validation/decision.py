@@ -112,28 +112,25 @@ def decide(evidence: Evidence) -> DecisionResult:
             Verdict.REGIME_SPECIALIST, score_result.score, ["REGIME_INCONSISTENT"]
         )
 
-    # 5. Survives deflation and clears PBO -- the strongest evidence
-    #    this pipeline can currently produce. Incomplete evidence must
-    #    never look like complete evidence: a metric that failed to
-    #    compute (not merely absent-by-design) holds this at
-    #    CONTINUE_RESEARCH rather than reaching VALIDATED/CHAMPION-
-    #    eligible status on a partial read.
-    if dsr is not None and dsr > 0 and (pbo is None or pbo <= _PBO_OVERFIT_CUTOFF):
+    # 5. A PROMOTE CANDIDATE: beats holding, trades, not overfit,
+    #    regime-consistent, enough trials for a DSR to exist, complete
+    #    evidence. Whether it is a discovery is decided by the LORD++ gate
+    #    (validation/discovery_gate.py, applied by the runner), never here
+    #    -- this used to require `deflated_sharpe > 0`, which is always
+    #    true for a probability, so it controlled nothing (found
+    #    2026-09-28). DSR's value is now a reported diagnostic only.
+    #    Incomplete evidence holds at CONTINUE_RESEARCH rather than reaching
+    #    the gate on a partial read.
+    if dsr is not None and (pbo is None or pbo <= _PBO_OVERFIT_CUTOFF):
         if evidence.metric_failures:
             return DecisionResult(
                 Verdict.CONTINUE_RESEARCH, score_result.score, ["INCOMPLETE_EVIDENCE"]
             )
         return DecisionResult(Verdict.PROMOTE, score_result.score, [])
 
-    # 6. DSR computed but non-positive -- doesn't survive multiple-testing
-    #    correction. Not necessarily overfit (PBO may be fine); held, not
-    #    rejected, since more trials could still resolve it either way.
-    if dsr is not None and dsr <= 0:
-        return DecisionResult(Verdict.QUARANTINE, score_result.score, ["DSR_NOT_POSITIVE"])
-
-    # 7. Beats the baseline, no PBO/DSR evidence yet (too few grid trials
-    #    or too few observations for either) -- real positive signal, just
-    #    not yet validated against multiple-testing/overfitting.
+    # 6. Beats the baseline, no DSR evidence yet (too few grid trials or
+    #    too few observations) -- real positive signal, just not yet
+    #    validated against multiple-testing/overfitting.
     if score_result.score >= _PROMISING_SCORE_FLOOR:
         return DecisionResult(Verdict.PROMISING, score_result.score, score_result.reason_codes)
 

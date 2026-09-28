@@ -45,10 +45,51 @@ async def _make_canary(session: AsyncSession, strategy_id: str) -> None:
     )
 
 
-async def test_ordinary_promotion_is_written(db_session: AsyncSession) -> None:
+async def _with_discovery(session: AsyncSession, strategy_id: str) -> None:
+    """Law 10: a VALIDATED promotion needs a discovery for the strategy's
+    latest experiment config_hash in the alpha-wealth ledger."""
+    config_hash = uuid.uuid4().hex
+    await session.execute(
+        text(
+            "INSERT INTO experiments (id, status, payload, strategy_id, config_hash) "
+            "VALUES (:e, 'succeeded', '{}'::jsonb, :s, :h)"
+        ),
+        {"e": f"E{uuid.uuid4().hex[:12]}", "s": strategy_id, "h": config_hash},
+    )
+    await session.execute(
+        text(
+            "INSERT INTO evaluator.alpha_wealth_ledger (test_index, config_hash, p_value, "
+            "alpha_threshold, discovery, wealth_before, wealth_after, n_observations, "
+            "excess_sharpe_per_period) "
+            "SELECT coalesce(max(test_index), 0) + 1, :h, 0.0001, 0.001, true, 0.025, 0.049, "
+            "250, 0.1 FROM evaluator.alpha_wealth_ledger"
+        ),
+        {"h": config_hash},
+    )
+
+
+async def test_ordinary_promotion_with_a_discovery_is_written(db_session: AsyncSession) -> None:
     strategy_id = await _strategy(db_session)
+    await _with_discovery(db_session, strategy_id)
     assert await set_status(db_session, strategy_id, "VALIDATED", reason="test")
     assert await _status(db_session, strategy_id) == "VALIDATED"
+
+
+async def test_promotion_without_a_discovery_is_refused(db_session: AsyncSession) -> None:
+    strategy_id = await _strategy(db_session)
+    assert not await set_status(db_session, strategy_id, "VALIDATED", reason="test")
+    assert await _status(db_session, strategy_id) == "PROMISING"
+    violations = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM research_violations "
+                "WHERE violation_type = 'VALIDATED_WITHOUT_DISCOVERY' "
+                "AND detail->>'strategy_id' = :id"
+            ),
+            {"id": strategy_id},
+        )
+    ).scalar_one()
+    assert violations == 1
 
 
 async def test_canary_promotion_is_a_breach_and_halts_promotions(
@@ -107,6 +148,7 @@ async def test_halt_blocks_every_promotion_but_not_demotion_until_cleared(
     await set_status(db_session, canary, "CHAMPION", reason="test")
 
     honest = await _strategy(db_session)
+    await _with_discovery(db_session, honest)
     assert not await set_status(db_session, honest, "VALIDATED", reason="test")
     assert await _status(db_session, honest) == "PROMISING"
 
