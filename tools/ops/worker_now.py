@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -46,13 +47,22 @@ mutation {{
 """
 
 
+def _railway() -> str:
+    """Full path to the CLI -- on Windows, subprocess does not resolve
+    `railway` to railway.exe/.cmd by itself."""
+    path = shutil.which("railway")
+    if path is None:
+        raise RuntimeError("railway CLI not found on PATH")
+    return path
+
+
 def railway_graphql(document: str) -> dict[str, Any]:
     with tempfile.NamedTemporaryFile("w", suffix=".graphql", delete=False) as f:
         f.write(document)
         path = f.name
     try:
         out = subprocess.run(
-            ["railway", "api", "-f", path], check=True, capture_output=True, text=True
+            [_railway(), "api", "-f", path], check=True, capture_output=True, text=True
         ).stdout
     finally:
         os.unlink(path)
@@ -76,7 +86,7 @@ def admin_token() -> str:
     if token:
         return token
     out = subprocess.run(
-        ["railway", "variables", "--service", API_SERVICE, "--kv"],
+        [_railway(), "variables", "--service", API_SERVICE, "--kv"],
         check=True, capture_output=True, text=True,
     ).stdout
     for line in out.splitlines():

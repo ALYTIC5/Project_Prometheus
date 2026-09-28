@@ -89,6 +89,17 @@ worse -- FDR control is approximate, not guaranteed.
   same bias `experiments/ablation.py` documents for placebos, so a zero
   false-pass rate is weaker evidence than it sounds.
 
+## Running the worker on demand; cron is settable after all (2026-09-28)
+
+`python -m tools.ops.worker_now run [--force CONCERN ...] [--wait]` starts
+the worker now via Railway's GraphQL `deploymentInstanceExecutionCreate`
+(the dashboard's cron "run now"), refusing while another execution is
+active. `--force` back-dates concerns through `POST /admin/worker/force`
+(`ADMIN_TOKEN` on the API service). `status` lists recent executions and
+concern timestamps. The note below is superseded: `serviceInstanceUpdate`
+sets `cronSchedule`, and the worker now runs `*/15 * * * *` as the
+paper-trading plan intended.
+
 ## Railway cron schedule is a manual, dashboard-only setting (2026-09-24)
 
 `prometheus-worker`'s cron schedule is configured in the Railway
