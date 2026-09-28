@@ -42,6 +42,12 @@ hypothesis id and prior for Phase 7.
 - Specs run before 0027 are registered the next time the grid re-enqueues
   them; mutation/crossover children enqueued before 0027 are
   NOT_PREREGISTERED for good.
+- Backfill artifact (first prod cycle, 2026-09-28 ~15:40 UTC):
+  `hypothesis_gate_stats` counts only tests of already-registered specs, so
+  the first grid specs registered saw 0/0 -> prior 0.5, falling toward
+  1/(n+2) as the pre-0027 ledger rows' specs got registered. Those rows are
+  final (append-only); Phase 7 calibration should exclude registrations
+  from that first backfill cycle.
 - Not done: return-correlation near-duplicates (needs stored return
   streams), scoring the stored priors (Phase 7).
 
