@@ -7,6 +7,54 @@ reading the code.
 
 ---
 
+## ICIR parent fitness, LLM failure refinement, options snapshots (2026-09-28)
+
+**User decisions.** ICIR (consistency) is the parent-selection fitness only
+-- verdicts, the discovery gate and promotion are unchanged (no Law 7
+change). Failure feedback is LLM refinement that must earn its place by
+ablation. Options: 11 SPDR sector ETFs + SPY + QQQ, daily per-expiry
+aggregates, no raw chains.
+
+**ICIR.** `breedable_scores` gains `icir` (migration 0028); exploitation and
+crossover parents are ordered `icir DESC NULLS LAST, score DESC`. Families
+with no continuous signal (6 breakout/regime families) have no ICIR and
+rank after, by score. Ablation component `icir_parent_fitness`: two
+evolution runs from the same grid and seed, parents from the top half by
+ICIR vs by return; judged on return like every other component (known
+limitation: it does not measure consistency itself).
+
+**Refinement.** `research/llm/refinement.py` gets one failed strategy's
+evidence from the canary-free `breedable_evidence` view (verdict, reason
+codes, ICIR, IC by horizon, excess return/Sharpe, PBO, DSR -- never the
+discovery-gate payload) and returns a revised parameter point of the SAME
+family with a stated prior. Parent = highest ICIR (then score) among
+PROMISING/EXPERIMENTAL strategies never refined before;
+`llm_hypotheses.parent_config_hash` records attempts so none is billed
+twice. The child is a Phase 3 hypothesis (`source='llm_refinement'`,
+`llm_stated` prior). 1 per research cycle; 0 once the `llm_refinement`
+ablation (best refinement child vs best random-mutation child, per
+symbol) disables it. Same family, not "same mechanism class": a
+refinement tunes the parent, it does not swap ideas.
+
+**Options.** `data/providers/cboe_options.py` reads CBOE's public delayed
+chain (`cdn.cboe.com/api/global/delayed_quotes/options/{T}.json`, which
+307-redirects some tickers to `cdn-api.cboe.com` -- the client follows
+redirects). Worker concern `options`, daily, only from 21:15 UTC (after
+the 16:00 ET close in both EDT and EST, plus the 15-min delay) to
+midnight UTC. Session date = the underlying's exchange-local last-trade
+date, so a weekend fetch dedupes onto Friday via
+`UNIQUE(underlying, quote_date, expiry)`. `options_daily` is append-only;
+`available_at` = fetch time. Nothing trades on it: there is no free
+historical options data, so the "options vs price disagreement" idea can
+only be tested on sessions recorded from 2026-09-28 on.
+`GET /options/summary`.
+
+**Not changed, flagged.** `validation/scoring.py`'s DSR component is
+`deflated_sharpe > 0`, always true for a probability; it inflates the
+composite score (now only a tie-breaker for breeding, still the verdict
+score). Fixing it changes verdict scores, so it needs a Law 7 corpus
+re-evaluation first.
+
 ## Phase 3: every backtest is a pre-registered hypothesis (2026-09-28)
 
 **User decisions.** Priors for grid/mutation/crossover are Laplace's rule,

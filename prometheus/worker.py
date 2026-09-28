@@ -68,6 +68,9 @@ from prometheus.core.cadence import (
     LLM_INGESTION_INTERVAL_SECONDS as _LLM_INGESTION_INTERVAL_SECONDS,
 )
 from prometheus.core.cadence import (
+    OPTIONS_INTERVAL_SECONDS as _OPTIONS_INTERVAL_SECONDS,
+)
+from prometheus.core.cadence import (
     PAPER_INTERVAL_SECONDS as _PAPER_INTERVAL_SECONDS,
 )
 from prometheus.core.cadence import (
@@ -84,11 +87,16 @@ from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingest_etf import backfill_etf
 from prometheus.data.ingestion import backfill, load_universe_symbols
 from prometheus.data.loaders import load_point_in_time
+from prometheus.data.providers.cboe_options import OPTIONS_TICKERS, fetch_chain
+from prometheus.data.providers.cboe_options import aggregate as aggregate_chain
+from prometheus.data.providers.cboe_options import http_client as cboe_http_client
 from prometheus.data.schema import PointInTimeFrame
 from prometheus.experiments.ablation import (
     register_evolution_component,
     register_gradient_boosting_component,
+    register_icir_parent_fitness_component,
     register_llm_component,
+    register_llm_refinement_component,
     register_logistic_regression_component,
     register_ml_component,
     register_svm_component,
@@ -138,6 +146,7 @@ from prometheus.research.llm.ingestion import (
     search_arxiv,
 )
 from prometheus.research.llm.linking import ClaimRef, link_claims
+from prometheus.research.llm.refinement import FailureEvidence, generate_refinement
 from prometheus.research.llm.relevance import is_relevant
 from prometheus.research.llm.seed_lists import fetch_readme, find_paper, strategy_titles
 from prometheus.research.ml.generate import (
@@ -621,6 +630,19 @@ async def _run_ablation() -> list[str]:
         ),
     )
     await _register(
+        "llm_refinement",
+        lambda session: register_llm_refinement_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
+        ),
+    )
+    await _register(
+        "icir_parent_fitness",
+        lambda session: register_icir_parent_fitness_component(
+            session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end,
+            generations=_ABLATION_EVOLUTION_GENERATIONS, version=version,
+        ),
+    )
+    await _register(
         "random_forest",
         lambda session: register_ml_component(
             session, symbols=symbols, timeframe=_TIMEFRAME, start=start, end=end, version=version,
@@ -778,6 +800,20 @@ async def _run_research() -> list[str]:
                         print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
         except Exception as exc:
             record_failure("research", exc, context="llm_hypothesis_step")
+        # Failure-driven refinement: isolated the same way, so a failure
+        # here never sinks the hypothesis step above or mark_run.
+        try:
+            client = _anthropic_client()
+            async with get_research_session() as research_session:
+                for _ in range(await _refinements_per_cycle(research_session)):
+                    refined_job_id = await _run_llm_refinement_step(
+                        research_session, client=client
+                    )
+                    await research_session.commit()
+                    if refined_job_id is not None:
+                        print(f"worker: enqueued LLM refinement job: {refined_job_id}")
+        except Exception as exc:
+            record_failure("research", exc, context="llm_refinement_step")
     if evolved_job_ids:
         print(f"worker: enqueued {len(evolved_job_ids)} evolved candidate(s): {evolved_job_ids}")
 
@@ -874,6 +910,92 @@ async def _hypotheses_per_cycle(session: AsyncSession) -> int:
     if row is None or row.verdict != "VALUABLE" or row.disabled:
         return 1
     return int(os.environ.get("LLM_HYPOTHESES_PER_CYCLE", "1"))
+
+
+_REFINEMENT_COMPONENT = "llm_refinement"
+_SELECT_REFINEMENT_VERDICT = text(
+    """
+    SELECT verdict, disabled FROM component_registry
+     WHERE component = :component
+     ORDER BY updated_at DESC
+     LIMIT 1
+    """
+)
+
+
+async def _refinements_per_cycle(session: AsyncSession) -> int:
+    """Same rule as _hypotheses_per_cycle for the refinement component: 1
+    per cycle until its ablation says VALUABLE (then
+    LLM_REFINEMENTS_PER_CYCLE), and 0 once the registry disables it --
+    refinement must earn its place against random mutation."""
+    row = (
+        await session.execute(_SELECT_REFINEMENT_VERDICT, {"component": _REFINEMENT_COMPONENT})
+    ).first()
+    if row is not None and row.disabled:
+        return 0
+    if row is None or row.verdict != "VALUABLE":
+        return 1
+    return int(os.environ.get("LLM_REFINEMENTS_PER_CYCLE", "1"))
+
+
+# The most consistent (ICIR, then score) canary-free strategy that failed
+# validation and has not been refined yet -- attempted or not, so a
+# refinement is never billed twice for the same parent.
+_SELECT_NEXT_REFINEMENT_PARENT = text(
+    """
+    SELECT e.config_hash, e.spec, e.verdict, e.reason_codes, e.icir, e.ic_by_horizon,
+           e.excess_return, e.excess_sharpe, e.pbo, e.deflated_sharpe
+      FROM breedable_evidence e
+     WHERE e.family NOT IN :rotation_families
+       AND NOT EXISTS (
+             SELECT 1 FROM llm_hypotheses h WHERE h.parent_config_hash = e.config_hash
+           )
+     ORDER BY e.icir DESC NULLS LAST, e.score DESC NULLS LAST, e.config_hash
+     LIMIT 1
+    """
+).bindparams(bindparam("rotation_families", expanding=True))
+
+_INSERT_LLM_REFINEMENT = text(
+    """
+    INSERT INTO llm_hypotheses
+        (strategy_fingerprint, paper_ids, hypothesis_text, expected_effect,
+         model, input_tokens, output_tokens, est_cost_usd, parent_config_hash)
+    VALUES
+        (:strategy_fingerprint, '[]'::jsonb, :hypothesis_text, :expected_effect,
+         :model, :input_tokens, :output_tokens, :est_cost_usd, :parent_config_hash)
+    """
+)
+
+
+@dataclass(frozen=True)
+class _RefinementParent:
+    config_hash: str
+    spec: StrategySpec
+    evidence: FailureEvidence
+
+
+async def _next_refinement_parent(session: AsyncSession) -> _RefinementParent | None:
+    row = (
+        await session.execute(
+            _SELECT_NEXT_REFINEMENT_PARENT, {"rotation_families": list(ROTATION_FAMILIES)}
+        )
+    ).first()
+    if row is None:
+        return None
+    return _RefinementParent(
+        config_hash=row.config_hash,
+        spec=StrategySpec.model_validate(row.spec),
+        evidence=FailureEvidence(
+            verdict=row.verdict,
+            reason_codes=list(row.reason_codes or []),
+            icir=row.icir,
+            ic_by_horizon=row.ic_by_horizon,
+            excess_return=row.excess_return,
+            excess_sharpe=row.excess_sharpe,
+            pbo=row.pbo,
+            deflated_sharpe=row.deflated_sharpe,
+        ),
+    )
 
 
 _INSERT_LLM_USAGE = text(
@@ -1267,6 +1389,159 @@ async def _run_llm_hypothesis_step(
     )
 
 
+# US equity options close 16:00 ET = 20:00 UTC (EDT) / 21:00 UTC (EST); the
+# feed is 15 minutes delayed. 21:15 UTC is past the close year-round, and
+# the window ends at midnight UTC so the snapshot's session is today's.
+_OPTIONS_WINDOW_START_UTC = (21, 15)
+
+_INSERT_OPTIONS_DAILY = text(
+    """
+    INSERT INTO options_daily
+        (underlying, quote_date, expiry, spot, call_volume, put_volume, call_oi, put_oi,
+         call_premium, put_premium, atm_strike, atm_call_iv, atm_put_iv, n_contracts,
+         source_timestamp, available_at)
+    VALUES
+        (:underlying, :quote_date, :expiry, :spot, :call_volume, :put_volume, :call_oi,
+         :put_oi, :call_premium, :put_premium, :atm_strike, :atm_call_iv, :atm_put_iv,
+         :n_contracts, :source_timestamp, :available_at)
+    ON CONFLICT (underlying, quote_date, expiry) DO NOTHING
+    """
+)
+
+
+def _options_window_open(now: datetime) -> bool:
+    return (now.hour, now.minute) >= _OPTIONS_WINDOW_START_UTC
+
+
+async def _run_options() -> int:
+    """One after-close snapshot per session of each OPTIONS_TICKERS chain,
+    stored as per-expiry aggregates. Each ticker fails alone; the concern
+    only counts as failed (retried next tick) when every ticker failed."""
+    stored = 0
+    failures = 0
+    async with cboe_http_client() as client:
+        for ticker in OPTIONS_TICKERS:
+            try:
+                chain = await fetch_chain(client, ticker)
+                fetched_at = datetime.now(UTC)
+                async with get_session() as session:
+                    for agg in aggregate_chain(chain):
+                        result = await session.execute(
+                            _INSERT_OPTIONS_DAILY,
+                            {
+                                "underlying": chain.underlying,
+                                "quote_date": chain.session_date,
+                                "expiry": agg.expiry,
+                                "spot": chain.spot,
+                                "call_volume": agg.call_volume,
+                                "put_volume": agg.put_volume,
+                                "call_oi": agg.call_oi,
+                                "put_oi": agg.put_oi,
+                                "call_premium": agg.call_premium,
+                                "put_premium": agg.put_premium,
+                                "atm_strike": agg.atm_strike,
+                                "atm_call_iv": agg.atm_call_iv,
+                                "atm_put_iv": agg.atm_put_iv,
+                                "n_contracts": agg.n_contracts,
+                                "source_timestamp": chain.source_timestamp,
+                                "available_at": fetched_at,
+                            },
+                        )
+                        stored += result.rowcount or 0
+                    await session.commit()
+            except Exception as exc:
+                failures += 1
+                record_failure("options", exc, context=f"ticker={ticker}")
+    if failures == len(OPTIONS_TICKERS):
+        raise RuntimeError("options snapshot: every ticker failed")
+    return stored
+
+
+async def _run_llm_refinement_step(
+    session: AsyncSession, *, client: _AnthropicClientProtocol
+) -> str | None:
+    """Reads why the most consistent failed strategy failed and enqueues
+    the model's revised version of it. Same budget gate and billing
+    contract as _run_llm_hypothesis_step: usage is committed on its own,
+    and a failed attempt is recorded against its parent so the same
+    parent is never billed twice. The child is registered (Phase 3) with
+    the model's stated prior and the parent's family as its mechanism, so
+    it faces the discovery gate like any other hypothesis."""
+    tier = await current_tier(session)
+    if tier == "halted":
+        return None
+    parent = await _next_refinement_parent(session)
+    if parent is None:
+        return None
+
+    model = model_for_tier(tier)
+    try:
+        result = await generate_refinement(client, model, parent.spec, parent.evidence)
+    except LLMResponseError as exc:
+        cost = estimate_cost(
+            exc.model, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens
+        )
+        await _log_llm_usage(
+            session, model=exc.model, input_tokens=exc.input_tokens,
+            output_tokens=exc.output_tokens, est_cost_usd=cost, purpose="failure_refinement",
+        )
+        await session.execute(
+            _INSERT_LLM_REFINEMENT,
+            {
+                "strategy_fingerprint": "unparseable",
+                "hypothesis_text": f"unparseable response: {exc}",
+                "expected_effect": "",
+                "model": exc.model,
+                "input_tokens": exc.input_tokens,
+                "output_tokens": exc.output_tokens,
+                "est_cost_usd": cost,
+                "parent_config_hash": parent.config_hash,
+            },
+        )
+        await session.commit()
+        print(f"worker: LLM refinement produced an invalid spec, skipping: {exc}")
+        return None
+    except ValueError as exc:
+        print(f"worker: LLM refinement failed before any spend, skipping: {exc}")
+        return None
+
+    await _log_llm_usage(
+        session, model=result.model, input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens, est_cost_usd=result.est_cost_usd,
+        purpose="failure_refinement",
+    )
+    await session.execute(
+        _INSERT_LLM_REFINEMENT,
+        {
+            "strategy_fingerprint": result.spec.config_hash(),
+            "hypothesis_text": result.hypothesis_text,
+            "expected_effect": result.expected_effect,
+            "model": result.model,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "est_cost_usd": result.est_cost_usd,
+            "parent_config_hash": parent.config_hash,
+        },
+    )
+    return await _enqueue_child(
+        session,
+        child=result.spec,
+        parent_experiment_id=None,
+        hypothesis=result.hypothesis_text,
+        change_set={
+            "mutation_type": "LLM_REFINEMENT",
+            "field": "parameters",
+            "old_value": parent.spec.parameters,
+            "new_value": result.spec.parameters,
+            "addressed_reason_codes": parent.evidence.reason_codes,
+        },
+        expected_information_value_=0.0,
+        stated_prior=result.prior_probability,
+        mechanism_family=parent.spec.family,
+        predicted_effect=result.expected_effect,
+    )
+
+
 _SELECT_STRATEGY_FILLED_ORDER_IDS = text(
     "SELECT id FROM paper_orders WHERE strategy_id = :strategy_id AND status = 'FILLED'"
 )
@@ -1470,6 +1745,9 @@ async def run_once() -> list[str]:
         ablation_due = await is_due(
             session, concern="ablation", interval_seconds=_ABLATION_INTERVAL_SECONDS
         )
+        options_due = _options_window_open(datetime.now(UTC)) and await is_due(
+            session, concern="options", interval_seconds=_OPTIONS_INTERVAL_SECONDS
+        )
 
     # I9 (final-review fix wave): each concern is isolated in its own
     # try/except -- previously any single exception (a ccxt error from
@@ -1484,6 +1762,17 @@ async def run_once() -> list[str]:
                 await mark_run(session, concern="ingest")
         except Exception as exc:
             record_failure("ingest", exc)
+
+    # Before research: a few seconds of HTTP, and research can outlast the
+    # after-close window this snapshot must land in.
+    if options_due:
+        try:
+            stored = await _run_options()
+            async with get_session() as session:
+                await mark_run(session, concern="options")
+            print(f"worker: options snapshot -- {stored} expiry row(s) stored")
+        except Exception as exc:
+            record_failure("options", exc)
 
     if research_due:
         try:

@@ -74,6 +74,7 @@ from prometheus.research.ml.generate import (
 from prometheus.research.mutations import parameter_tune, swap_family
 from prometheus.research.templates import seed_specs_by_family
 from prometheus.strategy.spec import FAMILIES, StrategySpec
+from prometheus.validation.metrics import information_coefficient_ratio
 
 ComponentFn = Callable[[pl.DataFrame, StrategySpec, list[float], random.Random], list[float]]
 
@@ -900,6 +901,216 @@ async def register_llm_component(
             seed=derive_seed(component, version, symbol),
             enabled_return_pct=best_llm_score,
             disabled_return_pct=best_grid_score,
+        )
+        n_trials += 1
+
+    result = await _recompute_registry(
+        session,
+        component,
+        version,
+        list(FAMILIES),
+        n_trials_this_batch=n_trials,
+        n_failed_this_batch=n_failed,
+    )
+    await session.commit()
+    return result
+
+
+_SELECT_REFINEMENT_SPECS_FOR_SYMBOL = text(
+    "SELECT spec FROM strategies WHERE spec->>'symbol' = :symbol"
+    " AND spec->>'source' = 'llm_refinement'"
+)
+_SELECT_MUTATION_SPECS_FOR_SYMBOL = text(
+    "SELECT spec FROM strategies WHERE spec->>'symbol' = :symbol"
+    " AND spec->>'source' = 'mutation'"
+)
+
+
+async def register_llm_refinement_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does reading WHY a strategy failed (research/llm/refinement.py)
+    produce better children than random mutation (research/mutations.py)?
+    Same shape as register_llm_component, but the disabled arm is the
+    best random-mutation child on the same symbol and window, not the
+    grid: both arms are "refine an existing strategy", differing only in
+    whether the failure evidence was read. A HARMFUL verdict disables the
+    worker's refinement step (_refinements_per_cycle)."""
+    component = "llm_refinement"
+    n_trials = 0
+    n_failed = 0
+
+    def _score(pit: PointInTimeFrame, spec: StrategySpec) -> float | None:
+        try:
+            return run_backtest(pit, spec, end, cost_model=cost_model).total_return_pct
+        except ValueError:
+            return None
+
+    for symbol in symbols:
+        pit, _data_version_hash = await load_point_in_time(
+            session, [symbol], timeframe, start, end
+        )
+        scored: dict[str, list[tuple[StrategySpec, float]]] = {}
+        for arm, query in (
+            ("refinement", _SELECT_REFINEMENT_SPECS_FOR_SYMBOL),
+            ("mutation", _SELECT_MUTATION_SPECS_FOR_SYMBOL),
+        ):
+            rows = (await session.execute(query, {"symbol": symbol})).fetchall()
+            scored[arm] = [
+                (spec, score)
+                for spec in (StrategySpec.model_validate(row.spec) for row in rows)
+                if (score := _score(pit, spec)) is not None
+            ]
+        if not scored["refinement"] or not scored["mutation"]:
+            n_failed += 1
+            continue
+        best_refined_spec, best_refined = max(scored["refinement"], key=lambda pair: pair[1])
+        _best_mutated_spec, best_mutated = max(scored["mutation"], key=lambda pair: pair[1])
+        await record_trial(
+            session,
+            component=component,
+            version=version,
+            symbol=symbol,
+            config_hash=best_refined_spec.config_hash(),
+            seed=derive_seed(component, version, symbol),
+            enabled_return_pct=best_refined,
+            disabled_return_pct=best_mutated,
+        )
+        n_trials += 1
+
+    result = await _recompute_registry(
+        session,
+        component,
+        version,
+        list(FAMILIES),
+        n_trials_this_batch=n_trials,
+        n_failed_this_batch=n_failed,
+    )
+    await session.commit()
+    return result
+
+
+def _icir_or_none(bars: pl.DataFrame, spec: StrategySpec) -> float | None:
+    try:
+        return information_coefficient_ratio(bars, spec, spec.expected_horizon)
+    except Exception:  # a family/fold combination ICIR cannot be computed for
+        return None
+
+
+def _evolve_best_child(
+    population: list[tuple[StrategySpec, float, float | None]],
+    *,
+    rank: Callable[[tuple[StrategySpec, float, float | None]], tuple[float, float]],
+    generations: int,
+    rng: random.Random,
+    templates: dict[str, StrategySpec],
+    score: Callable[[StrategySpec], tuple[float, float | None] | None],
+) -> float | None:
+    """`generations` mutation steps whose parents are drawn uniformly from
+    the top half of `population` under `rank`; returns the best child's
+    return (children only -- both arms share the same starting grid, so the
+    grid's own best would make every trial a tie)."""
+    pool = list(population)
+    best_child: float | None = None
+    for _generation in range(generations):
+        ranked = sorted(pool, key=rank, reverse=True)
+        parent_spec, _ret, _icir = rng.choice(ranked[: max(1, len(ranked) // 2)])
+        mutation = parameter_tune(parent_spec, rng) or swap_family(
+            parent_spec, rng, seed_specs_by_family=templates
+        )
+        if mutation is None:
+            continue
+        scored = score(mutation.child)
+        if scored is None:
+            continue
+        child_return, child_icir = scored
+        pool.append((mutation.child, child_return, child_icir))
+        best_child = child_return if best_child is None else max(best_child, child_return)
+    return best_child
+
+
+async def register_icir_parent_fitness_component(
+    session: AsyncSession,
+    *,
+    symbols: list[str],
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    generations: int,
+    version: str,
+    cost_model: CostModel = apply_cost,
+) -> BatchResult:
+    """Does choosing parents by ICIR (consistency, research/population.py)
+    breed better children than choosing them by raw return? Per symbol,
+    two evolution runs from the same scored baseline grid with the same
+    seed and generation count; the only difference is the parent ranking
+    (ICIR first, return as tie-break and for families with no ICIR, vs.
+    return only). Enabled = best ICIR-arm child, disabled = best
+    return-arm child. Judged on return like every other component here --
+    a known limitation: this measures whether consistency-first breeding
+    also finds higher return, not consistency itself."""
+    component = "icir_parent_fitness"
+    templates = seed_specs_by_family()
+    n_trials = 0
+    n_failed = 0
+
+    for symbol in symbols:
+        pit, _data_version_hash = await load_point_in_time(
+            session, [symbol], timeframe, start, end
+        )
+        bars = pit.as_of(end).filter(pl.col("symbol") == symbol).sort("available_at")
+
+        def _score(
+            spec: StrategySpec, pit: PointInTimeFrame = pit, bars: pl.DataFrame = bars
+        ) -> tuple[float, float | None] | None:
+            try:
+                ret = run_backtest(pit, spec, end, cost_model=cost_model).total_return_pct
+            except ValueError:
+                return None
+            return ret, _icir_or_none(bars, spec)
+
+        population = [
+            (spec, scored[0], scored[1])
+            for spec in generate_baseline_grid(symbol, timeframe)
+            if (scored := _score(spec)) is not None
+        ]
+        if not population:
+            n_failed += 1
+            continue
+
+        seed = derive_seed(component, version, symbol)
+        best_by_icir = _evolve_best_child(
+            population,
+            rank=lambda entry: (
+                entry[2] if entry[2] is not None else float("-inf"),
+                entry[1],
+            ),
+            generations=generations, rng=rng_for(seed), templates=templates, score=_score,
+        )
+        best_by_return = _evolve_best_child(
+            population,
+            rank=lambda entry: (entry[1], 0.0),
+            generations=generations, rng=rng_for(seed), templates=templates, score=_score,
+        )
+        if best_by_icir is None or best_by_return is None:
+            n_failed += 1
+            continue
+        await record_trial(
+            session,
+            component=component,
+            version=version,
+            symbol=symbol,
+            config_hash=f"{component}:{symbol}",
+            seed=seed,
+            enabled_return_pct=best_by_icir,
+            disabled_return_pct=best_by_return,
         )
         n_trials += 1
 

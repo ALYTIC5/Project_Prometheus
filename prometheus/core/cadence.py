@@ -16,6 +16,8 @@ ABLATION_INTERVAL_SECONDS = 86400.0  # daily -- same rate as llm_ingestion; see
 # component-vs-baseline A/B batches (evolution, LLM, RF, gradient
 # boosting, logistic regression, SVM), each a real walk-forward backtest
 # run, bounded to a small symbol subset specifically because of this cost.
+OPTIONS_INTERVAL_SECONDS = 86400.0  # daily, after the US close -- see
+# worker.py's _options_window_open: one snapshot per session.
 
 # mark_run stamps last_run_at at the END of a concern's own work, and each
 # interval constant above exactly equals its own tick period -- without
@@ -35,4 +37,5 @@ CONCERN_INTERVALS: dict[str, float] = {
     "paper": PAPER_INTERVAL_SECONDS,
     "llm_ingestion": LLM_INGESTION_INTERVAL_SECONDS,
     "ablation": ABLATION_INTERVAL_SECONDS,
+    "options": OPTIONS_INTERVAL_SECONDS,
 }

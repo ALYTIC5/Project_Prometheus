@@ -25,6 +25,7 @@ from prometheus.api.routes import (
     clusters_router,
     experiments_router,
     health_router,
+    options_router,
     paper_router,
     papers_router,
     pipeline_router,
@@ -108,6 +109,7 @@ app.include_router(paper_router)
 app.include_router(clusters_router)
 app.include_router(research_health_router)
 app.include_router(admin_router)
+app.include_router(options_router)
 
 
 @app.get("/api/info", tags=["meta"])

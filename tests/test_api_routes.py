@@ -197,13 +197,13 @@ def test_benchmark_drilldown_carries_curve() -> None:
     assert isinstance(body["curve"], list)
 
 
-def test_pipeline_status_reports_all_five_concerns() -> None:
+def test_pipeline_status_reports_all_six_concerns() -> None:
     with TestClient(app) as client:
         response = client.get("/pipeline/")
     assert response.status_code == 200
     concerns = response.json()["concerns"]
     assert {c["concern"] for c in concerns} == {
-        "ingest", "research", "paper", "llm_ingestion", "ablation",
+        "ingest", "research", "paper", "llm_ingestion", "ablation", "options",
     }
     for concern in concerns:
         assert isinstance(concern["interval_seconds"], int | float)

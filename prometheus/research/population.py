@@ -40,6 +40,9 @@ class PopulationCandidate:
     spec: StrategySpec
     status: str
     score: float | None
+    # ICIR (mean/std of per-fold IC): the loop's consistency fitness.
+    # None for families with no continuous signal and for unscored rows.
+    icir: float | None = None
 
 
 
@@ -76,12 +79,12 @@ def _rotation_families_param() -> BindParameter[str]:
 
 _SELECT_FOR_EXPLOITATION = text(
     """
-    SELECT s.id, s.family, s.spec, s.status, ls.score
+    SELECT s.id, s.family, s.spec, s.status, ls.score, ls.icir
       FROM breedable_strategies s
       LEFT JOIN breedable_scores ls ON ls.strategy_id = s.id
      WHERE s.status IN ('VALIDATED', 'CHAMPION')
        AND s.family NOT IN :rotation_families
-     ORDER BY ls.score DESC NULLS LAST
+     ORDER BY ls.icir DESC NULLS LAST, ls.score DESC NULLS LAST
      LIMIT :limit
     """
 ).bindparams(_rotation_families_param())
@@ -90,8 +93,9 @@ _SELECT_FOR_EXPLOITATION = text(
 async def select_for_exploitation(
     session: AsyncSession, *, limit: int
 ) -> list[PopulationCandidate]:
-    """Best-scoring VALIDATED/CHAMPION strategies -- refine what's
-    already working. `validation_results.strategy_fingerprint` is
+    """Most consistent VALIDATED/CHAMPION strategies (highest ICIR, then
+    score for families with no ICIR) -- refine what's already working.
+    `validation_results.strategy_fingerprint` is
     `StrategySpec.config_hash()`, not `strategies.id` -- joined here via
     the spec's own recomputed hash, matching how validate_grid itself
     looks up a spec's latest evidence."""
@@ -107,6 +111,7 @@ async def select_for_exploitation(
             spec=StrategySpec.model_validate(r.spec),
             status=r.status,
             score=r.score,
+            icir=r.icir,
         )
         for r in rows
     ]
@@ -221,12 +226,12 @@ async def select_for_revival(session: AsyncSession, *, limit: int) -> list[Popul
 
 _SELECT_FOR_CROSS_BREEDING = text(
     """
-    SELECT s.id, s.family, s.spec, s.status, ls.score
+    SELECT s.id, s.family, s.spec, s.status, ls.score, ls.icir
       FROM breedable_strategies s
       LEFT JOIN breedable_scores ls ON ls.strategy_id = s.id
      WHERE s.family = :family AND s.status IN ('VALIDATED', 'CHAMPION', 'PROMISING')
        AND s.family NOT IN :rotation_families
-     ORDER BY ls.score DESC NULLS LAST
+     ORDER BY ls.icir DESC NULLS LAST, ls.score DESC NULLS LAST
      LIMIT 2
     """
 ).bindparams(_rotation_families_param())
@@ -235,7 +240,8 @@ _SELECT_FOR_CROSS_BREEDING = text(
 async def select_for_cross_breeding(
     session: AsyncSession, *, family: str
 ) -> tuple[PopulationCandidate, PopulationCandidate] | None:
-    """The two best-scoring same-family candidates -- crossover.py needs
+    """The two most consistent same-family candidates (ICIR, then score)
+    -- crossover.py needs
     a shared parameter space, which only exists within one family.
     Returns None if fewer than two real candidates exist for this family
     yet (an honest "not enough population" result, not a fabricated
@@ -253,7 +259,7 @@ async def select_for_cross_breeding(
     candidates = [
         PopulationCandidate(
             strategy_id=r.id, family=r.family, spec=StrategySpec.model_validate(r.spec),
-            status=r.status, score=r.score,
+            status=r.status, score=r.score, icir=r.icir,
         )
         for r in rows
     ]

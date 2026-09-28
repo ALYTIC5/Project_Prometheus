@@ -62,6 +62,14 @@ alpha-wealth; near-duplicates run at the lowest priority. Canaries jitter
 two steps so they are never exempt. `GET /research-health/hypotheses`.
 Details: `docs/DECISIONS.md`.
 
+## Loop fitness and failure feedback (2026-09-28)
+
+Parents are bred by ICIR (consistency), not the composite score, and one
+failed strategy per cycle is refined by an LLM that reads its validation
+evidence (`research/llm/refinement.py`). Both are ablation components
+(`icir_parent_fitness`, `llm_refinement`) and a HARMFUL refinement verdict
+switches refinement off. Details in `docs/DECISIONS.md`.
+
 ## Phase 4 -- MAP-Elites + islands (NOT STARTED)
 ## Phase 5 -- Bandit scheduler (NOT STARTED)
 ## Phase 6 -- Structured memory / KnowledgeFacts (PARTIAL)
