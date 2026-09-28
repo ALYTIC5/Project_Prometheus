@@ -1,5 +1,6 @@
 """API routes package."""
 
+from prometheus.api.routes.admin import router as admin_router
 from prometheus.api.routes.buildings import router as buildings_router
 from prometheus.api.routes.clusters import router as clusters_router
 from prometheus.api.routes.experiments import router as experiments_router
@@ -15,6 +16,7 @@ from prometheus.api.routes.violations import router as violations_router
 from prometheus.api.routes.world import router as world_router
 
 __all__ = [
+    "admin_router",
     "buildings_router",
     "clusters_router",
     "experiments_router",

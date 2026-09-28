@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from prometheus.api.routes import (
+    admin_router,
     buildings_router,
     clusters_router,
     experiments_router,
@@ -106,6 +107,7 @@ app.include_router(papers_router)
 app.include_router(paper_router)
 app.include_router(clusters_router)
 app.include_router(research_health_router)
+app.include_router(admin_router)
 
 
 @app.get("/api/info", tags=["meta"])
