@@ -70,6 +70,33 @@ def test_rejects_unknown_concerns(client: TestClient, monkeypatch: pytest.Monkey
 
 @_needs_db
 @pytest.mark.db
+def test_clear_halt_needs_a_token_a_reason_and_a_halt(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ADMIN_TOKEN", "right")
+    headers = {"X-Admin-Token": "right"}
+    url = "/admin/promotion-halt/clear"
+    reason = "gate verified: 70 ledger tests, no breach since"
+
+    async def halt() -> None:
+        engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("INSERT INTO evaluator.promotion_halts (event, reason) VALUES ('HALT', 't')")
+            )
+        await engine.dispose()
+
+    asyncio.run(halt())
+    assert client.post(url, json={"reason": reason}).status_code == 401
+    assert client.post(url, json={"reason": "ok"}, headers=headers).status_code == 422
+    assert client.post(url, json={"reason": reason}, headers=headers).json() == {
+        "promotions_halted": False
+    }
+    assert client.post(url, json={"reason": reason}, headers=headers).status_code == 409
+
+
+@_needs_db
+@pytest.mark.db
 def test_makes_named_concerns_due(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ADMIN_TOKEN", "right")
     response = client.post(

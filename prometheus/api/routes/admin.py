@@ -18,6 +18,7 @@ from sqlalchemy import text
 
 from prometheus.core.cadence import CONCERN_INTERVALS
 from prometheus.core.db import get_session_factory
+from prometheus.validation.status import clear_promotion_halt, promotions_halted
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -33,6 +34,10 @@ _BACKDATE = text(
 
 class ForceRequest(BaseModel):
     concerns: list[str]
+
+
+class ClearHaltRequest(BaseModel):
+    reason: str
 
 
 def _check_token(token: str | None) -> None:
@@ -59,3 +64,20 @@ async def force_concerns(
             await session.execute(_BACKDATE, {"concern": concern})
         await session.commit()
     return {"due_now": sorted(set(body.concerns))}
+
+
+@router.post("/promotion-halt/clear")
+async def clear_halt(
+    body: ClearHaltRequest, x_admin_token: str | None = Header(default=None)
+) -> dict[str, Any]:
+    """The human step after a canary breach has been investigated: appends
+    a CLEAR event with the stated reason (the HALT stays in the log)."""
+    _check_token(x_admin_token)
+    if len(body.reason.strip()) < 20:
+        raise HTTPException(status_code=422, detail="state why the halt is being cleared")
+    async with get_session_factory()() as session:
+        if not await promotions_halted(session):
+            raise HTTPException(status_code=409, detail="promotions are not halted")
+        await clear_promotion_halt(session, reason=body.reason.strip())
+        await session.commit()
+    return {"promotions_halted": False}
