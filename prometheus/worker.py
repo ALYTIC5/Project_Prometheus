@@ -119,6 +119,7 @@ from prometheus.paper.reconciliation import (
 )
 from prometheus.paper.sim_broker import SimBroker
 from prometheus.research.crossover import crossover
+from prometheus.research.hypotheses import NEAR_DUPLICATE_PRIORITY, register_hypothesis
 from prometheus.research.llm.budget import current_tier, estimate_cost, model_for_tier
 from prometheus.research.llm.extraction import (
     EXTRACTION_BATCH_SIZE,
@@ -361,7 +362,23 @@ async def _enqueue_child(
     hypothesis: str,
     change_set: dict[str, object],
     expected_information_value_: float,
+    stated_prior: float | None = None,
+    stated_mechanism: str | None = None,
+    mechanism_family: str | None = None,
+    predicted_effect: str | None = None,
+    claim_ids: list[int] | None = None,
 ) -> str:
+    # Phase 3: the hypothesis is registered before its job exists.
+    registration = await register_hypothesis(
+        session,
+        child,
+        parent_config_hash=child.parent_id,
+        stated_prior=stated_prior,
+        stated_mechanism=stated_mechanism,
+        mechanism_family=mechanism_family,
+        predicted_effect=predicted_effect,
+        claim_ids=claim_ids,
+    )
     # I1 (final-review fix wave): `child.source` is part of the key.
     # config_hash() deliberately excludes source (it identifies BEHAVIOR,
     # see spec.py's _IDENTITY_FIELDS), so without this an LLM hypothesis
@@ -388,7 +405,7 @@ async def _enqueue_child(
             "change_set": change_set,
         },
         idempotency_key=idempotency_key,
-        priority=0,
+        priority=NEAR_DUPLICATE_PRIORITY if registration.near_duplicate_of else 0,
         expected_information_value=expected_information_value_,
         estimated_cost=0.0,
         max_attempts=3,
@@ -817,6 +834,8 @@ _SELECT_LLM_GENERATION_VERDICT = text(
 class _ClaimContext:
     claim_id: int
     symbol: str
+    mechanism: str
+    family_hint: str
     paper: PaperContext
 
 
@@ -831,6 +850,8 @@ async def _next_untested_claim(session: AsyncSession) -> _ClaimContext | None:
     return _ClaimContext(
         claim_id=row.id,
         symbol=_ASSET_CLASS_SYMBOL[row.asset_class],
+        mechanism=row.mechanism,
+        family_hint=row.family_hint,
         paper=PaperContext(
             paper_id=row.paper_id,
             key_sections=(
@@ -1238,6 +1259,11 @@ async def _run_llm_hypothesis_step(
             "new_value": result.spec.family,
         },
         expected_information_value_=0.0,
+        stated_prior=result.prior_probability,
+        stated_mechanism=claim.mechanism,
+        mechanism_family=claim.family_hint,
+        predicted_effect=result.expected_effect,
+        claim_ids=[claim.claim_id],
     )
 
 

@@ -2,8 +2,8 @@
 
 The one-off null suite (tests/test_null_strategies.py) proves the engine
 was honest once. Canaries keep proving it: about 5% of every regenerated
-baseline grid gets a near-duplicate spec -- same family and symbol, one
-parameter moved one step -- whose signal is replaced by a known-null one
+baseline grid gets a jittered copy -- same family and symbol, one
+parameter moved two steps -- whose signal is replaced by a known-null one
 when the evaluator runs it (backtest/null_signals.py). To every research
 component a canary is an ordinary grid spec; which specs are canaries lives
 only in evaluator.canary_registry, which the research role cannot read.
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.backtest.null_signals import NULL_KINDS
 from prometheus.core.seeds import derive_seed
+from prometheus.research.hypotheses import near_duplicate_among
 from prometheus.strategy.spec import StrategySpec
 
 # The self-improvement prompt's own target ("roughly 5% of all jobs").
@@ -39,15 +40,17 @@ class Canary:
 
 
 def _jittered(spec: StrategySpec, seed: int) -> list[StrategySpec]:
-    """Valid near-duplicates of `spec`: each parameter moved one step
-    (+/-1 for integers, +/-5% for floats), in a seed-dependent order."""
+    """Valid jittered copies of `spec`: each parameter moved two steps
+    (+/-2 for integers, +/-10% for floats), in a seed-dependent order. Two,
+    not one: a one-step neighbour is a registered NEAR_DUPLICATE (Phase 3)
+    that the discovery gate never tests, so it would prove nothing."""
     dumped = spec.model_dump()
     fields = sorted(spec.parameters)
     rotation = seed % len(fields) if fields else 0
     candidates: list[StrategySpec] = []
     for field in fields[rotation:] + fields[:rotation]:
         value = dumped[field]
-        steps = (value + 1, value - 1) if isinstance(value, int) else (value * 1.05, value * 0.95)
+        steps = (value + 2, value - 2) if isinstance(value, int) else (value * 1.10, value * 0.90)
         for new_value in steps:
             try:
                 candidates.append(spec.with_updates(**{field: new_value}))
@@ -68,6 +71,8 @@ def canary_specs(grid: list[StrategySpec], salt: str) -> list[Canary]:
         for candidate in _jittered(spec, seed):
             candidate_hash = candidate.config_hash()
             if candidate_hash in grid_hashes or candidate_hash in taken:
+                continue
+            if near_duplicate_among(candidate, [*grid, *(c.spec for c in canaries)]):
                 continue
             taken.add(candidate_hash)
             canaries.append(

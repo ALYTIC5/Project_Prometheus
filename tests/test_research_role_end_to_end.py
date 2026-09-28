@@ -98,7 +98,8 @@ async def test_research_role_can_run_the_whole_paper_to_job_path(
             source="llm_hypothesis", description=f"role test {marker}",
         )
         hypothesis = LLMHypothesis(
-            spec=spec, hypothesis_text="h", expected_effect="e", paper_ids=[1],
+            spec=spec, hypothesis_text="h", expected_effect="e", prior_probability=0.1,
+            paper_ids=[1],
             model="claude-sonnet-5", input_tokens=10, output_tokens=10, est_cost_usd=0.001,
         )
         with (
@@ -107,5 +108,13 @@ async def test_research_role_can_run_the_whole_paper_to_job_path(
         ):
             job_id = await _run_llm_hypothesis_step(session, client=MagicMock())
         await session.commit()
+        # Phase 3: registered through the research role, with the stated prior.
+        registered = (
+            await session.execute(
+                text("SELECT source, prior_basis FROM hypotheses WHERE config_hash = :h"),
+                {"h": spec.config_hash()},
+            )
+        ).one()
 
     assert job_id is not None
+    assert (registered.source, registered.prior_basis) == ("llm_hypothesis", "llm_stated")

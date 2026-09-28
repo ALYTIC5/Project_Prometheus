@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from prometheus.research.hypotheses import Registration
 from prometheus.research.llm.hypothesis import LLMHypothesis, LLMResponseError, PaperContext
 from prometheus.strategy.spec import StrategySpec
 from prometheus.worker import (
@@ -21,7 +22,7 @@ from prometheus.worker import (
 pytestmark = pytest.mark.db
 
 _CLAIM = _ClaimContext(
-    claim_id=7, symbol="BTC/USDT",
+    claim_id=7, symbol="BTC/USDT", mechanism="momentum persists", family_hint="MOMENTUM",
     paper=PaperContext(paper_id=1, key_sections="Claim under test: momentum"),
 )
 
@@ -33,7 +34,7 @@ def _fake_hypothesis() -> LLMHypothesis:
         source="llm_hypothesis", description="test hypothesis",
     )
     return LLMHypothesis(
-        spec=spec, hypothesis_text="test", expected_effect="test",
+        spec=spec, hypothesis_text="test", expected_effect="test", prior_probability=0.1,
         paper_ids=[1], model="claude-sonnet-5",
         input_tokens=100, output_tokens=50, est_cost_usd=0.001,
     )
@@ -74,7 +75,11 @@ async def _idempotency_key_for_source(source: str) -> str:
         family="MOMENTUM", symbol="BTC/USDT", timeframe="1d",
         fast_window=10, slow_window=50, expected_horizon=5, source=source,
     )
-    with patch("prometheus.worker.enqueue", new=AsyncMock(return_value="job-1")) as mock_enqueue:
+    registration = Registration(1, True, None, 0.5)
+    with (
+        patch("prometheus.worker.enqueue", new=AsyncMock(return_value="job-1")) as mock_enqueue,
+        patch("prometheus.worker.register_hypothesis", new=AsyncMock(return_value=registration)),
+    ):
         await _enqueue_child(
             MagicMock(), child=spec, parent_experiment_id=None,
             hypothesis="h", change_set={}, expected_information_value_=0.0,

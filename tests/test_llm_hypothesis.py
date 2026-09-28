@@ -20,6 +20,7 @@ _VALID_RESPONSE_JSON = json.dumps(
         "expected_horizon": 5,
         "hypothesis_text": "Faster momentum crossovers may capture short-term trend continuation.",
         "expected_effect": "Higher turnover, similar or better risk-adjusted return.",
+        "prior_probability": 0.12,
     }
 )
 
@@ -107,6 +108,7 @@ async def test_generate_hypothesis_produces_valid_spec() -> None:
     assert result.spec.fast_window == 10
     assert result.spec.slow_window == 50
     assert result.spec.source == "llm_hypothesis"
+    assert result.prior_probability == 0.12
     assert result.paper_ids == [1]
     assert result.input_tokens == 500
     assert result.output_tokens == 200
@@ -140,8 +142,18 @@ async def test_generate_hypothesis_raises_value_error_on_unknown_family() -> Non
         _MALFORMED_RESPONSE_JSON,  # fails StrategySpec's own model_validator
         _UNKNOWN_FAMILY_RESPONSE_JSON,  # KeyError against the param_fields dict
         "not json at all",  # json.JSONDecodeError
+        *(
+            json.dumps({**json.loads(_VALID_RESPONSE_JSON), "prior_probability": bad})
+            for bad in (0, 1, 1.5, True, "0.3")
+        ),
+        json.dumps(
+            {k: v for k, v in json.loads(_VALID_RESPONSE_JSON).items() if k != "prior_probability"}
+        ),
     ],
-    ids=["invalid-spec", "unknown-family", "unparseable-json"],
+    ids=[
+        "invalid-spec", "unknown-family", "unparseable-json", "prior-zero", "prior-one",
+        "prior-above-one", "prior-bool", "prior-string", "prior-missing",
+    ],
 )
 async def test_every_post_call_failure_raises_llm_response_error_carrying_usage(
     response_text: str,

@@ -48,6 +48,47 @@ async def discovery_gate() -> dict[str, Any]:
     }
 
 
+_HYPOTHESIS_STATS = text(
+    """
+    SELECT h.source,
+           count(*) AS registered,
+           count(*) FILTER (WHERE h.near_duplicate_of IS NOT NULL) AS near_duplicates,
+           count(*) FILTER (WHERE NOT h.mechanism_aligned) AS mechanism_mismatches,
+           avg(h.prior_probability) AS mean_prior,
+           count(l.id) AS gate_tests,
+           count(l.id) FILTER (WHERE l.discovery) AS discoveries,
+           max(h.created_at) AS last_registered_at
+      FROM hypotheses h
+      LEFT JOIN evaluator.alpha_wealth_ledger l ON l.config_hash = h.config_hash
+     GROUP BY h.source
+     ORDER BY h.source
+    """
+)
+
+
+@router.get("/hypotheses")
+async def hypotheses() -> dict[str, Any]:
+    """Phase 3 pre-registration, per generator: what each one predicted
+    (mean prior) next to what the gate found."""
+    async with get_session_factory()() as session:
+        rows = (await session.execute(_HYPOTHESIS_STATS)).all()
+    return {
+        "sources": [
+            {
+                "source": row.source,
+                "registered": int(row.registered),
+                "near_duplicates": int(row.near_duplicates),
+                "mechanism_mismatches": int(row.mechanism_mismatches),
+                "mean_prior": float(row.mean_prior),
+                "gate_tests": int(row.gate_tests),
+                "discoveries": int(row.discoveries),
+                "last_registered_at": row.last_registered_at.isoformat(),
+            }
+            for row in rows
+        ]
+    }
+
+
 @router.get("/canaries")
 async def canaries() -> dict[str, Any]:
     async with get_session_factory()() as session:

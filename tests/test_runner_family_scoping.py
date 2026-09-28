@@ -115,6 +115,7 @@ async def test_enqueue_specs_tags_spec_kind_by_isinstance() -> None:
     RotationSpec, "strategy" for a StrategySpec, decided purely by
     isinstance, not by inspecting the spec's own fields."""
     from prometheus.experiments.runner import enqueue_specs
+    from prometheus.research.hypotheses import Registration
     from prometheus.research.rotation_generate import generate_dual_momentum_grid
     from prometheus.strategy.spec import StrategySpec
 
@@ -138,6 +139,10 @@ async def test_enqueue_specs_tags_spec_kind_by_isinstance() -> None:
             return_value=_FakeSessionCtx(fake_session),
         ),
         patch("prometheus.experiments.runner.enqueue", new=AsyncMock(side_effect=_fake_enqueue)),
+        patch(
+            "prometheus.experiments.runner.register_hypothesis",
+            new=AsyncMock(return_value=Registration(1, True, None, 0.5)),
+        ),
         # The enqueue-time history check (tests/test_enqueue_history_filter.py)
         # needs a real bar-count query; this test is about spec_kind tagging,
         # so both specs are treated as having enough history.

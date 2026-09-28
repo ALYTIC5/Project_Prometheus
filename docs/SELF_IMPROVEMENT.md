@@ -50,12 +50,17 @@ strict while nothing has been discovered (next threshold ~1e-5) -- SAFFRON
 is the prompt's measured ablation if it proves too conservative.
 `GET /research-health/discovery-gate`.
 
-## Phase 3 -- Pre-registered hypotheses (NOT STARTED)
+## Phase 3 -- Pre-registered hypotheses (DONE, 2026-09-28)
 
-Hypothesis record before its backtest: mechanism, predicted direction/effect/
-horizon, frozen parameter ranges, matched benchmark, **generator
-prior_probability**. Mechanism-alignment and originality checks. Claims from
-the paper knowledge engine (below) are the natural source of mechanisms.
+Every spec is registered in append-only `hypotheses` (migration 0027) before
+its job exists: mechanism (class + sentence), prediction (beats the matched
+buy-and-hold), frozen parameter point, benchmark universe, **generator
+prior_probability** (Laplace on the generator's own gate record; stated by
+the LLM for paper hypotheses). The gate refuses NOT_PREREGISTERED,
+NEAR_DUPLICATE (one-step neighbour) and MECHANISM_MISMATCH without spending
+alpha-wealth; near-duplicates run at the lowest priority. Canaries jitter
+two steps so they are never exempt. `GET /research-health/hypotheses`.
+Details: `docs/DECISIONS.md`.
 
 ## Phase 4 -- MAP-Elites + islands (NOT STARTED)
 ## Phase 5 -- Bandit scheduler (NOT STARTED)
@@ -117,7 +122,8 @@ review-window sizing must be decided then, from the data, not invented now.
 
 ## Phase 10 -- Research Health dashboard (PARTIAL)
 
-API only so far: `/research-health/canaries`, `/research-papers/summary`,
+API only so far: `/research-health/canaries`, `/research-health/discovery-gate`,
+`/research-health/hypotheses`, `/research-papers/summary`,
 `/research-papers/learned`. Planned order: calibration over time, Brier skill
 vs base rate, forward survival, canary false-pass rate, self-edit win rate,
 proxy-reality gap, alpha-wealth, confirmation capacity, bandit arms,

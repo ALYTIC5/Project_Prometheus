@@ -63,6 +63,11 @@ from prometheus.experiments.queue import Job, claim, enqueue, fail, release, suc
 from prometheus.experiments.violations import record_config_snapshot
 from prometheus.research.clustering import cluster_by_correlation
 from prometheus.research.generate import generate_baseline_grid, generate_grid
+from prometheus.research.hypotheses import (
+    NEAR_DUPLICATE_PRIORITY,
+    register_hypothesis,
+    registered_hypothesis,
+)
 from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.canaries import (
@@ -951,18 +956,37 @@ async def _apply_discovery_gate(
         )
 
     config_hash = spec.config_hash()
+    # Phase 3: only a pre-registered, original, mechanism-aligned
+    # hypothesis may spend alpha-wealth. Refused candidates still ran and
+    # keep their evidence; they just can never be discoveries.
+    hypothesis = await registered_hypothesis(session, config_hash)
+    if hypothesis is None:
+        return not_a_discovery("NOT_PREREGISTERED", {"tested": False})
+    registered = {
+        "hypothesis_id": hypothesis.hypothesis_id,
+        "prior_probability": hypothesis.prior_probability,
+    }
+    if hypothesis.near_duplicate_of is not None:
+        return not_a_discovery(
+            "NEAR_DUPLICATE",
+            {"tested": False, **registered, "near_duplicate_of": hypothesis.near_duplicate_of},
+        )
+    if not hypothesis.mechanism_aligned:
+        return not_a_discovery("MECHANISM_MISMATCH", {"tested": False, **registered})
+
     earlier = await existing_gate_test(session, config_hash)
     representative = cluster_info is None or bool(cluster_info.get("is_representative", True))
     if earlier is None and not representative:
-        return not_a_discovery("CLUSTER_NOT_REPRESENTATIVE", {"tested": False})
+        return not_a_discovery("CLUSTER_NOT_REPRESENTATIVE", {"tested": False, **registered})
     if earlier is None:
         pvalue = excess_return_pvalue(result.equity_curve, result.benchmark.equity_curve)
         if pvalue is None:
-            return not_a_discovery("FDR_TOO_FEW_OBSERVATIONS", {"tested": False})
+            return not_a_discovery("FDR_TOO_FEW_OBSERVATIONS", {"tested": False, **registered})
         test = await run_gate_test(session, config_hash, pvalue)
     else:
         test = earlier
     payload = {
+        **registered,
         "tested": True,
         "test_index": test.test_index,
         "p_value": test.p_value,
@@ -1069,6 +1093,8 @@ async def enqueue_specs(
         if skipped:
             print(f"enqueue_specs: deferring {skipped} spec(s) until enough history exists")
         for spec in runnable:
+            # Phase 3: registered as a hypothesis before its job exists.
+            registration = await register_hypothesis(session, spec)
             idempotency_key = hashlib.sha256(
                 f"{_RUN_BACKTEST_KIND}|{spec.config_hash()}|{days}".encode()
             ).hexdigest()
@@ -1082,7 +1108,9 @@ async def enqueue_specs(
                         "days": days,
                     },
                     idempotency_key=idempotency_key,
-                    priority=priority,
+                    priority=(
+                        NEAR_DUPLICATE_PRIORITY if registration.near_duplicate_of else priority
+                    ),
                     expected_information_value=expected_information_value,
                     estimated_cost=estimated_cost,
                     max_attempts=max_attempts,

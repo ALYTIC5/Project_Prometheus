@@ -75,6 +75,10 @@ Respond with ONLY a JSON object with these exact keys:
 - "hypothesis_text": a one-paragraph explanation grounded in the provided papers
 - "expected_effect": what measurable effect you expect (e.g. "higher Sharpe",
   "lower drawdown") and why
+- "prior_probability": a number strictly between 0 and 1 -- your probability
+  that this exact strategy beats buy-and-hold of the same asset after costs,
+  out of sample, strongly enough to pass a strict multiple-testing gate. Most
+  published trading effects do not survive this; be calibrated, not hopeful.
 
 No other text, no markdown fences, just the JSON object."""
 
@@ -112,6 +116,7 @@ class LLMHypothesis:
     spec: StrategySpec
     hypothesis_text: str
     expected_effect: str
+    prior_probability: float
     paper_ids: list[int]
     model: str
     input_tokens: int
@@ -173,6 +178,18 @@ def response_text(message: Any) -> str:
             fenced = _CODE_FENCE.match(text)
             return fenced.group("body") if fenced else text
     raise ValueError("response contained no text block")
+
+
+def parse_prior(value: object) -> float:
+    """The model's stated prior, stored as stated (Phase 7 scores it). Must
+    be a real number strictly inside (0, 1): 0 and 1 are certainties no
+    calibration record can ever correct."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"prior_probability must be a number, got {value!r}")
+    prior = float(value)
+    if not 0.0 < prior < 1.0:
+        raise ValueError(f"prior_probability must be strictly between 0 and 1, got {prior}")
+    return prior
 
 
 async def generate_hypothesis(
@@ -268,6 +285,7 @@ async def generate_hypothesis(
         expected_horizon = parsed["expected_horizon"]
         hypothesis_text = parsed["hypothesis_text"]
         expected_effect = parsed["expected_effect"]
+        prior_probability = parse_prior(parsed["prior_probability"])
         spec = StrategySpec(
             family=family,
             symbol=symbol,
@@ -289,6 +307,7 @@ async def generate_hypothesis(
         spec=spec,
         hypothesis_text=hypothesis_text,
         expected_effect=expected_effect,
+        prior_probability=prior_probability,
         paper_ids=[p.paper_id for p in paper_context],
         model=model,
         input_tokens=input_tokens,

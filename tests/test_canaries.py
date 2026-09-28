@@ -1,10 +1,13 @@
 """Canaries: blind known-null strategies in the normal pipeline.
 
-Unit half: selection is deterministic, salted, near-duplicate and valid
-for every family in the baseline grid. DB half: the self-improvement
-prompt's verification #1 -- inject 100 canaries into the real run_one +
-validate_specs pipeline on synthetic zero-drift data; zero may be promoted
-past PROMISING (zero CANARY_BREACH rows)."""
+Unit half: selection is deterministic, salted, a two-step jitter that is
+never a registered NEAR_DUPLICATE, and valid for every family in the
+baseline grid. DB half: the self-improvement prompt's verification #1 --
+inject 100 canaries into the real run_one + validate_specs pipeline on
+synthetic zero-drift data, registered as hypotheses exactly as
+enqueue_specs registers them; zero may be promoted past PROMISING (zero
+CANARY_BREACH rows) and none may be exempted from the gate as a
+near-duplicate or unregistered spec."""
 from __future__ import annotations
 
 import os
@@ -22,6 +25,7 @@ from prometheus.backtest.null_signals import NULL_KINDS, apply_null
 from prometheus.data.models import OhlcvBar as OhlcvBarModel
 from prometheus.experiments.runner import run_one, validate_specs
 from prometheus.research.generate import generate_baseline_grid
+from prometheus.research.hypotheses import near_duplicate_among, register_hypothesis
 from prometheus.validation.canaries import (
     Canary,
     _jittered,
@@ -59,6 +63,19 @@ def test_canaries_are_valid_near_duplicates_outside_the_grid() -> None:
             if source.parameters[f] != canary.spec.parameters[f]
         ]
         assert len(changed) == 1
+
+
+@pytest.mark.parametrize("symbol", ["X/USDT", "BTC/USDT", "SPY"])
+@pytest.mark.parametrize("salt", ["salt-a", "salt-b", "salt-c"])
+def test_no_canary_is_a_near_duplicate_of_the_grid(symbol: str, salt: str) -> None:
+    """A one-step neighbour is never tested by the discovery gate
+    (NEAR_DUPLICATE), so a canary that was one would prove nothing."""
+    grid = generate_baseline_grid(symbol, "1d")
+    canaries = canary_specs(grid, salt)
+    assert canaries
+    for i, canary in enumerate(canaries):
+        others = [*grid, *(c.spec for c in canaries[:i])]
+        assert not near_duplicate_among(canary.spec, others)
 
 
 def test_every_baseline_family_can_produce_a_canary() -> None:
@@ -136,16 +153,26 @@ async def test_100_canaries_through_the_real_pipeline_none_promoted(
             symbol = f"CANARY{run_id}{s}/USDT"
             await _insert_zero_drift_bars(session, symbol, seed=500 + s, first=first)
             grid = generate_baseline_grid(symbol, "1d")
+            grid_hashes = {spec.config_hash() for spec in grid}
             canaries: list[Canary] = []
             for i, spec in enumerate(grid):
                 if len(canaries) == _CANARIES_PER_SYMBOL:
                     break
-                candidates = _jittered(spec, seed=i)
+                # canary_specs' own rule, at a higher rate than 5% so one
+                # fixture reaches the prompt's 100.
+                candidates = [
+                    c for c in _jittered(spec, seed=i)
+                    if c.config_hash() not in grid_hashes
+                    and not near_duplicate_among(c, [*grid, *(k.spec for k in canaries)])
+                ]
                 if candidates:
                     canaries.append(
                         Canary(candidates[0], NULL_KINDS[i % len(NULL_KINDS)], spec.config_hash())
                     )
             await register_canaries(session, canaries)
+            # Registered as enqueue_specs registers them: grid, then canaries.
+            for spec in [*grid, *(c.spec for c in canaries)]:
+                await register_hypothesis(session, spec)
             await session.commit()
 
             ran = []
@@ -186,6 +213,28 @@ async def test_100_canaries_through_the_real_pipeline_none_promoted(
                 {"h": all_hashes},
             )
         ).scalar_one()
+        exempted = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM hypotheses "
+                    "WHERE config_hash = ANY(:h) "
+                    "AND (near_duplicate_of IS NOT NULL OR NOT mechanism_aligned)"
+                ),
+                {"h": all_hashes},
+            )
+        ).scalar_one()
+        refused_unregistered = (
+            await session.execute(
+                text(
+                    "SELECT count(*) FROM validation_results v "
+                    "JOIN experiments e ON e.id = v.experiment_id "
+                    "WHERE e.config_hash = ANY(:h) "
+                    "AND jsonb_exists_any(v.reason_codes, array['NOT_PREREGISTERED',"
+                    "'NEAR_DUPLICATE','MECHANISM_MISMATCH'])"
+                ),
+                {"h": all_hashes},
+            )
+        ).scalar_one()
         if breaches:
             # A real breach halted promotions for the whole database; this
             # test plays the human who investigated it, so later tests in
@@ -198,6 +247,10 @@ async def test_100_canaries_through_the_real_pipeline_none_promoted(
     # evaluator and none ever holds a promoted status.
     assert recorded == len(all_hashes)
     assert promoted == 0
+    # Phase 3: every canary faces the full gate -- none is silently exempt
+    # as a near-duplicate, a mechanism mismatch or an unregistered spec.
+    assert exempted == 0
+    assert refused_unregistered == 0
     # The evaluator's honesty -- the canary false-pass rate. Before the
     # LORD++ discovery gate (2026-09-26) this fixture measured 0-3% because
     # `deflated_sharpe > 0` was always true. With the gate it must be zero:

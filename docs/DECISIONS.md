@@ -7,6 +7,44 @@ reading the code.
 
 ---
 
+## Phase 3: every backtest is a pre-registered hypothesis (2026-09-28)
+
+**User decisions.** Priors for grid/mutation/crossover are Laplace's rule,
+(d+1)/(n+2), over that generator's own gate record; an LLM hypothesis
+states its own prior. A near-duplicate is a one-step neighbour (+/-1 int,
++/-5% float, same family + symbol/universe + timeframe) of an
+already-registered spec. Near-duplicates and unregistered backtests still
+run but are never promotable and never spend alpha-wealth; near-duplicates
+enqueue at priority -1 (below every generator's 0).
+
+**How.** `hypotheses` (migration 0027, append-only, research role SELECT +
+INSERT) is written by `research/hypotheses.py::register_hypothesis` at the
+only two job-creation sites (`runner.enqueue_specs`, `worker._enqueue_child`)
+before the job exists. `config_hash` is UNIQUE: the first registration is
+the pre-registration, and a later generator proposing the same spec cannot
+restate it. Parameters are part of `config_hash`, so a changed parameter is
+a new hypothesis and a new gate test -- "no widening after results" holds by
+construction. Mechanism: `strategy/mechanisms.py` (every family -> one of 6
+classes + one sentence); deterministic generators state their family's, an
+LLM hypothesis states the paper claim's and is MECHANISM_MISMATCH when the
+spec's class differs from the claim's `family_hint` class.
+`_apply_discovery_gate` refuses NOT_PREREGISTERED / NEAR_DUPLICATE /
+MECHANISM_MISMATCH before any LORD++ test; the gate payload carries the
+hypothesis id and prior for Phase 7.
+
+**Consequences worth knowing.**
+- Canary jitter moved from one step to two (+/-2, +/-10%) and a canary may
+  not be a one-step neighbour of the grid or another canary; otherwise every
+  canary would be a NEAR_DUPLICATE the gate never tests. Canary config
+  hashes therefore changed; old registry rows stay (append-only).
+- CONSECUTIVE_DOWN's grid (2, 3, 4) is the only baseline grid with one-step
+  neighbours: 3 and 4 register as near-duplicates of 2.
+- Specs run before 0027 are registered the next time the grid re-enqueues
+  them; mutation/crossover children enqueued before 0027 are
+  NOT_PREREGISTERED for good.
+- Not done: return-correlation near-duplicates (needs stored return
+  streams), scoring the stored priors (Phase 7).
+
 ## Phase 2: LORD++ discovery gate replaces a guard that did nothing (2026-09-28)
 
 **What was wrong.** `decide()` promoted when `deflated_sharpe > 0`, but DSR
