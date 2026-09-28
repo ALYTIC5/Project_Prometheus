@@ -1,5 +1,6 @@
 """Paper trading API endpoint -- surfaces the Harbour (PROMPT 8) for the
-dashboard: which strategies currently hold CHAMPION status, each one's
+dashboard: every paper-traded strategy (CHAMPIONs, and gate discoveries
+awaiting their vault test, labelled unverified), each one's
 real mark-to-market equity curve (built from actual fills, not
 simulated), its recent orders, and any real divergence/worse-than-
 holding findings. Previously invisible outside a direct DB query --
@@ -30,10 +31,13 @@ from prometheus.core.db import get_session_factory
 from prometheus.paper.reconciliation import compute_paper_equity_curve
 from prometheus.strategy.rotation_spec import ROTATION_FAMILIES, RotationSpec
 from prometheus.strategy.spec import StrategySpec
+from prometheus.validation.promotion import paper_eligible_strategies
 
 router = APIRouter(prefix="/paper", tags=["paper"])
 
-_SELECT_CHAMPIONS = text("SELECT id, family, spec FROM strategies WHERE status = 'CHAMPION'")
+# Labels shown to the user: an AWAITING_HOLDOUT strategy passed the discovery
+# gate but not yet its one vault test -- unverified by definition.
+_LABELS = {"CHAMPION": "CHAMPION", "AWAITING_HOLDOUT": "AWAITING_HOLDOUT (unverified)"}
 
 # The worker's own latest mark first (migration 0022): ohlcv_bars stops at
 # holdout_start, so marking there alone freezes every open position's value.
@@ -76,7 +80,7 @@ _SELECT_RECENT_FINDINGS = text(
 @router.get("/")
 async def get_paper_trading_status() -> dict[str, Any]:
     async with get_session_factory()() as session:
-        champion_rows = (await session.execute(_SELECT_CHAMPIONS)).fetchall()
+        champion_rows = await paper_eligible_strategies(session)
 
         champions: list[dict[str, Any]] = []
         for row in champion_rows:
@@ -122,6 +126,7 @@ async def get_paper_trading_status() -> dict[str, Any]:
                 {
                     "strategy_id": row.id,
                     "family": row.family,
+                    "label": _LABELS[row.label],
                     "symbol": display_symbol,
                     "equity_curve": [
                         {"date": d.isoformat(), "equity": equity} for d, equity in equity_curve

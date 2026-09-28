@@ -1,16 +1,22 @@
 """Run the production worker now instead of waiting for its cron.
 
     python -m tools.ops.worker_now status
-    python -m tools.ops.worker_now run                         # run whatever is due
-    python -m tools.ops.worker_now run --force research        # make concerns due, then run
-    python -m tools.ops.worker_now run --force research --wait # ...and wait for it to exit
+    python -m tools.ops.worker_now run --force research        # due now; the next cron tick runs it
+    python -m tools.ops.worker_now run --force research --now  # ...and start a run immediately
+    python -m tools.ops.worker_now run --now --wait            # start now, wait for it to exit
 
 --force back-dates the named worker_cadence rows through the API's
 POST /admin/worker/force (ADMIN_TOKEN; taken from the environment or read
-from the API service's Railway variables, never printed). The run itself is
-Railway's cron "run now" (deploymentInstanceExecutionCreate). A run is
-refused while another execution is still active: two workers at once would
-double the research compute. Needs an authenticated `railway` CLI.
+from the API service's Railway variables, never printed).
+
+By default nothing is started: the next scheduled tick (every 15 min) runs
+whatever is due, and Railway never interrupts a scheduled run (an
+overlapping tick is skipped). --now starts one immediately via Railway's
+"run now" (deploymentInstanceExecutionCreate) -- but a manually started run
+is REPLACED when the next scheduled tick starts (seen 2026-09-28: forced
+runs ended exactly at :00 and :30), so --now suits short concerns only. A
+run is refused while another execution is still active. Needs an
+authenticated `railway` CLI.
 """
 from __future__ import annotations
 
@@ -126,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status")
     run = sub.add_parser("run")
     run.add_argument("--force", nargs="*", default=[], metavar="CONCERN")
+    run.add_argument("--now", action="store_true")
     run.add_argument("--wait", action="store_true")
     args = parser.parse_args(argv)
 
@@ -139,6 +146,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.force:
         print(f"due now: {force_due(args.force)}")
+    if not args.now:
+        now = time.gmtime()
+        minutes = 15 - now.tm_min % 15
+        print(f"nothing started: the next scheduled tick (in ~{minutes} min) runs what is due")
+        return 0
+    print("warning: a manual run is replaced when the next scheduled tick starts")
     railway_graphql(_RUN_NOW)
     print("worker run started")
     if args.wait:

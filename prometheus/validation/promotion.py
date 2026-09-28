@@ -9,6 +9,8 @@ family, elected here.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,6 +95,42 @@ async def elect_champions(session: AsyncSession) -> list[str]:
         if row.status != "CHAMPION":
             await set_status(session, row.id, "CHAMPION", reason="best VALIDATED in family")
     return list((await session.execute(_SELECT_CHAMPIONS)).scalars())
+
+
+AWAITING_HOLDOUT = "AWAITING_HOLDOUT"
+
+# What paper trading trades (user decision 2026-09-28): every CHAMPION, plus
+# each gate discovery still waiting for its one vault test -- one strategy
+# row per spec (run_one mints a new row per run), its most recent PROMISING
+# one. Canaries never, even if one slipped through (that is a breach,
+# recorded by status.note_discovery).
+_SELECT_PAPER_ELIGIBLE = text(
+    """
+    WITH awaiting AS (
+        SELECT config_hash FROM evaluator.alpha_wealth_ledger WHERE discovery
+        EXCEPT
+        SELECT config_hash FROM evaluator.holdout_verdicts
+    ), awaiting_rows AS (
+        SELECT DISTINCT ON (e.config_hash) s.id, s.family, s.spec
+          FROM experiments e
+          JOIN strategies s ON s.id = e.strategy_id
+         WHERE e.config_hash IN (SELECT config_hash FROM awaiting)
+           AND s.status = 'PROMISING'
+           AND NOT EXISTS (
+                 SELECT 1 FROM evaluator.canary_strategies c WHERE c.strategy_id = s.id
+               )
+         ORDER BY e.config_hash, e.created_at DESC
+    )
+    SELECT id, family, spec, 'AWAITING_HOLDOUT' AS label FROM awaiting_rows
+    UNION ALL
+    SELECT id, family, spec, 'CHAMPION' AS label FROM strategies WHERE status = 'CHAMPION'
+    """
+)
+
+
+async def paper_eligible_strategies(session: AsyncSession) -> list[Any]:
+    """Rows (id, family, spec, label) paper trading acts on."""
+    return list((await session.execute(_SELECT_PAPER_ELIGIBLE)).fetchall())
 
 
 # Per family, the most recently paper-traded strategy that is VALIDATED now

@@ -15,6 +15,23 @@ from prometheus.main import app
 from tools.ops.worker_now import active_execution
 
 
+def test_force_without_now_only_marks_due_and_never_starts_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A manually started run is replaced by the next scheduled tick, so by
+    default worker_now only back-dates concerns and lets cron run them."""
+    from tools.ops import worker_now
+
+    started: list[str] = []
+    monkeypatch.setattr(worker_now, "recent_executions", lambda: [])
+    monkeypatch.setattr(worker_now, "force_due", lambda concerns: concerns)
+    monkeypatch.setattr(worker_now, "railway_graphql", lambda document: started.append(document))
+    assert worker_now.main(["run", "--force", "research"]) == 0
+    assert started == []
+    assert worker_now.main(["run", "--force", "research", "--now"]) == 0
+    assert started == [worker_now._RUN_NOW]
+
+
 def test_active_execution_detects_a_running_worker() -> None:
     assert active_execution([{"status": "EXITED"}, {"status": "CRASHED"}]) is None
     running = {"status": "RUNNING", "createdAt": "x"}

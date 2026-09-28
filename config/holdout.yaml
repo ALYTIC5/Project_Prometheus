@@ -10,6 +10,12 @@ schema_version: 1
 # the last N%" number. It starts empty and fills as the worker ingests.
 holdout_start: 2026-09-16
 
+# The one-shot vault test (validation/holdout_test.py) runs only once the
+# vault holds six months of unseen bars (user decision 2026-09-28). Until
+# this date no strategy may become VALIDATED or CHAMPION: gate discoveries
+# wait, paper-traded and labelled unverified.
+vault_opens: 2027-03-16
+
 declared_reason: >
   PROMPT 5 (validation and falsification). Frozen the day the holdout
   enforcement mechanism (prometheus/validation/holdout.py, migration 0010)

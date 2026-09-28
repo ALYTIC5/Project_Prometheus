@@ -58,6 +58,7 @@ from prometheus.strategy.rotation_spec import (
 from prometheus.strategy.spec import StrategySpec
 from prometheus.validation.promotion import elect_champions, verdict_to_status
 from prometheus.world.population import population_summary
+from tests.holdout_helpers import record_holdout_verdict
 
 pytestmark = [
     pytest.mark.db,
@@ -363,6 +364,10 @@ async def test_elect_champions_promotes_best_and_demotes_stale_champion(
                 verdict="PROMOTE",
                 score=0.99,
             )
+        )
+        # CHAMPION requires a passed vault test (Law 3, 2026-09-28).
+        await record_holdout_verdict(
+            session, better_spec.config_hash(), strategy_id=better_id
         )
         await session.commit()
 

@@ -62,6 +62,14 @@ alpha-wealth; near-duplicates run at the lowest priority. Canaries jitter
 two steps so they are never exempt. `GET /research-health/hypotheses`.
 Details: `docs/DECISIONS.md`.
 
+## The vault is used (2026-09-28)
+
+VALIDATED/CHAMPION now also need one passed vault test, from 2027-03-16;
+until then gate discoveries are paper-traded as unverified. This is the
+first real out-of-sample verdict the system has, and the input Phase 7's
+calibration will score priors and gate results against. Details in
+`docs/DECISIONS.md`.
+
 ## Loop fitness and failure feedback (2026-09-28)
 
 Parents are bred by ICIR (consistency), not the composite score, and one

@@ -7,6 +7,47 @@ reading the code.
 
 ---
 
+## The vault is used; pre-gate promotions re-tested; paper loss limits (2026-09-28)
+
+Prompted by `AUDIT_REPORT.md`: nothing had ever been judged on unseen data.
+
+**User decisions.** The vault (bars >= `holdout_start` 2026-09-16) opens
+on **2027-03-16** (`config/holdout.yaml` `vault_opens`, six months). Until
+then nothing may become VALIDATED or CHAMPION. Each gate discovery then
+gets ONE vault test: the strategy runs on research bars (warm-up) + vault
+bars, and only the vault part of both curves is scored with the gate's own
+one-sided excess-return test at **p < 0.05**. Waiting discoveries stay
+PROMISING and are paper-traded, labelled `AWAITING_HOLDOUT (unverified)`.
+Every pre-gate CHAMPION/VALIDATED gets its one discovery-gate test now and
+goes to PROMISING either way.
+
+**How.**
+- `validation/holdout_test.py` (`run_holdout_test`, `holdout_passed`); verdicts
+  are append-only in `evaluator.holdout_verdicts` (migration 0029).
+- `set_status` refuses VALIDATED *and* CHAMPION without a passed verdict
+  (`VALIDATED_WITHOUT_HOLDOUT` violation); `reinstate_champion` likewise.
+- `_apply_discovery_gate` returns PROMISING + `AWAITING_HOLDOUT` for a
+  discovery without a verdict. Because that is now the first claim of
+  success, a canary reaching it is a `CANARY_BREACH`
+  (`status.note_discovery`) -- otherwise canaries would have stopped
+  testing anything.
+- Worker: `_run_holdout_tests` after research (no-op before `vault_opens`);
+  one-time `promo_regate_928` (`experiments/regate.py`).
+- Paper trading trades `validation/promotion.paper_eligible_strategies`
+  (CHAMPIONs + awaiting discoveries, one row per spec, never canaries) and
+  flattens any open position that is no longer eligible.
+- Paper loss limits (`paper/execution.py`), per strategy against its own
+  EUR 1000 account: drawdown from peak >= `MAX_DRAWDOWN_PCT` or loss since
+  the UTC day's start >= `MAX_DAILY_LOSS_PCT` forces flat and writes a
+  `RISK_*` paper finding once per day. A drawdown breach persists by
+  construction (flat equity cannot regain the peak): that strategy is
+  halted until a human intervenes. The peak is taken over fill points and
+  day starts, not every tick, so it can understate a transient high.
+- `tools/ops/worker_now.py run --force X` now only back-dates concerns;
+  the next scheduled tick runs them (Railway skips an overlapping scheduled
+  tick, but a manually started run was replaced when the next tick began,
+  twice on 2026-09-28). `--now` starts one anyway, with a warning.
+
 ## ICIR parent fitness, LLM failure refinement, options snapshots (2026-09-28)
 
 **User decisions.** ICIR (consistency) is the parent-selection fitness only

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from prometheus.validation.promotion import elect_champions, restore_champions_demoted_by_halt
 from prometheus.validation.status import clear_promotion_halt, promotions_halted
 from prometheus.worker import _CHAMPION_RESTORE_MARKER
+from tests.holdout_helpers import record_holdout_verdict
 
 pytestmark = pytest.mark.db
 
@@ -47,6 +48,9 @@ async def _strategy(session: AsyncSession, family: str, status: str, score: floa
         ),
         {"e": experiment_id, "h": config_hash, "sc": score},
     )
+    # Every strategy here is past its one vault test: CHAMPION requires it
+    # (Law 3, 2026-09-28); these tests are about election, not the vault.
+    await record_holdout_verdict(session, config_hash, strategy_id=strategy_id)
     return strategy_id
 
 

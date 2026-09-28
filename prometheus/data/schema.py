@@ -81,6 +81,17 @@ class PointInTimeFrame:
             .collect()
         )
 
+    def combined_with(self, other: PointInTimeFrame) -> PointInTimeFrame:
+        """Both frames' rows as one -- the holdout test's research bars
+        (warm-up) followed by the vault bars. as_of() still dedups by
+        (symbol, timeframe, event_time)."""
+        columns = list(_REQUIRED_INPUT_COLUMNS)
+        return PointInTimeFrame(
+            pl.concat(
+                [self._lf.select(columns), other._lf.select(columns)], how="vertical_relaxed"
+            )
+        )
+
     @property
     def visible_columns(self) -> tuple[str, ...]:
         return _POINT_IN_TIME_COLUMNS

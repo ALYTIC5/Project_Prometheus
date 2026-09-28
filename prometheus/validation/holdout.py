@@ -36,12 +36,13 @@ from pathlib import Path
 import polars as pl
 import yaml
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import bindparam, text
+from sqlalchemy import RowMapping, bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.data.loaders import POINT_IN_TIME_FRAME_SCHEMA
 from prometheus.data.schema import PointInTimeFrame
+from prometheus.strategy.rotation_spec import RotationSpec
 from prometheus.strategy.spec import StrategySpec
 
 DEFAULT_HOLDOUT_CONFIG_PATH = "config/holdout.yaml"
@@ -52,6 +53,7 @@ class HoldoutConfig(BaseModel):
 
     schema_version: int = 1
     holdout_start: date
+    vault_opens: date
     declared_reason: str
 
 
@@ -105,7 +107,7 @@ _SELECT_HOLDOUT_BARS = text(
 
 async def access_holdout(
     session: AsyncSession,
-    spec: StrategySpec,
+    spec: StrategySpec | RotationSpec,
     experiment_id: str | None,
 ) -> PointInTimeFrame:
     """The only code path to holdout data. Checks/records the access in
@@ -175,15 +177,20 @@ async def access_holdout_for_paper(
     return await _read_holdout_bars(spec)
 
 
-async def _read_holdout_bars(spec: StrategySpec) -> PointInTimeFrame:
+async def _read_holdout_bars(spec: StrategySpec | RotationSpec) -> PointInTimeFrame:
     from prometheus.core.db import get_holdout_session
 
+    symbols = [spec.symbol] if isinstance(spec, StrategySpec) else sorted(spec.universe)
+    rows: list[RowMapping] = []
     async with get_holdout_session() as holdout_session:
-        rows = (
-            await holdout_session.execute(
-                _SELECT_HOLDOUT_BARS, {"symbol": spec.symbol, "timeframe": spec.timeframe}
+        for symbol in symbols:
+            rows.extend(
+                (
+                    await holdout_session.execute(
+                        _SELECT_HOLDOUT_BARS, {"symbol": symbol, "timeframe": spec.timeframe}
+                    )
+                ).mappings().all()
             )
-        ).mappings().all()
 
     frame = pl.DataFrame(
         {

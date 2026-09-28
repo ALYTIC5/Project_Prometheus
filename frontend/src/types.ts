@@ -416,6 +416,8 @@ export interface PaperFindingRow {
 export interface PaperChampion {
   strategy_id: string;
   family: string;
+  /** "CHAMPION", or "AWAITING_HOLDOUT (unverified)": passed the discovery gate, not yet the vault test. */
+  label: string;
   symbol: string;
   equity_curve: PaperEquityPoint[];
   recent_orders: PaperOrderRow[];

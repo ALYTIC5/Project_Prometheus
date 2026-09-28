@@ -107,6 +107,7 @@ from prometheus.experiments.queue import (
     reap_stale_claims,
     requeue_succeeded,
 )
+from prometheus.experiments.regate import regate_pre_gate_promotions
 from prometheus.experiments.runner import (
     drain_queue,
     enqueue_baseline_grid,
@@ -164,10 +165,16 @@ from prometheus.research.population import (
 from prometheus.research.prioritisation import ParentContext, expected_information_value
 from prometheus.research.rotation_generate import ROTATION_GRID_GENERATORS
 from prometheus.research.templates import seed_specs_by_family
-from prometheus.strategy.rotation_spec import ROTATION_FAMILIES
+from prometheus.strategy.rotation_spec import ROTATION_FAMILIES, RotationSpec
 from prometheus.strategy.spec import FAMILIES, StrategySpec
 from prometheus.validation.holdout import access_holdout_for_paper
-from prometheus.validation.promotion import restore_champions_demoted_by_halt
+from prometheus.validation.holdout_test import run_holdout_test, vault_is_open
+from prometheus.validation.promotion import (
+    elect_champions,
+    paper_eligible_strategies,
+    restore_champions_demoted_by_halt,
+)
+from prometheus.validation.status import set_status
 
 
 def _anthropic_client() -> _AnthropicClientProtocol:
@@ -327,6 +334,83 @@ async def _run_champion_restore() -> None:
         await session.execute(_UPSERT_CADENCE, {"concern": _CHAMPION_RESTORE_MARKER})
         await session.commit()
     print(f"worker: restored {len(restored)} champion(s) demoted during the halt: {restored}")
+
+
+# One-time (marker <= 16 chars): every CHAMPION/VALIDATED promoted by the
+# always-true pre-gate DSR check faces its one discovery-gate test and goes
+# to PROMISING (user decision 2026-09-28, experiments/regate.py).
+_REGATE_MARKER = "promo_regate_928"
+
+
+async def _run_regate_pre_gate_promotions() -> None:
+    async with get_session() as session:
+        done = (await session.execute(_SELECT_CADENCE, {"concern": _REGATE_MARKER})).first()
+        if done is not None:
+            return
+        report = await regate_pre_gate_promotions(session, lookback_days=_GRID_LOOKBACK_DAYS)
+        await session.execute(_UPSERT_CADENCE, {"concern": _REGATE_MARKER})
+        await session.commit()
+    print(
+        f"worker: re-tested pre-gate promotions -- {len(report.discoveries)} discovery(ies) "
+        f"now awaiting holdout {report.discoveries}, {len(report.failed)} failed the gate, "
+        f"{len(report.untestable)} untestable; all now PROMISING"
+    )
+
+
+# Discoveries still waiting for their one vault test: the ledger's
+# discoveries without a holdout verdict, one PROMISING strategy row per spec
+# (the same set paper trading trades, minus CHAMPIONs).
+_SELECT_AWAITING_HOLDOUT = text(
+    """
+    SELECT DISTINCT ON (e.config_hash) s.id, s.family, s.spec, e.id AS experiment_id
+      FROM experiments e
+      JOIN strategies s ON s.id = e.strategy_id
+     WHERE e.config_hash IN (
+             SELECT config_hash FROM evaluator.alpha_wealth_ledger WHERE discovery
+             EXCEPT SELECT config_hash FROM evaluator.holdout_verdicts
+           )
+       AND s.status = 'PROMISING'
+       AND NOT EXISTS (SELECT 1 FROM evaluator.canary_strategies c WHERE c.strategy_id = s.id)
+     ORDER BY e.config_hash, e.created_at DESC
+    """
+)
+
+
+async def _run_holdout_tests(now: datetime | None = None) -> list[str]:
+    """Law 3's one-shot vault test for every discovery awaiting it -- a
+    no-op until config/holdout.yaml's vault_opens. A pass promotes to
+    VALIDATED (set_status re-checks the verdict) and champions are
+    re-elected. Each strategy commits alone: one spec's failure never
+    un-spends another's single vault access."""
+    if not vault_is_open((now or datetime.now(UTC)).date()):
+        return []
+    async with get_session() as session:
+        awaiting = (await session.execute(_SELECT_AWAITING_HOLDOUT)).fetchall()
+    validated: list[str] = []
+    for row in awaiting:
+        spec: StrategySpec | RotationSpec = (
+            RotationSpec.model_validate(row.spec)
+            if row.family in ROTATION_FAMILIES
+            else StrategySpec.model_validate(row.spec)
+        )
+        try:
+            async with get_session() as session:
+                verdict = await run_holdout_test(
+                    session, strategy_id=row.id, spec=spec, experiment_id=row.experiment_id,
+                    warmup_days=_GRID_LOOKBACK_DAYS, now=now,
+                )
+                if verdict.passed and await set_status(
+                    session, row.id, "VALIDATED", reason="passed the one-shot holdout test"
+                ):
+                    validated.append(row.id)
+                await session.commit()
+        except Exception as exc:  # HoldoutAccessDenied included: never retried
+            record_failure("research", exc, context=f"holdout_test strategy_id={row.id}")
+    if validated:
+        async with get_session() as session:
+            await elect_champions(session)
+            await session.commit()
+    return validated
 
 
 async def _run_one_time_backfills() -> None:
@@ -1553,6 +1637,17 @@ _INSERT_PAPER_MARK = text(
 )
 
 
+_SELECT_OPEN_PAPER_POSITIONS = text(
+    """
+    SELECT s.id, s.family, s.spec
+      FROM strategies s
+      JOIN paper_orders o ON o.strategy_id = s.id AND o.status = 'FILLED'
+     GROUP BY s.id, s.family, s.spec
+    HAVING abs(sum(CASE WHEN o.side = 'buy' THEN o.filled_qty ELSE -o.filled_qty END)) > 1e-8
+    """
+)
+
+
 def paper_decision_bars(
     history: PointInTimeFrame, forward: PointInTimeFrame, cutoff: datetime
 ) -> pl.DataFrame:
@@ -1601,11 +1696,19 @@ async def _run_paper() -> None:
     as_of_cutoff = datetime.now(UTC)
 
     async with get_session() as session:
-        champions = (
-            await session.execute(
-                text("SELECT id, family, spec FROM strategies WHERE status = 'CHAMPION'")
-            )
-        ).fetchall()
+        # CHAMPIONs plus gate discoveries awaiting their vault test (user
+        # decision 2026-09-28), and -- flattened, never re-opened -- every
+        # strategy still holding a paper position it is no longer eligible
+        # for (a demoted champion's open position must be closed, not left).
+        eligible = await paper_eligible_strategies(session)
+        eligible_ids = {row.id for row in eligible}
+        orphaned = [
+            row
+            for row in (await session.execute(_SELECT_OPEN_PAPER_POSITIONS)).fetchall()
+            if row.id not in eligible_ids
+        ]
+    champions = [*eligible, *orphaned]
+    force_flat_ids = {row.id for row in orphaned}
 
     # C1 (final-review fix wave): a rotation strategy can hold CHAMPION
     # status (validate_rotation_specs calls elect_champions like every
@@ -1652,7 +1755,8 @@ async def _run_paper() -> None:
                     continue
 
                 await decide_and_submit(
-                    session, broker, strategy_id=row.id, spec=spec, bars=bars
+                    session, broker, strategy_id=row.id, spec=spec, bars=bars,
+                    force_flat=row.id in force_flat_ids, now=as_of_cutoff,
                 )
                 await poll_fills(session, broker, symbol=spec.symbol)
 
@@ -1727,6 +1831,10 @@ async def run_once() -> list[str]:
         await _run_champion_restore()
     except Exception as exc:
         record_failure("backfill", exc, context="champion_restore")
+    try:
+        await _run_regate_pre_gate_promotions()
+    except Exception as exc:
+        record_failure("backfill", exc, context="regate_pre_gate_promotions")
 
     ran: list[str] = []
     async with get_session() as session:
@@ -1781,6 +1889,12 @@ async def run_once() -> list[str]:
                 await mark_run(session, concern="research")
         except Exception as exc:
             record_failure("research", exc)
+        try:
+            validated = await _run_holdout_tests()
+            if validated:
+                print(f"worker: {len(validated)} strategy(ies) passed the holdout test")
+        except Exception as exc:
+            record_failure("research", exc, context="holdout_tests")
 
     if paper_due:
         try:

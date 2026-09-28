@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.validation.discovery_gate import ExcessReturnPValue, run_gate_test
 from prometheus.validation.status import set_status
+from tests.holdout_helpers import record_holdout_verdict
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_DATABASE_URL"), reason="requires TEST_DATABASE_URL"
@@ -75,6 +76,9 @@ async def test_a_discovery_opens_the_path_and_spends_wealth(db_session: AsyncSes
     test = await run_gate_test(db_session, config_hash, _PASS)
     assert test.discovery
     assert test.alpha_threshold > 0
+    # Law 3 (2026-09-28): a discovery still needs its one vault test.
+    assert not await set_status(db_session, strategy_id, "VALIDATED", reason="law 10 test")
+    await record_holdout_verdict(db_session, config_hash, strategy_id=strategy_id)
     assert await set_status(db_session, strategy_id, "VALIDATED", reason="law 10 test")
 
 

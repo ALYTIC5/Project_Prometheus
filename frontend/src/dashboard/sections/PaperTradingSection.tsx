@@ -14,6 +14,15 @@ function ChampionCard({ champion }: { champion: PaperChampion }) {
         <span className="font-semibold">
           {champion.strategy_id} <span className="text-muted-foreground">({champion.family} · {champion.symbol})</span>
         </span>
+        <span
+          className={
+            champion.label === 'CHAMPION'
+              ? 'rounded border border-border px-1.5 py-0.5'
+              : 'rounded border border-amber-500/60 px-1.5 py-0.5 text-amber-700 dark:text-amber-400'
+          }
+        >
+          {champion.label}
+        </span>
         {champion.recent_findings.length > 0 && (
           <span className="rounded border border-red-500/60 px-1.5 py-0.5 text-red-600 dark:text-red-400">
             {champion.recent_findings[0].finding_type}

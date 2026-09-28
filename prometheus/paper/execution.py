@@ -12,16 +12,19 @@ a new trading decision.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+import json
+from datetime import UTC, datetime
 from typing import Any
 
 import polars as pl
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from prometheus.backtest.costs import load_cost_config
 from prometheus.backtest.engine import STARTING_CAPITAL, signal_for
 from prometheus.core.config import RISK_LIMITS
 from prometheus.core.ids import next_paper_order_id
+from prometheus.paper.reconciliation import compute_paper_equity_curve
 from prometheus.strategy.spec import StrategySpec
 
 _SELECT_FILLED_QTY = text(
@@ -108,6 +111,118 @@ def _clamp_target_qty(target_qty: float, price: float) -> float:
     return max(min(target_qty, max_qty), -max_qty)
 
 
+_SELECT_FILLS_BEFORE = text(
+    """
+    SELECT side, filled_qty, avg_fill_price FROM paper_orders
+     WHERE strategy_id = :strategy_id AND status = 'FILLED'
+       AND avg_fill_price IS NOT NULL AND filled_qty IS NOT NULL
+       AND filled_at < :before
+     ORDER BY filled_at
+    """
+)
+_SELECT_MARK_BEFORE = text(
+    """
+    SELECT close FROM paper_marks
+     WHERE symbol = :symbol AND bar_available_at < :before
+     ORDER BY bar_available_at DESC LIMIT 1
+    """
+)
+_SELECT_FINDING_SINCE = text(
+    """
+    SELECT 1 FROM paper_findings
+     WHERE strategy_id = :strategy_id AND finding_type = :finding_type AND detected_at >= :since
+     LIMIT 1
+    """
+)
+_INSERT_FINDING = text(
+    """
+    INSERT INTO paper_findings (strategy_id, finding_type, detail)
+    VALUES (:strategy_id, :finding_type, CAST(:detail AS jsonb))
+    """
+)
+
+
+async def _start_of_day_equity(
+    session: AsyncSession, *, strategy_id: str, symbol: str, day_start: datetime
+) -> float:
+    """Equity at the start of the UTC day: every fill before it replayed
+    (same cash/fee accounting as reconciliation.compute_paper_equity_curve),
+    the position valued at the last mark before it."""
+    fee_fraction = load_cost_config()[0].taker_fee_bps / 10_000.0
+    cash, qty, last_fill_price = STARTING_CAPITAL, 0.0, None
+    for row in (
+        await session.execute(
+            _SELECT_FILLS_BEFORE, {"strategy_id": strategy_id, "before": day_start}
+        )
+    ).fetchall():
+        signed = float(row.filled_qty) if row.side == "buy" else -float(row.filled_qty)
+        price = float(row.avg_fill_price)
+        cash -= signed * price + abs(signed) * price * fee_fraction
+        qty += signed
+        last_fill_price = price
+    if qty == 0:
+        return cash
+    mark = (
+        await session.execute(_SELECT_MARK_BEFORE, {"symbol": symbol, "before": day_start})
+    ).scalar_one_or_none()
+    price = float(mark) if mark is not None else float(last_fill_price or 0.0)
+    return cash + qty * price
+
+
+def breached_limit(
+    *, equity: float, peak: float, start_of_day: float
+) -> tuple[str, dict[str, float]] | None:
+    """Law 4's loss limits against this strategy's own paper account.
+    Drawdown first: it is the harder stop."""
+    drawdown_pct = (peak - equity) / peak * 100 if peak > 0 else 0.0
+    if drawdown_pct >= RISK_LIMITS.MAX_DRAWDOWN_PCT:
+        return "RISK_MAX_DRAWDOWN", {
+            "drawdown_pct": drawdown_pct, "limit_pct": RISK_LIMITS.MAX_DRAWDOWN_PCT,
+            "equity": equity, "peak": peak,
+        }
+    daily_loss_pct = (start_of_day - equity) / start_of_day * 100 if start_of_day > 0 else 0.0
+    if daily_loss_pct >= RISK_LIMITS.MAX_DAILY_LOSS_PCT:
+        return "RISK_DAILY_LOSS", {
+            "daily_loss_pct": daily_loss_pct, "limit_pct": RISK_LIMITS.MAX_DAILY_LOSS_PCT,
+            "equity": equity, "start_of_day": start_of_day,
+        }
+    return None
+
+
+async def check_risk_limits(
+    session: AsyncSession, *, strategy_id: str, symbol: str, price: float, now: datetime
+) -> str | None:
+    """Returns the breached limit's finding type (and records it, once per
+    strategy per UTC day), or None. A drawdown breach persists once the
+    strategy is flat -- flat equity cannot climb back to its peak -- so it
+    halts that strategy's paper trading until a human intervenes; a daily
+    loss clears the next UTC day."""
+    curve = await compute_paper_equity_curve(session, strategy_id=strategy_id, current_price=price)
+    equity = curve[-1][1] if curve else STARTING_CAPITAL
+    day_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
+    start_of_day = await _start_of_day_equity(
+        session, strategy_id=strategy_id, symbol=symbol, day_start=day_start
+    )
+    peak = max([STARTING_CAPITAL, start_of_day, equity, *(point for _, point in curve)])
+    breach = breached_limit(equity=equity, peak=peak, start_of_day=start_of_day)
+    if breach is None:
+        return None
+    finding_type, detail = breach
+    already = (
+        await session.execute(
+            _SELECT_FINDING_SINCE,
+            {"strategy_id": strategy_id, "finding_type": finding_type, "since": day_start},
+        )
+    ).first()
+    if already is None:
+        await session.execute(
+            _INSERT_FINDING,
+            {"strategy_id": strategy_id, "finding_type": finding_type,
+             "detail": json.dumps(detail)},
+        )
+    return finding_type
+
+
 async def decide_and_submit(
     session: AsyncSession,
     broker: Any,
@@ -115,6 +230,8 @@ async def decide_and_submit(
     strategy_id: str,
     spec: StrategySpec,
     bars: pl.DataFrame,
+    force_flat: bool = False,
+    now: datetime | None = None,
 ) -> str | None:
     """Computes the champion's target position from the exact same
     signal_for() the backtest uses, diffs it against the currently held
@@ -133,11 +250,20 @@ async def decide_and_submit(
     if RISK_LIMITS.KILL_SWITCH:
         return None
 
-    signaled = signal_for(bars, spec)
-    last_row = signaled.tail(1).to_dicts()[0]
-    target_fraction = last_row["position"]
     price = bars.tail(1)["close"][0]
     event_time = bars.tail(1)["available_at"][0]
+    if force_flat:
+        # No longer eligible (demoted): close out, never open.
+        target_fraction = 0.0
+    else:
+        signaled = signal_for(bars, spec)
+        target_fraction = signaled.tail(1).to_dicts()[0]["position"]
+        breached = await check_risk_limits(
+            session, strategy_id=strategy_id, symbol=spec.symbol, price=float(price),
+            now=now or datetime.now(UTC),
+        )
+        if breached is not None:
+            target_fraction = 0.0
 
     target_qty = _clamp_target_qty((target_fraction * STARTING_CAPITAL) / price, price)
     held_qty = await current_position(session, strategy_id)

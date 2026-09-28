@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.experiments.violations import ResearchViolation, record_violations
 from prometheus.validation.discovery_gate import has_discovery
+from prometheus.validation.holdout_test import holdout_passed
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,19 @@ async def set_status(
                 "ledger (%s)", strategy_id, reason,
             )
             return False
+        # Law 3: a discovery is VALIDATED (or CHAMPION) only after its one
+        # vault test.
+        if not await holdout_passed(session, strategy_id):
+            await record_violations(
+                session,
+                ResearchViolation.VALIDATED_WITHOUT_HOLDOUT,
+                [{"strategy_id": strategy_id, "reason": reason}],
+            )
+            logger.error(
+                "promotion of %s to %s refused: no passed holdout test (%s)",
+                strategy_id, new_status, reason,
+            )
+            return False
     await session.execute(_UPDATE_STATUS, {"status": new_status, "id": strategy_id})
     return True
 
@@ -114,9 +128,25 @@ async def reinstate_champion(session: AsyncSession, strategy_id: str, *, reason:
     if canary_hash is not None:
         await _record_breach(session, strategy_id, canary_hash, "CHAMPION", reason)
         return False
+    if not await holdout_passed(session, strategy_id):
+        return False
     logger.warning("reinstating %s as CHAMPION during a halt: %s", strategy_id, reason)
     await session.execute(_UPDATE_STATUS, {"status": "CHAMPION", "id": strategy_id})
     return True
+
+
+async def note_discovery(session: AsyncSession, strategy_id: str, *, reason: str) -> bool:
+    """A discovery awaiting its vault test is now the first claim of
+    success (nothing reaches VALIDATED before the vault opens), so a canary
+    reaching it is a CANARY_BREACH exactly as a canary promotion is.
+    Returns False for a canary."""
+    canary_hash = (
+        await session.execute(_SELECT_CANARY, {"id": strategy_id})
+    ).scalar_one_or_none()
+    if canary_hash is None:
+        return True
+    await _record_breach(session, strategy_id, canary_hash, "AWAITING_HOLDOUT", reason)
+    return False
 
 
 async def _is_promotion(session: AsyncSession, strategy_id: str, new_status: str) -> bool:

@@ -31,6 +31,10 @@ code, never the test.
 3. **The holdout is sacred.** The final test slice is physically separated. Any
    read of it is logged to `holdout_access_log` with an experiment ID. A strategy
    may touch it **once**. Second access = automatic REJECT, no exceptions.
+   VALIDATED and CHAMPION require one passed holdout test
+   (`validation/holdout_test.py`), which runs only once the vault opens
+   (`config/holdout.yaml` `vault_opens`). Enforced by
+   `tests/laws/test_holdout_vault.py`.
 4. **Risk limits are outside the loop.** Position size, exposure, leverage,
    drawdown and daily-loss caps live in env vars, are read at startup, and no
    generated code, LLM output, or config mutation may alter them.

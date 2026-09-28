@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from prometheus.validation.status import clear_promotion_halt, promotions_halted, set_status
+from tests.holdout_helpers import record_holdout_verdict
 
 pytestmark = pytest.mark.db
 
@@ -45,9 +46,12 @@ async def _make_canary(session: AsyncSession, strategy_id: str) -> None:
     )
 
 
-async def _with_discovery(session: AsyncSession, strategy_id: str) -> None:
+async def _with_discovery(
+    session: AsyncSession, strategy_id: str, *, vault_passed: bool = True
+) -> None:
     """Law 10: a VALIDATED promotion needs a discovery for the strategy's
-    latest experiment config_hash in the alpha-wealth ledger."""
+    latest experiment config_hash in the alpha-wealth ledger -- and (Law 3,
+    2026-09-28) a passed one-shot vault test."""
     config_hash = uuid.uuid4().hex
     await session.execute(
         text(
@@ -66,6 +70,8 @@ async def _with_discovery(session: AsyncSession, strategy_id: str) -> None:
         ),
         {"h": config_hash},
     )
+    if vault_passed:
+        await record_holdout_verdict(session, config_hash, strategy_id=strategy_id)
 
 
 async def test_ordinary_promotion_with_a_discovery_is_written(db_session: AsyncSession) -> None:
@@ -73,6 +79,24 @@ async def test_ordinary_promotion_with_a_discovery_is_written(db_session: AsyncS
     await _with_discovery(db_session, strategy_id)
     assert await set_status(db_session, strategy_id, "VALIDATED", reason="test")
     assert await _status(db_session, strategy_id) == "VALIDATED"
+
+
+async def test_a_discovery_without_a_vault_pass_is_refused(db_session: AsyncSession) -> None:
+    strategy_id = await _strategy(db_session)
+    await _with_discovery(db_session, strategy_id, vault_passed=False)
+    assert not await set_status(db_session, strategy_id, "VALIDATED", reason="test")
+    assert not await set_status(db_session, strategy_id, "CHAMPION", reason="test")
+    assert await _status(db_session, strategy_id) == "PROMISING"
+    violations = (
+        await db_session.execute(
+            text(
+                "SELECT count(*) FROM research_violations "
+                "WHERE violation_type = 'VALIDATED_WITHOUT_HOLDOUT' AND detail->>'strategy_id' = :s"
+            ),
+            {"s": strategy_id},
+        )
+    ).scalar_one()
+    assert violations == 2
 
 
 async def test_promotion_without_a_discovery_is_refused(db_session: AsyncSession) -> None:

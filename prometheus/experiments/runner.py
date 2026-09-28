@@ -84,13 +84,14 @@ from prometheus.validation.discovery_gate import (
     existing_gate_test,
     run_gate_test,
 )
+from prometheus.validation.holdout_test import holdout_passed_for_spec
 from prometheus.validation.metrics import ValidationMetrics, compute_metrics, signal_frame_or_none
 from prometheus.validation.metrics import hit_rate as compute_hit_rate
 from prometheus.validation.multiple_testing import deflated_sharpe_ratio, trials_to_date
 from prometheus.validation.promotion import elect_champions, verdict_to_status
 from prometheus.validation.regime import classify_current_regime, regime_breakdown
 from prometheus.validation.scoring import ScoreInputs
-from prometheus.validation.status import set_status
+from prometheus.validation.status import note_discovery, set_status
 
 
 class InsufficientDataRecorded(ValueError):
@@ -928,6 +929,8 @@ async def _validate_one_spec(
         await set_status(
             session, strategy_id, new_status, reason=f"verdict {decision_result.verdict.value}"
         )
+        if "AWAITING_HOLDOUT" in decision_result.reason_codes:
+            await note_discovery(session, strategy_id, reason="discovery, awaiting holdout")
 
 
 async def _apply_discovery_gate(
@@ -994,9 +997,14 @@ async def _apply_discovery_gate(
         "discovery": test.discovery,
         "reused_earlier_test": test.reused,
     }
-    if test.discovery:
-        return decision, payload
-    return not_a_discovery("FDR_NOT_DISCOVERY", payload)
+    if not test.discovery:
+        return not_a_discovery("FDR_NOT_DISCOVERY", payload)
+    # Law 3: a discovery waits for its one vault test (validation/
+    # holdout_test.py) before it may become VALIDATED; meanwhile it is
+    # paper-traded as "awaiting holdout" (validation/promotion.py).
+    if not await holdout_passed_for_spec(session, config_hash):
+        return not_a_discovery("AWAITING_HOLDOUT", payload)
+    return decision, payload
 
 
 _RUN_BACKTEST_KIND = "run_backtest"
