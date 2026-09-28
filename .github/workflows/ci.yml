@@ -2,10 +2,36 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, research-policy]
   pull_request:
 
 jobs:
+  # Third layer beside the research DB role and tests/laws/: the automated
+  # research loop (research-policy branch or its own git identity) may never
+  # touch the evaluator, the laws, risk limits or DB roles.
+  protected-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Automated commits may not touch protected paths
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python -m tools.ci.check_protected_paths \
+              --base "${{ github.event.pull_request.base.sha }}" \
+              --head "${{ github.event.pull_request.head.sha }}" \
+              --branch "${{ github.head_ref }}"
+          else
+            python -m tools.ci.check_protected_paths \
+              --base "${{ github.event.before }}" \
+              --head "${{ github.sha }}" \
+              --branch "${{ github.ref_name }}"
+          fi
+
   lint-type-test:
     runs-on: ubuntu-latest
     steps:
