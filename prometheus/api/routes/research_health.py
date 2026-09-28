@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from prometheus.core.db import get_session_factory
+from prometheus.validation.discovery_gate import ALPHA, W0, lord_threshold, wealth
 
 router = APIRouter(prefix="/research-health", tags=["research-health"])
 
@@ -22,6 +23,29 @@ _CANARY_STATS = text(
       (SELECT event FROM evaluator.promotion_halts ORDER BY id DESC LIMIT 1) AS latest_halt_event
     """
 )
+
+
+_GATE_HISTORY = text(
+    "SELECT test_index, alpha_threshold, discovery, created_at "
+    "FROM evaluator.alpha_wealth_ledger ORDER BY test_index"
+)
+
+
+@router.get("/discovery-gate")
+async def discovery_gate() -> dict[str, Any]:
+    """The LORD++ fuel gauge (Law 10). Aggregates only."""
+    async with get_session_factory()() as session:
+        rows = (await session.execute(_GATE_HISTORY)).all()
+    discoveries = [row.test_index for row in rows if row.discovery]
+    return {
+        "alpha": ALPHA,
+        "w0": W0,
+        "tests": len(rows),
+        "discoveries": len(discoveries),
+        "current_wealth": wealth([row.alpha_threshold for row in rows], len(discoveries)),
+        "next_threshold": lord_threshold(len(rows) + 1, discoveries),
+        "last_test_at": rows[-1].created_at.isoformat() if rows else None,
+    }
 
 
 @router.get("/canaries")

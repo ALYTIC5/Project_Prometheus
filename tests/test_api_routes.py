@@ -267,6 +267,16 @@ def test_research_health_canaries_exposes_aggregates_only() -> None:
     }
 
 
+def test_discovery_gate_fuel_gauge() -> None:
+    with TestClient(app) as client:
+        response = client.get("/research-health/discovery-gate")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["alpha"] == 0.05 and body["w0"] == 0.025
+    assert body["current_wealth"] >= 0
+    assert body["next_threshold"] > 0
+
+
 def test_research_paper_detail_404s_for_unknown_paper() -> None:
     with TestClient(app) as client:
         response = client.get("/research-papers/999999999")

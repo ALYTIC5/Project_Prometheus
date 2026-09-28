@@ -56,6 +56,11 @@ code, never the test.
    through the canary-free breeding views, and every strategy status change
    goes through `validation/status.py::set_status`. Enforced by
    `tests/laws/test_evaluator_isolation.py`.
+10. **Every discovery spends alpha-wealth.** No path to VALIDATED bypasses the
+    online FDR gate (LORD++, `validation/discovery_gate.py`, alpha = 5%), and
+    the ledger (`evaluator.alpha_wealth_ledger`) is append-only: nobody may
+    reset, top up or reorder it. One gate test per spec, ever. Enforced by
+    `tests/laws/test_discovery_gate.py` and `set_status`.
 
 ---
 

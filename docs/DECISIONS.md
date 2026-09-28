@@ -7,6 +7,40 @@ reading the code.
 
 ---
 
+## Phase 2: LORD++ discovery gate replaces a guard that did nothing (2026-09-28)
+
+**What was wrong.** `decide()` promoted when `deflated_sharpe > 0`, but DSR
+is `Phi(z)` -- a probability in (0,1) -- so the check passed whenever DSR was
+computed. Separately, the Sharpe fed to PSR/DSR was annualised (cpz-quant,
+x sqrt(252)) while PSR also scales by sqrt(n_bars), inflating z ~16x. Every
+VALIDATED/CHAMPION before this date was promoted with no effective
+multiple-testing control -- which is why canaries got through.
+
+**What replaces it.**
+- PROMOTE from `decide()` is a candidate only. The LORD++ gate (Ramdas et al.
+  2017, default gamma sequence) decides discoveries at alpha = 5%, W0 = 2.5%
+  (user decision). Ledger: `evaluator.alpha_wealth_ledger`, append-only,
+  one test per config_hash ever (user decision), non-representative
+  cluster members untested.
+- p-value: PSR of per-bar EXCESS returns over the strategy's own matched
+  buy-and-hold (Law 8), per-period units, vs 0. Not DSR: DSR already
+  corrects for trial count and would double-correct.
+- DSR stays a reported diagnostic with the units fixed. `scoring.py` still
+  has a `dsr > 0` score component, now uninformative; changing a score
+  component is a Law 7 corpus experiment -- follow-up, not done here.
+- `set_status` refuses VALIDATED without a ledger discovery
+  (`VALIDATED_WITHOUT_DISCOVERY` violation) -- Law 10 at the choke point.
+- Existing VALIDATED strategies were NOT grandfathered (user decision): each
+  gets its one test on its next re-validation; failure demotes to PROMISING.
+
+**Measured.** Simulation (100 streams x 1000 tests, 10% true effects):
+realised FDR 0.9% independent, 1.0% at rho 0.3, 0.7% at rho 0.6 (LORD++ is
+conservative; ~32 discoveries/1000). The excess-return p-value rejected
+5.0% of pure-noise strategies at the 5% level (calibrated). 102 canaries
+through the real pipeline: 0 breaches (was 0-3 before the gate).
+Correlation here is equicorrelation only; real backtest dependence can be
+worse -- FDR control is approximate, not guaranteed.
+
 ## Paper knowledge engine (2026-09-26)
 
 - **200 papers/day** (`PAPERS_PER_DAY`, user's number) from arXiv `cat:q-fin.*`
