@@ -66,6 +66,77 @@ code, never the test.
     reset, top up or reorder it. One gate test per spec, ever. Enforced by
     `tests/laws/test_discovery_gate.py` and `set_status`.
 
+Laws 11-20 come from `docs/BUILD_PLAN.md` (v2, P0). Each says how it is
+enforced today; "built in Pn" means that prompt builds the enforcement.
+
+11. **Paper only.** No code path to any live venue until the owner ticks the
+    go-live checklist in `docs/BUILD_PLAN.md` by hand;
+    `config/protected.yaml` `live_trading_enabled` stays false. Enforced by
+    `tests/laws/test_no_real_money.py`, the paper broker's testnet-only
+    guards (`paper/broker.py`) and the hard-protected config.
+12. **One ledger.** Every backtest for any purpose, including ablations and
+    re-validations, runs through `run_trial()` and is counted. Built in P3
+    (AST law test); today ablation backtests are not counted.
+13. **Vault sanctity.** Time-vault bars, symbol-vault coins and paper-trading
+    results never reach the research loop or any LLM prompt, and Claude
+    Code never uses them to design, tune or rank strategies. Only
+    `prometheus/validation/vault.py` (one shot per strategy per vault,
+    logged) and paper execution (latest prices, to place orders) read vault
+    data. Enforced today by the holdout DB role (Law 3), the evaluator
+    schema (Law 9) and the Claude Code hook's blocked-endpoint list
+    (`.claude/hooks/blocked_endpoints.txt`); `vault.py` and the table-by-table
+    law tests are built in P7.
+14. **Results-based leak defence.** Implausible results are quarantined;
+    positions without provenance are rejected. Limits in
+    `config/protected.yaml` `plausibility`. Built in P5.
+15. **Blind LLM.** Prompts that propose or refine strategies contain no
+    tickers, coin names, dates or years; paper excerpts are passed with those
+    redacted. Built in P10 (law test); until then the LLM steps are frozen
+    (`config/search.yaml`).
+16. **Truth tests gate promotion.** Red truth tests halt promotion
+    automatically. Built in P9; until then gate submissions are frozen.
+17. **Protected files.** Claude never edits hard-protected files
+    (`config/protected.yaml`, `config/holdout.yaml`) and asks the owner
+    before each edit to an ask-protected file (`config/gates.yaml`,
+    `tests/laws/**`, `.github/workflows/**`, `.claude/**`,
+    `tools/ci/check_protected_paths.py`). Enforced by `.claude/settings.json`
+    permissions, the PreToolUse hook `.claude/hooks/guard.py` (also in every
+    agent's frontmatter), and CI: a PR touching these paths fails without the
+    owner-only `owner-approved` label (`tools/ci/check_protected_paths.py`,
+    `.github/CODEOWNERS`). A change Claude wants goes to
+    `config/protected.proposed.yaml` with its reasons; the owner copies values
+    across by hand.
+18. **Plain English.** Every verdict carries one sentence a beginner
+    understands. Built in P8 (every gate returns `reason_plain`).
+19. **Evidence before done.** Show real test output. Never weaken a test,
+    threshold or check to get a pass. "No edge found" is a correct result.
+    Enforced by review and the verifier agent (`.claude/agents/verifier.md`),
+    which checks every diff for weakened tests, thresholds or checks.
+20. **Silence is an alarm.** Every scheduled job heartbeats; a missing
+    heartbeat alerts the owner. Built in P1.
+
+---
+
+## Network rule
+
+Allowed: package installs, the data sources our ingestion code uses, and
+read-only GET requests to our own API -- never its holdout, vault or
+paper-results data (the hook's `.claude/hooks/blocked_endpoints.txt` lists
+the blocked routes). Never call any broker or exchange trading endpoint.
+
+## Definition of Done
+
+A phase from `docs/BUILD_PLAN.md` is done only when all of these hold:
+
+- every Done-when item passes, with the evidence shown;
+- the full test suite is green;
+- the verifier agent tried to break the work and failed;
+- a PR is open (never push to main);
+- the phase box in `docs/BUILD_PLAN.md` is ticked with a three-line
+  evidence note in its Progress log;
+- the owner gets a plain-English report: what changed, what is still open,
+  and what needs their decision.
+
 ---
 
 ## Non-negotiable engineering rules

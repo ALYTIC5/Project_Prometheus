@@ -1,6 +1,25 @@
 PY ?= python
 
-.PHONY: art art-slice art-characters art-build art-clean art-verify
+.PHONY: test laws health truth art art-slice art-characters art-build art-clean art-verify
+
+## Full test suite. DB tests need TEST_DATABASE_URL (and the HOLDOUT_/RESEARCH_
+## variables CI sets in .github/workflows/ci.yml); without them they skip.
+test:
+	$(PY) -m pytest tests -q
+
+## The immutable law tests only (CLAUDE.md: never weakened, skipped or deleted).
+laws:
+	$(PY) -m pytest tests/laws -q
+
+## docs/BUILD_PLAN.md P1 builds this: the health summary from the production API.
+health:
+	@echo "make health: not built yet -- docs/BUILD_PLAN.md P1"
+	@exit 1
+
+## docs/BUILD_PLAN.md P9 builds this: the nightly truth tests, run locally.
+truth:
+	@echo "make truth: not built yet -- docs/BUILD_PLAN.md P9"
+	@exit 1
 
 ## Full pipeline. Fails at normalize_scale if any sprite is still unnamed
 ## in art/sliced/overrides.json -- that is the intended human checkpoint.

@@ -9,9 +9,13 @@ import pytest
 
 from tools.ci.check_protected_paths import (
     LOOP_AUTHOR_EMAIL,
+    OWNER_APPROVAL_LABEL,
     POLICY_BRANCH,
     find_offences,
     is_protected,
+    main,
+    needs_owner_approval,
+    unapproved_changes,
 )
 
 
@@ -95,3 +99,64 @@ def test_offence_anywhere_in_the_range_is_caught(repo: tuple[Path, str]) -> None
     head = _commit(path, "config/research_policy.yaml", email=LOOP_AUTHOR_EMAIL)
     offences = find_offences(base, head, "main", cwd=str(path))
     assert [o.path for o in offences] == ["alembic/versions/0099_new_role.py"]
+
+
+# ------------------------------------------------ owner approval (Law 17)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "config/protected.yaml",
+        "config/holdout.yaml",
+        "config/gates.yaml",
+        "tests/laws/test_new.py",
+        ".github/workflows/ci.yml",
+        ".claude/settings.json",
+        ".claude/hooks/guard.py",
+        "tools/ci/check_protected_paths.py",
+    ],
+)
+def test_owner_approval_paths(path: str) -> None:
+    assert needs_owner_approval(path)
+
+
+def test_ordinary_code_needs_no_owner_approval() -> None:
+    assert not needs_owner_approval("prometheus/worker.py")
+    assert not needs_owner_approval("tests/test_worker.py")
+    assert not needs_owner_approval("config/costs.yaml")
+
+
+def _pr(repo: tuple[Path, str], paths: list[str]) -> tuple[str, str, str]:
+    path, base = repo
+    _git(path, "switch", "-q", "-c", "feature")
+    head = base
+    for changed in paths:
+        head = _commit(path, changed, email="human@example.com")
+    return str(path), base, head
+
+
+def test_simulated_pr_touching_protected_config_needs_the_label(
+    repo: tuple[Path, str],
+) -> None:
+    cwd, base, head = _pr(repo, ["config/protected.yaml", "prometheus/worker.py"])
+    assert unapproved_changes(base, head, [], cwd=cwd) == ["config/protected.yaml"]
+    assert unapproved_changes(base, head, ["bug"], cwd=cwd) == ["config/protected.yaml"]
+    assert unapproved_changes(base, head, [OWNER_APPROVAL_LABEL], cwd=cwd) == []
+
+
+def test_simulated_pr_without_protected_paths_passes_unlabelled(
+    repo: tuple[Path, str],
+) -> None:
+    cwd, base, head = _pr(repo, ["prometheus/worker.py"])
+    assert unapproved_changes(base, head, [], cwd=cwd) == []
+
+
+def test_cli_fails_unlabelled_and_passes_labelled(
+    repo: tuple[Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cwd, base, head = _pr(repo, [".claude/settings.json"])
+    monkeypatch.chdir(cwd)
+    args = ["--base", base, "--head", head, "--branch", "feature", "--pr"]
+    assert main([*args, "--labels", ""]) == 1
+    assert main([*args, "--labels", f"docs,{OWNER_APPROVAL_LABEL}"]) == 0
