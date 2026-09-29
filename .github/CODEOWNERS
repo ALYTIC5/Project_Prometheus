@@ -11,3 +11,4 @@
 /.claude/                               @ALYTIC5
 /tools/ci/check_protected_paths.py      @ALYTIC5
 /.github/CODEOWNERS                     @ALYTIC5
+/.gitleaks.toml                         @ALYTIC5

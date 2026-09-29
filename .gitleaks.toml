@@ -1,0 +1,9 @@
+# gitleaks config (CI `secret-scan` job, BUILD_PLAN P0). Owner-approval
+# protected (tools/ci/check_protected_paths.py): loosening the scanner is a
+# change the owner must see.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "detect-secrets baseline: stores SHA-1 hashes of already-audited placeholders, never secret values"
+paths = ['''^\.secrets\.baseline$''']

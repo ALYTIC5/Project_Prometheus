@@ -15,6 +15,7 @@
       "Edit(/config/gates.yaml)",
       "Edit(/config/search.yaml)",
       "Edit(/.github/CODEOWNERS)",
+      "Edit(/.gitleaks.toml)",
       "Edit(/tests/laws/**)",
       "Edit(/.github/workflows/**)",
       "Edit(/.claude/**)",

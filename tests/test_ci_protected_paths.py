@@ -112,6 +112,7 @@ def test_offence_anywhere_in_the_range_is_caught(repo: tuple[Path, str]) -> None
         "config/gates.yaml",
         "config/search.yaml",
         ".github/CODEOWNERS",
+        ".gitleaks.toml",
         "tests/laws/test_new.py",
         ".github/workflows/ci.yml",
         ".claude/settings.json",

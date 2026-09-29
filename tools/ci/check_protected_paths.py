@@ -60,6 +60,7 @@ ASK_PROTECTED = (
     "config/gates.yaml",
     "config/search.yaml",   # the search freeze (BUILD_PLAN D11): only the owner unfreezes
     ".github/CODEOWNERS",
+    ".gitleaks.toml",       # loosening the secret scanner is the owner's call
     "tests/laws/",
     ".github/workflows/",
     ".claude/",
