@@ -1,7 +1,9 @@
 """Search-freeze flags (docs/BUILD_PLAN.md D11), read from config/search.yaml.
 
-Fail-safe: a missing file, a missing key, or anything that is not literally
-`true` means PAUSED. Read fresh on every call -- the worker is a short cron
+Fail-safe: a missing file, a missing key, or any value that YAML does not
+parse as boolean true means PAUSED. (PyYAML follows YAML 1.1, so `yes`, `on`
+and `True` also enable a flag -- each still an explicit edit of this
+owner-approval-protected file.) Read fresh on every call -- the worker is a short cron
 process, and a stale cached "enabled" must never outlive a deploy that
 paused it.
 """

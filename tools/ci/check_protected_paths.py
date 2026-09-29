@@ -58,6 +58,8 @@ OWNER_APPROVAL_LABEL = "owner-approved"
 HARD_PROTECTED = ("config/protected.yaml", "config/holdout.yaml")
 ASK_PROTECTED = (
     "config/gates.yaml",
+    "config/search.yaml",   # the search freeze (BUILD_PLAN D11): only the owner unfreezes
+    ".github/CODEOWNERS",
     "tests/laws/",
     ".github/workflows/",
     ".claude/",

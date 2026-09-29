@@ -5,6 +5,7 @@
 /config/protected.yaml                  @ALYTIC5
 /config/holdout.yaml                    @ALYTIC5
 /config/gates.yaml                      @ALYTIC5
+/config/search.yaml                     @ALYTIC5
 /tests/laws/                            @ALYTIC5
 /.github/workflows/                     @ALYTIC5
 /.claude/                               @ALYTIC5

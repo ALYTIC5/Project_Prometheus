@@ -8,6 +8,11 @@ hooks:
       hooks:
         - type: command
           command: python "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py"
+  PostToolUse:
+    - matcher: "Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit"
+      hooks:
+        - type: command
+          command: python "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py" --post
 ---
 
 You are the verifier for Project Prometheus. You did not write the code you

@@ -1,14 +1,23 @@
-"""PreToolUse guard (CLAUDE.md Law 17, docs/BUILD_PLAN.md P0).
+"""Claude Code guard hook (CLAUDE.md Law 17, docs/BUILD_PLAN.md P0).
 
-Reads the hook payload on stdin and denies:
-- any edit of, or shell write to, a hard-protected file;
-- `git push` to main, and any force-push;
-- adding the owner-only `owner-approved` PR label;
+PreToolUse (default mode), for Bash/PowerShell/Edit/Write/MultiEdit/
+NotebookEdit. Denies:
+- any edit of a hard-protected file;
+- any shell command that names a hard-protected file (or a glob/short
+  name that could expand to one) unless it is a single read-only command
+  -- an ALLOWLIST, because the ways to write a file are endless;
+- `git push` to main (any spelling), any force-push, pushes while on main,
+  unknown git subcommands (aliases) mentioning main, and ref updates of main
+  through the GitHub API;
+- adding the owner-only `owner-approved` label;
 - requests to our API's sealed routes (.claude/hooks/blocked_endpoints.txt).
 
-Everything else passes untouched (no output). Deliberately conservative: a
-shell command that merely MENTIONS a hard-protected file next to anything
-write-like is denied -- read it with the Read tool instead.
+PostToolUse (`--post`): after every tool call, if a hard-protected file no
+longer matches git HEAD, the result is flagged as a violation -- this
+catches any write the PreToolUse heuristics missed (e.g. a script written
+elsewhere first).
+
+Fails CLOSED: any error in this script exits 2, which blocks the call.
 """
 from __future__ import annotations
 
@@ -24,17 +33,25 @@ API_HOSTS = (
     "localhost:8000",
     "127.0.0.1:8000",
 )
-# Matched against " <lowercased command> ": word-like hints carry a leading
-# space so e.g. " dd " never matches inside "git add ".
-_WRITE_HINTS = (
-    ">", " tee ", "sed -i", "perl -i", "set-content", "out-file", "add-content",
-    "copy-item", "move-item", "remove-item", "rename-item", "new-item", "clear-content",
-    " cp ", " mv ", " rm ", "truncate", "writealltext", "write_text", "write_bytes",
-    "open(", "git checkout", "git restore", "git rm", "git mv", " dd ", " install ",
-    " ln ", " chmod", " unlink",
+# A hard-protected file named directly, by glob, or by an 8.3 short name.
+_PROTECTED_MENTION = re.compile(
+    r"(protected|holdout)[^\s/]*\.(ya?ml|[*?])"
+    r"|(protec|holdou?)[^\s/]*[*?\[]"
+    r"|(protec|holdou)~\d"
 )
-_FORCE = re.compile(r"(^|\s)(--force(-with-lease)?(=\S*)?|-f|--mirror|--delete|-d)(\s|$)")
-_PUSH = re.compile(r"\bgit\b[^|;&]*\bpush\b(?P<args>[^|;&]*)")
+# Single read-only commands allowed to NAME a protected file.
+_READ_ONLY = re.compile(
+    r"^\s*(git\s+(diff|show|log|status|add|commit|blame|grep|ls-files|check-ignore)\b"
+    r"|cat|type|get-content|gc|less|more|head|tail|wc|grep|rg|select-string|sls|diff"
+    r"|(\S*python(\.exe)?|\S*pytest(\.exe)?)\s+(-m\s+pytest|\S*pytest)\b)"
+)
+_CHAINING = re.compile(r"[;&|`>]|\$\(|\n")
+_KNOWN_GIT = frozenset(
+    "status diff log show add commit switch checkout branch fetch pull merge rebase stash "
+    "tag rev-parse rev-list merge-base cherry-pick restore rm mv remote config ls-files "
+    "ls-remote grep blame check-ignore worktree reset clean init clone describe shortlog "
+    "notes reflog bisect apply am format-patch push".split()
+)
 
 
 def _deny(reason: str) -> None:
@@ -51,13 +68,23 @@ def _deny(reason: str) -> None:
     sys.exit(0)
 
 
-def _norm(path: str) -> str:
-    return path.replace("\\", "/").lower()
+def _norm_path(path: str) -> str:
+    """Lowercase, forward slashes, no ./ or // segments, no trailing dots,
+    spaces or NTFS stream suffixes."""
+    p = path.replace("\\", "/").lower().strip()
+    p = p.split("::")[0].rstrip(". ")
+    while "/./" in p or "//" in p:
+        p = p.replace("/./", "/").replace("//", "/")
+    return p
 
 
-def _touches_hard_protected(text: str) -> str | None:
-    lowered = _norm(text)
-    return next((p for p in HARD_PROTECTED if p in lowered), None)
+def _norm_command(command: str) -> str:
+    """Lowercase, and strip quotes and escapes so ma''in, "main" and ma\\in
+    all read as main."""
+    c = command.replace("\\", "").replace("'", "").replace('"', "").lower()
+    while "/./" in c or "//" in c:
+        c = c.replace("/./", "/").replace("//", "/")
+    return c
 
 
 def _current_branch() -> str:
@@ -79,39 +106,110 @@ def _blocked_endpoints() -> list[str]:
     ]
 
 
+def _is_main_ref(token: str) -> bool:
+    return token in ("main", "refs/heads/main") or token.endswith((":main", ":refs/heads/main"))
+
+
+def _mentions_protected(text: str) -> bool:
+    # The sanctioned proposal file (Law 17) is not protected.
+    return bool(_PROTECTED_MENTION.search(text.replace("protected.proposed.yaml", "")))
+
+
+def _check_git(c: str) -> str | None:
+    if re.search(r"\bgit\b.*\bpush\b", c) and ("$(" in c or "`" in c):
+        return "git push built with command substitution is never allowed"
+    for segment in re.split(r"[;&|\n]|\$\(|`", c):
+        tokens = segment.split()
+        if "git" not in tokens:
+            continue
+        args = tokens[tokens.index("git") + 1:]
+        while args and args[0] in ("-c", "-C"):  # git -c k=v / -C dir
+            args = args[2:]
+        if not args:
+            continue
+        sub, rest = args[0], args[1:]
+        if sub == "push" or (sub.startswith("alias") and "push" in segment):
+            for t in rest:
+                if t.startswith("--force") or t in ("--mirror", "--delete", "-d"):
+                    return "force-push / ref deletion is never allowed"
+                if re.fullmatch(r"-[a-z]*f[a-z]*", t) or t.startswith("+"):
+                    return "force-push is never allowed"
+            refs = [t for t in rest if not t.startswith("-")]
+            if any(_is_main_ref(t) or t.endswith("/main") for t in refs):
+                return "push to main is never allowed (open a PR)"
+            if (len(refs) <= 1 or refs[1:] == ["head"]) and _current_branch() == "main":
+                return "push while on main is never allowed (open a PR)"
+        elif sub not in _KNOWN_GIT and "main" in rest:
+            return f"unknown git subcommand {sub!r} (an alias?) naming main"
+    return None
+
+
 def check_command(command: str) -> str | None:
-    lowered = _norm(command)
-    protected = _touches_hard_protected(command)
-    if protected and any(hint in f" {lowered} " for hint in _WRITE_HINTS):
-        return f"shell write to hard-protected {protected} (use config/protected.proposed.yaml)"
-    for match in _PUSH.finditer(lowered):
-        args = match.group("args")
-        if _FORCE.search(args) or re.search(r"(^|\s)\+\S", args):
-            return "force-push is never allowed"
-        tokens = args.split()
-        refspecs = [t for t in tokens if not t.startswith("-")][1:]  # after the remote
-        if any(t == "main" or t.endswith(":main") or t.endswith("/main") for t in refspecs):
-            return "push to main is never allowed (open a PR)"
-        if not refspecs and _current_branch() == "main":
-            return "push while on main is never allowed (open a PR)"
-    if "owner-approved" in lowered and ("label" in lowered or "gh api" in lowered):
+    c = _norm_command(command)
+    if _mentions_protected(c) and (
+        not _READ_ONLY.search(c) or _CHAINING.search(c)
+    ):
+        return (
+            "only a single read-only command may name a hard-protected file "
+            "(propose changes in config/protected.proposed.yaml)"
+        )
+    git_reason = _check_git(c)
+    if git_reason:
+        return git_reason
+    if "gh api" in c and "refs/heads/main" in c:
+        return "updating main through the GitHub API is never allowed"
+    if "owner-approved" in c and ("label" in c or "gh api" in c):
         return "only the owner adds the owner-approved label"
-    if any(host in lowered for host in API_HOSTS):
+    if any(host in c for host in API_HOSTS):
         for endpoint in _blocked_endpoints():
-            if endpoint in lowered:
+            if endpoint in c:
                 return f"request to sealed API route {endpoint} (Law 13)"
     return None
 
 
 def check_edit(file_path: str) -> str | None:
-    lowered = _norm(file_path)
+    p = _norm_path(file_path)
     for protected in HARD_PROTECTED:
-        if lowered == protected or lowered.endswith("/" + protected):
+        if p == protected or p.endswith("/" + protected):
             return f"edit of hard-protected {protected} (use config/protected.proposed.yaml)"
+    if _mentions_protected(p.rsplit("/", 1)[-1]) and "/config/" in f"/{p}":
+        return "edit of a path that may resolve to a hard-protected file"
     return None
 
 
+def changed_protected_files() -> list[str]:
+    """Hard-protected files whose working copy differs from git HEAD."""
+    changed = []
+    for path in HARD_PROTECTED:
+        result = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD", "--", path],
+            capture_output=True, timeout=20, check=False,
+        )
+        if result.returncode != 0:
+            changed.append(path)
+    return changed
+
+
+def post_check() -> None:
+    changed = changed_protected_files()
+    if changed:
+        json.dump(
+            {
+                "decision": "block",
+                "reason": (
+                    f"guard.py (CLAUDE.md Law 17): hard-protected file(s) {changed} no longer "
+                    "match git HEAD. Stop and tell the owner; do not continue until they "
+                    "have restored or committed the file themselves."
+                ),
+            },
+            sys.stdout,
+        )
+
+
 def main() -> None:
+    if "--post" in sys.argv:
+        post_check()
+        return
     payload = json.load(sys.stdin)
     tool = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
@@ -125,4 +223,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:  # fail CLOSED: exit 2 blocks the tool call
+        print(f"guard.py failed, blocking to be safe: {exc!r}", file=sys.stderr)
+        sys.exit(2)
