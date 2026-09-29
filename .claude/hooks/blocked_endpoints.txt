@@ -1,0 +1,9 @@
+# Routes of OUR API that Claude Code must never request (CLAUDE.md Law 13 and
+# the Network rule): holdout, vault and other sealed data. One path prefix per
+# line; matched case-insensitively against any Bash/PowerShell command that
+# also names our API host. Later prompts extend this list (P7 vault routes,
+# P11 the options morning report).
+/holdout
+/vault
+/options/morning
+/options/raw
