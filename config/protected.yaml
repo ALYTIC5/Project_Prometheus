@@ -1,0 +1,49 @@
+# HARD-PROTECTED (CLAUDE.md Law 17, docs/BUILD_PLAN.md P0). Claude never edits
+# this file after P0: .claude/settings.json denies it, the PreToolUse hook
+# blocks shell writes to it, and CI fails any PR touching it without the
+# owner-only `owner-approved` label. A later prompt that wants a change
+# writes config/protected.proposed.yaml with its reasons; the owner copies
+# values across by hand.
+#
+# Where a value already lives in config/holdout.yaml or config/costs.yaml it
+# is referenced ({ref, key}), never copied.
+schema_version: 1
+
+live_trading_enabled: false
+
+# Law 4 limits. Production's environment (2026-09-29) was stricter than the
+# plan's defaults (20 / 100 / 1 / 3 / 15) on every limit, so these are the
+# production values. From now on environment variables may only TIGHTEN
+# these (enforced in P2).
+risk:
+  max_position_pct: 5
+  max_gross_exposure_pct: 20
+  max_leverage: 1
+  max_daily_loss_pct: 2
+  max_drawdown_pct: 10
+
+vault:
+  epoch_months: 6
+  epoch_1_start: {ref: config/holdout.yaml, key: holdout_start}
+  epoch_1_evaluation: {ref: config/holdout.yaml, key: vault_opens}
+  symbol_vault_fraction: 0.5
+  symbol_vault_seed: 177564079416183192   # secrets.randbits(64), generated 2026-09-29
+
+# Empty until P7 proposes rules in config/protected.proposed.yaml and the
+# owner copies them here. validation/vault.py refuses to run while empty.
+vault_pass_rules: {}
+
+# Law 14 (built in P5): results this good are quarantined, not celebrated.
+plausibility:
+  max_annual_sharpe: 4.0
+  min_p_value: 1.0e-8
+  max_hit_rate: 0.75
+  max_hit_rate_min_trades: 100
+  max_months_without_a_losing_month: 24
+
+gate:
+  lord_alpha: 0.05   # copied from prometheus/validation/discovery_gate.py ALPHA on 2026-09-29
+
+incubation:
+  min_paper_days: 182
+  demote_after_days_below_band: 30

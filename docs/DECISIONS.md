@@ -7,6 +7,23 @@ reading the code.
 
 ---
 
+## Owner approval for protected-path PRs is given in chat (2026-09-29)
+
+**Owner decision.** The owner merges nothing by hand and does not add the
+`owner-approved` label: "you just do all the merging yourself". So for a PR
+that touches hard- or ask-protected paths (CLAUDE.md Law 17), the owner's
+explicit approval in the chat is the approval. Claude then merges with the
+`protected-paths` check red -- that red check is the permanent record that
+owner approval was needed -- and posts a PR comment quoting the approval.
+Every OTHER check must be green. Claude still never adds the label itself
+(the guard hook blocks it), never edits hard-protected files, and never
+merges a protected-path PR without an approval given in the conversation
+for that PR or for "all merging".
+
+**Also decided:** the owner keeps the current API keys until the end of the
+v2 build and rotates them then (the BUILD_PLAN "Before you start" rotation
+is deferred, not dropped).
+
 ## The vault is used; pre-gate promotions re-tested; paper loss limits (2026-09-28)
 
 Prompted by `AUDIT_REPORT.md`: nothing had ever been judged on unseen data.

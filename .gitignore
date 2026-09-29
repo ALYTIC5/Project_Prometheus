@@ -10,8 +10,14 @@ build/
 .pytest_cache/
 .coverage
 
-# local tool state — not project source
-.claude/
+# local tool state — not project source. The project's Claude Code
+# guardrails ARE source (BUILD_PLAN P0, CLAUDE.md Law 17): settings.json,
+# hooks, agents and skills are tracked; local settings and state are not.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/agents/
+!.claude/skills/
 .claude-flow/
 .swarm/
 .superpowers/

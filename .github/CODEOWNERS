@@ -1,0 +1,14 @@
+# Owner review for hard- and ask-protected paths (CLAUDE.md Law 17,
+# docs/BUILD_PLAN.md P0). Keep in step with tools/ci/check_protected_paths.py
+# (HARD_PROTECTED / ASK_PROTECTED) and .claude/settings.json. CI also fails a
+# PR touching these without the owner-only `owner-approved` label.
+/config/protected.yaml                  @ALYTIC5
+/config/holdout.yaml                    @ALYTIC5
+/config/gates.yaml                      @ALYTIC5
+/config/search.yaml                     @ALYTIC5
+/tests/laws/                            @ALYTIC5
+/.github/workflows/                     @ALYTIC5
+/.claude/                               @ALYTIC5
+/tools/ci/check_protected_paths.py      @ALYTIC5
+/.github/CODEOWNERS                     @ALYTIC5
+/.gitleaks.toml                         @ALYTIC5

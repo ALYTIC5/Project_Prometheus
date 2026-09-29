@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, research-policy]
   pull_request:
+    # labeled/unlabeled: adding or removing `owner-approved` re-runs the
+    # protected-paths check (CLAUDE.md Law 17).
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   # Third layer beside the research DB role and tests/laws/: the automated
@@ -24,13 +27,32 @@ jobs:
             python -m tools.ci.check_protected_paths \
               --base "${{ github.event.pull_request.base.sha }}" \
               --head "${{ github.event.pull_request.head.sha }}" \
-              --branch "${{ github.head_ref }}"
+              --branch "${{ github.head_ref }}" \
+              --pr --labels "${{ join(github.event.pull_request.labels.*.name, ',') }}"
           else
             python -m tools.ci.check_protected_paths \
               --base "${{ github.event.before }}" \
               --head "${{ github.sha }}" \
               --branch "${{ github.ref_name }}"
           fi
+
+  # Full-history secret scan on every push and PR (BUILD_PLAN P0). The
+  # pre-commit detect-secrets hook stops new secrets locally; this catches
+  # anything that got past it, in any commit ever made.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # 8.30.1, not older: 8.21.2 has no Anthropic-key rule (tested
+      # 2026-09-29 with a planted key). .gitleaks.toml allowlists only
+      # .secrets.baseline, whose entries are SHA-1 hashes, not secrets.
+      - name: gitleaks (full git history)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          ./gitleaks git --redact --no-banner --exit-code 1 .
 
   lint-type-test:
     runs-on: ubuntu-latest
