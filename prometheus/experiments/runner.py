@@ -55,6 +55,7 @@ from prometheus.core.db import Decision, Experiment, Result, Strategy, Validatio
 from prometheus.core.health import record_failure
 from prometheus.core.ids import next_experiment_id, next_strategy_id
 from prometheus.core.provenance import code_sha
+from prometheus.core.search_flags import load_search_flags
 from prometheus.core.seeds import derive_seed
 from prometheus.data.loaders import load_point_in_time
 from prometheus.data.universe import membership_windows
@@ -982,6 +983,10 @@ async def _apply_discovery_gate(
     if earlier is None and not representative:
         return not_a_discovery("CLUSTER_NOT_REPRESENTATIVE", {"tested": False, **registered})
     if earlier is None:
+        # docs/BUILD_PLAN.md D11: no new LORD++ tests while the search is
+        # frozen -- each would spend alpha-wealth on rules about to change.
+        if not load_search_flags().gate_submissions_enabled:
+            return not_a_discovery("GATE_FROZEN", {"tested": False, **registered})
         pvalue = excess_return_pvalue(result.equity_curve, result.benchmark.equity_curve)
         if pvalue is None:
             return not_a_discovery("FDR_TOO_FEW_OBSERVATIONS", {"tested": False, **registered})

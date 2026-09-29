@@ -83,6 +83,7 @@ from prometheus.core.health import (
     record_failure,
 )
 from prometheus.core.provenance import code_sha
+from prometheus.core.search_flags import load_search_flags
 from prometheus.core.seeds import derive_seed, rng_for
 from prometheus.data.ingest_etf import backfill_etf
 from prometheus.data.ingestion import backfill, load_universe_symbols
@@ -347,6 +348,9 @@ async def _run_regate_pre_gate_promotions() -> None:
         done = (await session.execute(_SELECT_CADENCE, {"concern": _REGATE_MARKER})).first()
         if done is not None:
             return
+        if not load_search_flags().gate_submissions_enabled:
+            print("search frozen: skipped pre-gate promotion re-test")
+            return
         report = await regate_pre_gate_promotions(session, lookback_days=_GRID_LOOKBACK_DAYS)
         await session.execute(_UPSERT_CADENCE, {"concern": _REGATE_MARKER})
         await session.commit()
@@ -383,6 +387,9 @@ async def _run_holdout_tests(now: datetime | None = None) -> list[str]:
     re-elected. Each strategy commits alone: one spec's failure never
     un-spends another's single vault access."""
     if not vault_is_open((now or datetime.now(UTC)).date()):
+        return []
+    if not load_search_flags().gate_submissions_enabled:
+        print("search frozen: skipped holdout tests")
         return []
     async with get_session() as session:
         awaiting = (await session.execute(_SELECT_AWAITING_HOLDOUT)).fetchall()
@@ -761,6 +768,71 @@ _ML_GRID_GENERATORS = (
 )
 
 
+async def _run_search_steps() -> None:
+    """The steps that SEARCH -- evolution children and the LLM hypothesis and
+    refinement steps -- each skipped while config/search.yaml freezes it
+    (docs/BUILD_PLAN.md D11)."""
+    flags = load_search_flags()
+    async with get_session() as session:
+        evolved_job_ids: list[str] = []
+        if flags.evolution_enabled:
+            evolved_job_ids = await _run_evolution_step(session)
+            await session.commit()
+            if evolved_job_ids:
+                print(
+                    f"worker: enqueued {len(evolved_job_ids)} evolved candidate(s): "
+                    f"{evolved_job_ids}"
+                )
+        else:
+            print("search frozen: skipped evolution step")
+        if not flags.llm_steps_enabled:
+            print("search frozen: skipped LLM hypothesis and refinement steps")
+            return
+
+        # PROMPT 9: one bounded LLM hypothesis, budget-gated. Anthropic client
+        # construction is deferred to here (not import time) so importing
+        # worker.py never requires a real API key.
+        #
+        # I2 (final-review fix wave): isolated in its own broad try/except.
+        # Everything above has already been committed, but an exception
+        # escaping here would propagate past this function's own `return`
+        # and prevent run_once()'s `mark_run(concern="research")` from
+        # firing at all -- leaving last_run_at stale, so the research
+        # concern would re-run at every 15-minute tick instead of every 30
+        # minutes, indefinitely. Broad Exception, not ValueError: a missing
+        # LLM_MONTHLY_BUDGET_USD raises pydantic.ValidationError, a missing
+        # ANTHROPIC_API_KEY raises inside the anthropic constructor, and
+        # anthropic's own APIError subtypes are not ValueErrors either.
+        # Same "one concern's failure must not sink unrelated work"
+        # principle run_once() already applies per concern.
+        try:
+            client = _anthropic_client()
+            # Law 9: the LLM path runs as the research DB role.
+            async with get_research_session() as research_session:
+                for _ in range(await _hypotheses_per_cycle(research_session)):
+                    llm_job_id = await _run_llm_hypothesis_step(research_session, client=client)
+                    await research_session.commit()
+                    if llm_job_id is not None:
+                        print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
+        except Exception as exc:
+            record_failure("research", exc, context="llm_hypothesis_step")
+        # Failure-driven refinement: isolated the same way, so a failure
+        # here never sinks the hypothesis step above or mark_run.
+        try:
+            client = _anthropic_client()
+            async with get_research_session() as research_session:
+                for _ in range(await _refinements_per_cycle(research_session)):
+                    refined_job_id = await _run_llm_refinement_step(
+                        research_session, client=client
+                    )
+                    await research_session.commit()
+                    if refined_job_id is not None:
+                        print(f"worker: enqueued LLM refinement job: {refined_job_id}")
+        except Exception as exc:
+            record_failure("research", exc, context="llm_refinement_step")
+
+
+
 async def _run_research() -> list[str]:
     research_started = time.monotonic()
     symbols = load_universe_symbols()
@@ -852,54 +924,8 @@ async def _run_research() -> list[str]:
     # cycle's own runtime bounded, matching _GRID_LOOKBACK_DAYS's own
     # "one symbol's grid runs once" bounding rather than growing this
     # cycle's work by however many children get produced.
-    async with get_session() as session:
-        print(f"research: validation took {time.monotonic() - phase_started:.0f}s")
-        evolved_job_ids = await _run_evolution_step(session)
-        await session.commit()
-
-        # PROMPT 9: one bounded LLM hypothesis, budget-gated. Anthropic client
-        # construction is deferred to here (not import time) so importing
-        # worker.py never requires a real API key.
-        #
-        # I2 (final-review fix wave): isolated in its own broad try/except.
-        # Everything above has already been committed, but an exception
-        # escaping here would propagate past this function's own `return`
-        # and prevent run_once()'s `mark_run(concern="research")` from
-        # firing at all -- leaving last_run_at stale, so the research
-        # concern would re-run at every 15-minute tick instead of every 30
-        # minutes, indefinitely. Broad Exception, not ValueError: a missing
-        # LLM_MONTHLY_BUDGET_USD raises pydantic.ValidationError, a missing
-        # ANTHROPIC_API_KEY raises inside the anthropic constructor, and
-        # anthropic's own APIError subtypes are not ValueErrors either.
-        # Same "one concern's failure must not sink unrelated work"
-        # principle run_once() already applies per concern.
-        try:
-            client = _anthropic_client()
-            # Law 9: the LLM path runs as the research DB role.
-            async with get_research_session() as research_session:
-                for _ in range(await _hypotheses_per_cycle(research_session)):
-                    llm_job_id = await _run_llm_hypothesis_step(research_session, client=client)
-                    await research_session.commit()
-                    if llm_job_id is not None:
-                        print(f"worker: enqueued LLM hypothesis job: {llm_job_id}")
-        except Exception as exc:
-            record_failure("research", exc, context="llm_hypothesis_step")
-        # Failure-driven refinement: isolated the same way, so a failure
-        # here never sinks the hypothesis step above or mark_run.
-        try:
-            client = _anthropic_client()
-            async with get_research_session() as research_session:
-                for _ in range(await _refinements_per_cycle(research_session)):
-                    refined_job_id = await _run_llm_refinement_step(
-                        research_session, client=client
-                    )
-                    await research_session.commit()
-                    if refined_job_id is not None:
-                        print(f"worker: enqueued LLM refinement job: {refined_job_id}")
-        except Exception as exc:
-            record_failure("research", exc, context="llm_refinement_step")
-    if evolved_job_ids:
-        print(f"worker: enqueued {len(evolved_job_ids)} evolved candidate(s): {evolved_job_ids}")
+    print(f"research: validation took {time.monotonic() - phase_started:.0f}s")
+    await _run_search_steps()
 
     return ran + validated
 

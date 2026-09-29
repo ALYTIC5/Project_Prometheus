@@ -121,6 +121,7 @@ async def test_no_edge_on_vault_bars_fails_and_is_final(db_session: AsyncSession
 
 @_needs_db
 @pytest.mark.db
+@pytest.mark.usefixtures("search_unfrozen")
 async def test_gate_discoveries_wait_for_the_vault(db_session: AsyncSession) -> None:
     spec = _spec()
     await register_hypothesis(db_session, spec)

@@ -1,0 +1,11 @@
+# Search freeze (docs/BUILD_PLAN.md D11). While the v2 gauntlet and truth
+# tests are being built, every test the old pipeline runs would spend
+# discovery-gate budget and money on rules about to be replaced. A missing
+# key -- or a missing file -- counts as PAUSED. Data collection, options
+# snapshots, paper plumbing and health checks are not affected.
+#
+# P9 lifts evolution and gate submissions; P10 lifts the LLM steps.
+schema_version: 1
+evolution_enabled: false          # mutation/crossover children (worker._run_evolution_step)
+llm_steps_enabled: false          # LLM hypothesis + LLM refinement steps
+gate_submissions_enabled: false   # new LORD++ tests (runner._apply_discovery_gate), vault tests, re-gate
